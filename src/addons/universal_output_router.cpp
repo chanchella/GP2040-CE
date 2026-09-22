@@ -1,4 +1,5 @@
 #include "addons/universal_output_router.h"
+#include "BoardConfig.h"
 
 #include "output/universal_output_manager.h"
 #include "storagemanager.h"
@@ -15,6 +16,13 @@ void UniversalOutputRouterAddon::preprocess() {
     // G2B: keep the logical output layer synchronized with the
     // global input slots using a deterministic 1:1 mapping.
     UOUTPUT.syncFromInputs();
+
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    // G2C1: logical outputs are consumed directly by the four-interface
+    // XInput USB device layer. Do not collapse Output Slot 1 back into
+    // GP2040's single legacy gamepad state.
+    return;
+#endif
 
     // Compatibility bridge for GP2040's current single USB-device
     // XInput implementation.
