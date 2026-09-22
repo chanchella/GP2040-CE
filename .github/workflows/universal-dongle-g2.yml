@@ -49,7 +49,7 @@ jobs:
           sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
           grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
 
-      - name: Verify G2C multi-controller output invariants
+      - name: Verify G2C1 universal HID + browser output invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -109,7 +109,22 @@ jobs:
           grep -q 'new OAGMultiXInputDriver' src/drivermanager.cpp
           grep -q 'src/drivers/oag/OAGMultiXInputDriver.cpp' CMakeLists.txt
           ! grep -q 'Storage::getInstance().GetGamepad' src/addons/universal_output_router.cpp
-          echo "G2C_MULTI_CONTROLLER_OUTPUT_VERIFY=PASS"
+          grep -q '#define UNIVERSAL_HID_GAMEPAD_HOST_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q '#define OAG_PC_MULTI_HID_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q '#define CFG_TUD_HID              4' headers/tusb_config.h
+          grep -q 'UniversalHIDGamepadHostAddon' src/gp2040.cpp
+          grep -q 'claimUsbSlot' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'OAG_MULTI_HID_SLOT_COUNT = 4' headers/drivers/oag/OAGMultiHIDDescriptors.h
+          grep -q 'tud_hid_n_report' src/drivers/oag/OAGMultiHIDDriver.cpp
+          grep -q 'new OAGMultiHIDDriver' src/drivermanager.cpp
+          grep -q 'src/drivers/oag/OAGMultiHIDDriver.cpp' CMakeLists.txt
+          grep -q 'REDRAGON_G808_2563_0575' src/input/universal_device_registry.cpp
+          grep -q 'REDRAGON_G808_RAW_24C6_542A' src/input/universal_device_registry.cpp
+          grep -q 'GIGAMAX_0079_0006' src/input/universal_device_registry.cpp
+          grep -q 'XBOX_ONE_S_045E_02EA' src/input/universal_device_registry.cpp
+          grep -q 'parseXgipXboxOne' src/input/universal_gamepad_parser.cpp
+          grep -q 'XONE_SYSTEM_INIT' src/addons/universal_xinput_host.cpp
+          echo "G2C1_UNIVERSAL_INPUT_BROWSER_OUTPUT_VERIFY=PASS"
 
       - name: Configure Pico2
         shell: bash
@@ -123,7 +138,7 @@ jobs:
             -DPICO_BOARD=pico2 \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build G2C Multi-Controller Output
+      - name: Build G2C1 Universal Input + Browser Output
         shell: bash
         run: |
           GP2040_BOARDCONFIG=Pico2 \
@@ -136,16 +151,16 @@ jobs:
         run: |
           find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
 
-      - name: Upload G2C UF2
+      - name: Upload G2C1 UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C-Pico2-UF2
+          name: OAG-Vortex-G2C1-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 
-      - name: Upload G2C ELF
+      - name: Upload G2C1 ELF
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C-Pico2-ELF
+          name: OAG-Vortex-G2C1-Pico2-ELF
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
           if-no-files-found: error
