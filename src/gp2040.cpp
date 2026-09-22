@@ -30,6 +30,7 @@
 #include "addons/i2c_gpio_pcf8575.h"
 #include "addons/gamepad_usb_host.h"
 #include "addons/universal_xinput_host.h"
+#include "addons/universal_hid_gamepad_host.h"
 #include "addons/universal_output_router.h"
 #include "addons/he_trigger.h"
 #include "addons/tg16_input.h"
@@ -109,6 +110,7 @@ void GP2040::setup() {
 	addons.LoadUSBAddon(new KeyboardHostAddon());
 	addons.LoadUSBAddon(new GamepadUSBHostAddon());
 	addons.LoadUSBAddon(new UniversalXInputHostAddon());
+	addons.LoadUSBAddon(new UniversalHIDGamepadHostAddon());
 	addons.LoadAddon(new UniversalOutputRouterAddon());
 	addons.LoadAddon(new AnalogInput());
 	addons.LoadAddon(new HETriggerAddon());
