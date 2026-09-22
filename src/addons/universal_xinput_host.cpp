@@ -91,7 +91,10 @@ void UniversalXInputHostAddon::xmount(
         pid == 0x028E &&
         instance == 0;
 
-    if (subtype == 0 && !t29Fallback) {
+    // Some compatible wired controllers do not expose a useful subtype.
+    // Instance 0 is the normal gameplay interface; the exact T29 identity
+    // is accepted explicitly as well.
+    if (subtype == 0 && instance != 0 && !t29Fallback) {
         return;
     }
 
@@ -145,8 +148,9 @@ bool UniversalXInputHostAddon::parseXbox360Report(
         return false;
     }
 
-    // Standard wired Xbox 360/XUSB gameplay packet begins 00 14.
-    if (report[0] != 0x00 || report[1] != 0x14) {
+    // The proven T29 parser only requires the XUSB payload-size byte.
+    // Some clones vary the first status byte.
+    if (report[1] != 0x14) {
         return false;
     }
 
