@@ -3,6 +3,7 @@
 #include "peripheralmanager.h"
 #include "storagemanager.h"
 #include "drivers/shared/xinput_host.h"
+#include "input/universal_gamepad_parser.h"
 #include "tusb.h"
 
 bool UniversalXInputHostAddon::available() {
@@ -88,6 +89,7 @@ int8_t UniversalXInputHostAddon::allocateSlot(
         slots[i].instance = instance;
         slots[i].subtype = subtype;
         slots[i].globalSlot = globalSlot;
+        slots[i].device = match;
 
         if (
             !UINPUT.connectClassified(
@@ -179,7 +181,14 @@ void UniversalXInputHostAddon::report_received(
     }
 
     GamepadState next {};
-    if (!parseXbox360Report(next, report, len)) {
+    if (
+        !UGAMEPADPARSER.parse(
+            slots[slotIndex].device,
+            report,
+            len,
+            next
+        )
+    ) {
         return;
     }
 
@@ -191,75 +200,3 @@ void UniversalXInputHostAddon::report_received(
     UINPUT.publish(globalSlot, next);
 }
 
-uint16_t UniversalXInputHostAddon::axisX(int16_t value) {
-    return static_cast<uint16_t>(
-        static_cast<int32_t>(value) + 32768
-    );
-}
-
-uint16_t UniversalXInputHostAddon::axisY(int16_t value) {
-    // GP2040's XInput device driver inverts Y on output.
-    // Store the host value in GP2040's internal orientation.
-    return static_cast<uint16_t>(
-        32767 - static_cast<int32_t>(value)
-    );
-}
-
-bool UniversalXInputHostAddon::parseXbox360Report(
-    GamepadState& out,
-    uint8_t const* report,
-    uint16_t len
-) {
-    if (report == nullptr || len < 14) {
-        return false;
-    }
-
-    // Proven T29 parser requirement.
-    if (report[1] != 0x14) {
-        return false;
-    }
-
-    const uint16_t buttons =
-        static_cast<uint16_t>(report[2]) |
-        (static_cast<uint16_t>(report[3]) << 8);
-
-    if (buttons & 0x0001) out.dpad |= GAMEPAD_MASK_UP;
-    if (buttons & 0x0002) out.dpad |= GAMEPAD_MASK_DOWN;
-    if (buttons & 0x0004) out.dpad |= GAMEPAD_MASK_LEFT;
-    if (buttons & 0x0008) out.dpad |= GAMEPAD_MASK_RIGHT;
-
-    if (buttons & 0x0010) out.buttons |= GAMEPAD_MASK_S2;
-    if (buttons & 0x0020) out.buttons |= GAMEPAD_MASK_S1;
-    if (buttons & 0x0040) out.buttons |= GAMEPAD_MASK_L3;
-    if (buttons & 0x0080) out.buttons |= GAMEPAD_MASK_R3;
-    if (buttons & 0x0100) out.buttons |= GAMEPAD_MASK_L1;
-    if (buttons & 0x0200) out.buttons |= GAMEPAD_MASK_R1;
-    if (buttons & 0x0400) out.buttons |= GAMEPAD_MASK_A1;
-
-    if (buttons & 0x1000) out.buttons |= GAMEPAD_MASK_B1;
-    if (buttons & 0x2000) out.buttons |= GAMEPAD_MASK_B2;
-    if (buttons & 0x4000) out.buttons |= GAMEPAD_MASK_B3;
-    if (buttons & 0x8000) out.buttons |= GAMEPAD_MASK_B4;
-
-    out.lt = report[4];
-    out.rt = report[5];
-
-    if (out.lt != 0) out.buttons |= GAMEPAD_MASK_L2;
-    if (out.rt != 0) out.buttons |= GAMEPAD_MASK_R2;
-
-    auto readS16 = [report](uint8_t offset) -> int16_t {
-        const uint16_t raw =
-            static_cast<uint16_t>(report[offset]) |
-            (static_cast<uint16_t>(report[offset + 1]) << 8);
-
-        return static_cast<int16_t>(raw);
-    };
-
-    out.lx = axisX(readS16(6));
-    out.ly = axisY(readS16(8));
-    out.rx = axisX(readS16(10));
-    out.ry = axisY(readS16(12));
-    out.dpadOriginal = out.dpad;
-
-    return true;
-}
