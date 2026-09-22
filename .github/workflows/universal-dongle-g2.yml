@@ -133,7 +133,8 @@ jobs:
           grep -q 'GIGAMAX_0079_0006' src/input/universal_device_registry.cpp
           grep -q 'XBOX_ONE_S_045E_02EA' src/input/universal_device_registry.cpp
           grep -q 'parseXgipXboxOne' src/input/universal_gamepad_parser.cpp
-          grep -q 'XONE_SYSTEM_INIT' src/addons/universal_xinput_host.cpp
+          grep -q 'XONE_S_INIT' src/addons/universal_xinput_host.cpp
+          grep -q 'XONE_AUTH_DONE' src/addons/universal_xinput_host.cpp
           grep -q 'USAGE_PAGE_SIMULATION' src/addons/universal_hid_gamepad_host.cpp
           grep -q 'knownZrRightStick' src/addons/universal_hid_gamepad_host.cpp
           grep -q 'patch_oag_tinyusb_hid_host.py' .github/workflows/universal-dongle-g2.yml
