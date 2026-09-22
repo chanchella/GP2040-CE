@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "class/hid/hid.h"
+#include "host/usbh.h"
 #include "class/hid/hid_host.h"
 #include "peripheralmanager.h"
 #include "tusb.h"
