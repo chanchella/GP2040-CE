@@ -79,6 +79,8 @@ jobs:
           grep -q 'SONY_DS3' headers/input/universal_device_registry.h
           grep -q 'SONY_DS4' headers/input/universal_device_registry.h
           grep -q 'SONY_DUALSENSE' headers/input/universal_device_registry.h
+          grep -q 'SONY_DUALSENSE_054C_0CE6' src/input/universal_device_registry.cpp
+          grep -q 'NINTENDO_SWITCH_PRO_057E_2009' src/input/universal_device_registry.cpp
           grep -q 'XGIP_XBOX_ONE' headers/input/universal_device_registry.h
           grep -q 'XBOX360_WIRELESS_RECEIVER' headers/input/universal_device_registry.h
           grep -q 'REDRAGON_G808_2563_0575' headers/input/universal_device_registry.h
