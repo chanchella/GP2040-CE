@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "gamepad/GamepadState.h"
+#include "input/universal_device_registry.h"
 #include "pico/sync.h"
 
 // Global controller-slot namespace for the Universal Input Dongle.
@@ -23,6 +24,10 @@ enum class UniversalInputSource : uint8_t {
     BLUETOOTH_GAMEPAD,
     USB_XINPUT,
     USB_HID_GAMEPAD,
+    USB_PLAYSTATION,
+    USB_XGIP,
+    USB_XID,
+    USB_WIRELESS_RECEIVER,
 };
 
 struct UniversalInputSlotSnapshot {
@@ -30,6 +35,13 @@ struct UniversalInputSlotSnapshot {
     bool hasReport = false;
 
     UniversalInputSource source = UniversalInputSource::NONE;
+
+    UniversalTransport transport = UniversalTransport::UNKNOWN;
+    UniversalDeviceClass deviceClass = UniversalDeviceClass::UNKNOWN;
+    UniversalProtocol protocol = UniversalProtocol::UNKNOWN;
+    UniversalDriverFamily driverFamily = UniversalDriverFamily::NONE;
+    UniversalDeviceProfileId profile = UniversalDeviceProfileId::NONE;
+    uint32_t quirks = UNIVERSAL_QUIRK_NONE;
 
     uint16_t vid = 0;
     uint16_t pid = 0;
@@ -51,11 +63,21 @@ public:
 
     void resetAll();
 
+    // Backward-compatible unclassified connect path.
     bool connect(
         uint8_t slot,
         UniversalInputSource source,
         uint16_t vid,
         uint16_t pid,
+        uint8_t devAddr,
+        uint8_t instance
+    );
+
+    // Preferred G2C0 path: preserve device/protocol metadata with the slot.
+    bool connectClassified(
+        uint8_t slot,
+        UniversalInputSource source,
+        UniversalDeviceMatch const& match,
         uint8_t devAddr,
         uint8_t instance
     );
@@ -77,6 +99,13 @@ private:
         bool hasReport = false;
 
         UniversalInputSource source = UniversalInputSource::NONE;
+
+        UniversalTransport transport = UniversalTransport::UNKNOWN;
+        UniversalDeviceClass deviceClass = UniversalDeviceClass::UNKNOWN;
+        UniversalProtocol protocol = UniversalProtocol::UNKNOWN;
+        UniversalDriverFamily driverFamily = UniversalDriverFamily::NONE;
+        UniversalDeviceProfileId profile = UniversalDeviceProfileId::NONE;
+        uint32_t quirks = UNIVERSAL_QUIRK_NONE;
 
         uint16_t vid = 0;
         uint16_t pid = 0;
