@@ -4,6 +4,8 @@
  */
 
 #include "drivers/xinput/XInputDriver.h"
+#include "BoardConfig.h"
+#include "output/universal_xinput_device.h"
 #include "drivers/shared/driverhelper.h"
 #include "storagemanager.h"
 
@@ -124,6 +126,13 @@ static bool xinput_xfer_callback(uint8_t rhport, uint8_t ep_addr, xfer_result_t 
 }
 
 void XInputDriver::initialize() {
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    xAuthDriver = nullptr;
+    xAuthSent = false;
+    UXINPUT_DEVICE.initializeClassDriver(class_driver);
+    return;
+#endif
+
     xinputReport = {
         .report_id = 0,
         .report_size = XINPUT_ENDPOINT_SIZE,
@@ -229,6 +238,12 @@ void XInputDriver::initialize() {
 }
 
 void XInputDriver::initializeAux() {
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    xAuthDriver = nullptr;
+    xinputAuthData = nullptr;
+    return;
+#endif
+
     xAuthDriver = nullptr;
     // AUTH DRIVER NON-FUNCTIONAL FOR NOW
     GamepadOptions & gamepadOptions = Storage::getInstance().getGamepadOptions();
@@ -240,6 +255,10 @@ void XInputDriver::initializeAux() {
 }
 
 USBListener * XInputDriver::get_usb_auth_listener() {
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    return nullptr;
+#endif
+
     if ( xAuthDriver != nullptr && xAuthDriver->available() ) {
         return xAuthDriver->getListener();
     }
@@ -251,6 +270,11 @@ bool XInputDriver::getAuthSent() {
 }
 
 bool XInputDriver::process(Gamepad * gamepad) {
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    (void)gamepad;
+    return UXINPUT_DEVICE.process();
+#endif
+
     Gamepad * processedGamepad = Storage::getInstance().GetProcessedGamepad();
     Mask_t values = Storage::getInstance().GetGamepad()->debouncedGpio;
 
@@ -397,6 +421,10 @@ bool XInputDriver::process(Gamepad * gamepad) {
 }
 
 void XInputDriver::processAux() {
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    return;
+#endif
+
     if ( xAuthDriver != nullptr && xAuthDriver->available() ) {
         xAuthDriver->process();
     }
@@ -404,12 +432,27 @@ void XInputDriver::processAux() {
 
 // tud_hid_get_report_cb
 uint16_t XInputDriver::get_report(uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen) {
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)reqlen;
+    return 0;
+#endif
+
     memcpy(buffer, &xinputReport, sizeof(XInputReport));
     return sizeof(XInputReport);
 }
 
 // Only respond to vendor control xfers if we have a mounted x360 device
 bool XInputDriver::vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request) {
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    (void)rhport;
+    (void)stage;
+    (void)request;
+    return false;
+#endif
+
   // Do nothing if we have no auth driver
     if ( xAuthDriver == nullptr || !xAuthDriver->available() ) {
         return false;
@@ -528,6 +571,11 @@ const uint8_t * XInputDriver::get_hid_descriptor_report_cb(uint8_t itf) {
 }
 
 const uint8_t * XInputDriver::get_descriptor_configuration_cb(uint8_t index) {
+#if UNIVERSAL_MULTI_XINPUT_ENABLED
+    (void)index;
+    return UXINPUT_DEVICE.configurationDescriptor();
+#endif
+
     uint16_t configDescriptorSize = sizeof(xinput_configuration_descriptor);
     memcpy(configDescriptor, &xinput_configuration_descriptor, configDescriptorSize);
 
