@@ -41,7 +41,12 @@ void DriverManager::setup(InputMode mode) {
             driver = new KeyboardDriver();
             break;
         case INPUT_MODE_GENERIC:
+#if defined(OAG_PC_MULTI_HID_ENABLED) && OAG_PC_MULTI_HID_ENABLED
+            // OAG PC/browser profile: four standards-compliant HID gamepads.
+            driver = new OAGMultiHIDDriver();
+#else
             driver = new HIDDriver();
+#endif
             break;
         case INPUT_MODE_MDMINI:
             driver = new MDMiniDriver();
@@ -74,13 +79,9 @@ void DriverManager::setup(InputMode mode) {
             driver = new XboxOriginalDriver();
             break;
         case INPUT_MODE_XINPUT:
-#if defined(OAG_PC_MULTI_HID_ENABLED) && OAG_PC_MULTI_HID_ENABLED
-            // G2C1 PC/browser validation profile:
-            // expose four independent standards-compliant HID gamepads.
-            // The multi-XInput driver remains compiled as a separate backend
-            // for later platform-profile selection.
-            driver = new OAGMultiHIDDriver();
-#elif defined(OAG_MULTI_XINPUT_ENABLED) && OAG_MULTI_XINPUT_ENABLED
+#if defined(OAG_MULTI_XINPUT_ENABLED) && OAG_MULTI_XINPUT_ENABLED
+            // OAG PC game profile: four XInput outputs with per-slot OUT
+            // endpoints so rumble can be routed back to each source device.
             driver = new OAGMultiXInputDriver();
 #else
             driver = new XInputDriver();
