@@ -15,12 +15,14 @@ bool UniversalGamepadParser::parse(
         case UniversalProtocol::XUSB_XBOX360:
             return parseXusbXbox360(device, report, len, out);
 
+        case UniversalProtocol::XGIP_XBOX_ONE:
+            return parseXgipXboxOne(device, report, len, out);
+
         // Registered now, implemented in later controller-input phases.
         case UniversalProtocol::HID_GAMEPAD:
         case UniversalProtocol::SONY_DS3:
         case UniversalProtocol::SONY_DS4:
         case UniversalProtocol::SONY_DUALSENSE:
-        case UniversalProtocol::XGIP_XBOX_ONE:
         case UniversalProtocol::XID_XBOX_ORIGINAL:
         case UniversalProtocol::NINTENDO_SWITCH_PRO:
         case UniversalProtocol::XBOX360_WIRELESS_RECEIVER:
@@ -111,6 +113,77 @@ bool UniversalGamepadParser::parseXusbXbox360(
     out.ly = axisY(readS16(8));
     out.rx = axisX(readS16(10));
     out.ry = axisY(readS16(12));
+    out.dpadOriginal = out.dpad;
+
+    return true;
+}
+
+
+bool UniversalGamepadParser::parseXgipXboxOne(
+    UniversalDeviceMatch const& device,
+    uint8_t const* report,
+    uint16_t len,
+    GamepadState& out
+) const {
+    (void)device;
+
+    if (report == nullptr || len < 18) {
+        return false;
+    }
+
+    // Xbox One / Series wired GIP input packet.
+    // Command 0x20 carries the normal controller state.
+    if (report[0] != 0x20) {
+        return false;
+    }
+
+    const uint16_t rawButtons =
+        static_cast<uint16_t>(report[4]) |
+        (static_cast<uint16_t>(report[5]) << 8);
+
+    if (rawButtons & (1u << 8))  out.dpad |= GAMEPAD_MASK_UP;
+    if (rawButtons & (1u << 9))  out.dpad |= GAMEPAD_MASK_DOWN;
+    if (rawButtons & (1u << 10)) out.dpad |= GAMEPAD_MASK_LEFT;
+    if (rawButtons & (1u << 11)) out.dpad |= GAMEPAD_MASK_RIGHT;
+
+    if (rawButtons & (1u << 2))  out.buttons |= GAMEPAD_MASK_S2;
+    if (rawButtons & (1u << 3))  out.buttons |= GAMEPAD_MASK_S1;
+    if (rawButtons & (1u << 14)) out.buttons |= GAMEPAD_MASK_L3;
+    if (rawButtons & (1u << 15)) out.buttons |= GAMEPAD_MASK_R3;
+    if (rawButtons & (1u << 12)) out.buttons |= GAMEPAD_MASK_L1;
+    if (rawButtons & (1u << 13)) out.buttons |= GAMEPAD_MASK_R1;
+
+    if (rawButtons & (1u << 4)) out.buttons |= GAMEPAD_MASK_B1;
+    if (rawButtons & (1u << 5)) out.buttons |= GAMEPAD_MASK_B2;
+    if (rawButtons & (1u << 6)) out.buttons |= GAMEPAD_MASK_B3;
+    if (rawButtons & (1u << 7)) out.buttons |= GAMEPAD_MASK_B4;
+
+    const uint16_t lt10 =
+        static_cast<uint16_t>(report[6]) |
+        (static_cast<uint16_t>(report[7]) << 8);
+
+    const uint16_t rt10 =
+        static_cast<uint16_t>(report[8]) |
+        (static_cast<uint16_t>(report[9]) << 8);
+
+    out.lt = static_cast<uint8_t>(lt10 >> 2);
+    out.rt = static_cast<uint8_t>(rt10 >> 2);
+
+    if (out.lt != 0) out.buttons |= GAMEPAD_MASK_L2;
+    if (out.rt != 0) out.buttons |= GAMEPAD_MASK_R2;
+
+    auto readS16 = [report](uint8_t offset) -> int16_t {
+        const uint16_t raw =
+            static_cast<uint16_t>(report[offset]) |
+            (static_cast<uint16_t>(report[offset + 1]) << 8);
+
+        return static_cast<int16_t>(raw);
+    };
+
+    out.lx = axisX(readS16(10));
+    out.ly = axisY(readS16(12));
+    out.rx = axisX(readS16(14));
+    out.ry = axisY(readS16(16));
     out.dpadOriginal = out.dpad;
 
     return true;
