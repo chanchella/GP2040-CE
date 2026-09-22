@@ -83,24 +83,16 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
         );
     }
 
-    // Some G808 receivers have also been observed in a pre-XInput/raw stage
-    // as 24C6:542A. If that stage is HID, the generic HID parser can consume
-    // it. Otherwise keep the identity visible as vendor-specific for a later
-    // mode-switch driver rather than pretending it is already XInput.
+    // 24C6:542A is a publicly catalogued Xbox One-family controller
+    // identity (Spectra/PowerA-style), not a Redragon G808 identity.
     if (probe.vid == 0x24C6 && probe.pid == 0x542A) {
-        const bool hidInterface = probe.interfaceClass == 0x03;
-
         return makeMatch(
             probe,
-            UniversalTransport::USB_2_4GHZ_DONGLE,
+            UniversalTransport::USB_WIRED,
             UniversalDeviceClass::GAMEPAD,
-            hidInterface
-                ? UniversalProtocol::HID_GAMEPAD
-                : UniversalProtocol::VENDOR_SPECIFIC,
-            hidInterface
-                ? UniversalDriverFamily::HID
-                : UniversalDriverFamily::VENDOR,
-            UniversalDeviceProfileId::REDRAGON_G808_RAW_24C6_542A
+            UniversalProtocol::XGIP_XBOX_ONE,
+            UniversalDriverFamily::XGIP,
+            UniversalDeviceProfileId::XBOX_ONE_SPECTRA_24C6_542A
         );
     }
 
@@ -117,6 +109,7 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
         );
     }
 
+    // A separate Shanwan/Betop-style HID identity seen in public databases.
     if (probe.vid == 0x20BC && probe.pid == 0x5500) {
         return makeMatch(
             probe,
@@ -124,7 +117,7 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
             UniversalDeviceClass::GAMEPAD,
             UniversalProtocol::HID_GAMEPAD,
             UniversalDriverFamily::HID,
-            UniversalDeviceProfileId::SHANWAN_FALLBACK_20BC_5500
+            UniversalDeviceProfileId::SHANWAN_HID_20BC_5500
         );
     }
 
@@ -385,9 +378,9 @@ const char* UniversalDeviceRegistry::profileName(
         case UniversalDeviceProfileId::GENERIC_XID: return "GENERIC_XID";
         case UniversalDeviceProfileId::XUSB_045E_028E_COMPAT: return "XUSB_045E_028E_COMPAT";
         case UniversalDeviceProfileId::REDRAGON_G808_2563_0575: return "REDRAGON_G808_2563_0575";
-        case UniversalDeviceProfileId::REDRAGON_G808_RAW_24C6_542A: return "REDRAGON_G808_RAW_24C6_542A";
+        case UniversalDeviceProfileId::XBOX_ONE_SPECTRA_24C6_542A: return "XBOX_ONE_SPECTRA_24C6_542A";
         case UniversalDeviceProfileId::SHANWAN_FALLBACK_20BC_0055: return "SHANWAN_FALLBACK_20BC_0055";
-        case UniversalDeviceProfileId::SHANWAN_FALLBACK_20BC_5500: return "SHANWAN_FALLBACK_20BC_5500";
+        case UniversalDeviceProfileId::SHANWAN_HID_20BC_5500: return "SHANWAN_HID_20BC_5500";
         case UniversalDeviceProfileId::GIGAMAX_0079_0006: return "GIGAMAX_0079_0006";
         case UniversalDeviceProfileId::XBOX_ONE_S_045E_02EA: return "XBOX_ONE_S_045E_02EA";
         case UniversalDeviceProfileId::SONY_DS3_054C_0268: return "SONY_DS3_054C_0268";
