@@ -169,6 +169,7 @@ src/gp2040aux.cpp
 src/gamepad.cpp
 src/gamepad/GamepadState.cpp
 src/input/universal_input_manager.cpp
+src/output/universal_output_manager.cpp
 src/addonmanager.cpp
 src/playerleds.cpp
 src/drivers/shared/xinput_host.cpp
@@ -267,6 +268,7 @@ src/addons/spi_analog_ads1256.cpp
 src/addons/gamepad_usb_host.cpp
 src/addons/gamepad_usb_host_listener.cpp
 src/addons/universal_xinput_host.cpp
+src/addons/universal_output_router.cpp
 src/addons/tg16_input.cpp
 src/animationstation/animation.cpp
 src/animationstation/animationstation.cpp
