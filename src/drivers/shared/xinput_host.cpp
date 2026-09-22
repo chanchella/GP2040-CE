@@ -32,6 +32,7 @@
 #include "host/usbh.h"
 #include "host/usbh_pvt.h"
 #include "drivers/shared/xinput_host.h"
+#include "input/universal_device_registry.h"
 
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
@@ -264,25 +265,30 @@ bool xinputh_open(uint8_t rhport, uint8_t dev_addr, tusb_desc_interface_t const 
     uint16_t pid = 0;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
 
+    UniversalUsbProbe probe {};
+    probe.vid = vid;
+    probe.pid = pid;
+    probe.interfaceClass = desc_itf->bInterfaceClass;
+    probe.interfaceSubClass = desc_itf->bInterfaceSubClass;
+    probe.interfaceProtocol = desc_itf->bInterfaceProtocol;
+    probe.endpointCount = desc_itf->bNumEndpoints;
+
+    const UniversalDeviceMatch deviceMatch =
+        UDEVREG.classifyUsb(probe);
+
     const bool xbox360Signature =
-        desc_itf->bInterfaceSubClass == 0x5D &&
-        (
-            desc_itf->bInterfaceProtocol == 0x01 ||
-            desc_itf->bInterfaceProtocol == 0x02 ||
-            desc_itf->bInterfaceProtocol == 0x03 ||
-            desc_itf->bInterfaceProtocol == 0x81
-        );
+        deviceMatch.protocol == UniversalProtocol::XUSB_XBOX360 ||
+        deviceMatch.protocol == UniversalProtocol::XUSB_AUXILIARY ||
+        deviceMatch.protocol == UniversalProtocol::XBOX360_WIRELESS_RECEIVER;
 
     const bool xboxOneSignature =
-        desc_itf->bInterfaceSubClass == 0x47 &&
-        desc_itf->bInterfaceProtocol == 0xD0 &&
+        deviceMatch.protocol == UniversalProtocol::XGIP_XBOX_ONE &&
         desc_itf->bNumEndpoints > 0;
 
-    // Exact compatibility fallback for the wired T29/XUSB identity
-    // already proven in the previous firmware.
+    // Compatibility fallback previously hard-coded for the proven
+    // 045E:028E path now comes from the central device registry.
     const bool exactT29Fallback =
-        vid == 0x045E &&
-        pid == 0x028E &&
+        deviceMatch.profile == UniversalDeviceProfileId::XUSB_045E_028E_COMPAT &&
         desc_itf->bNumEndpoints >= 2;
 
     TU_VERIFY(
