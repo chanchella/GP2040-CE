@@ -23,8 +23,9 @@ void UniversalXInputHostAddon::setup() {
 }
 
 void UniversalXInputHostAddon::preprocess() {
-    // G1C hot-plug recovery remains in place.
-    // If a mounted endpoint is idle, retry the receive arm.
+    // Input transport only.
+    // Keep mounted XInput endpoints armed, but do not touch the
+    // GP2040 output state here. G2B owns output routing separately.
     for (uint8_t i = 0; i < USB_SLOT_COUNT; i++) {
         if (
             slots[i].mounted &&
@@ -34,25 +35,6 @@ void UniversalXInputHostAddon::preprocess() {
             tuh_xinput_receive_report(slots[i].devAddr, slots[i].instance);
         }
     }
-
-    // G2A compatibility bridge:
-    // Global USB Slot 1 feeds the existing single GP2040 output.
-    // It is intentionally a read from UniversalInputManager now;
-    // the USB parser no longer owns or writes gamepad->state directly.
-    UniversalInputSlotSnapshot primary {};
-    if (
-        !UINPUT.snapshot(UNIVERSAL_INPUT_SLOT_USB_1, primary) ||
-        !primary.connected ||
-        !primary.hasReport
-    ) {
-        return;
-    }
-
-    Gamepad* gamepad = Storage::getInstance().GetGamepad();
-    gamepad->hasAnalogTriggers = true;
-    gamepad->hasLeftAnalogStick = true;
-    gamepad->hasRightAnalogStick = true;
-    gamepad->state = primary.state;
 }
 
 void UniversalXInputHostAddon::resetSlot(uint8_t slot) {
