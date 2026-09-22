@@ -7,6 +7,7 @@
 #include "drivers/xinput/XInputDescriptors.h"
 
 static constexpr uint8_t UNIVERSAL_XINPUT_DEVICE_COUNT = 4;
+static constexpr uint8_t UNIVERSAL_UNIVERSAL_XINPUT_OUT_SIZE = 32;
 
 class UniversalXInputDevice {
 public:
@@ -67,8 +68,8 @@ private:
     XInputReport lastReport[UNIVERSAL_XINPUT_DEVICE_COUNT] {};
     bool lastReportValid[UNIVERSAL_XINPUT_DEVICE_COUNT] {};
 
-    uint8_t outTransferBuffer[UNIVERSAL_XINPUT_DEVICE_COUNT][XINPUT_OUT_SIZE] {};
-    uint8_t lastOutReport[UNIVERSAL_XINPUT_DEVICE_COUNT][XINPUT_OUT_SIZE] {};
+    uint8_t outTransferBuffer[UNIVERSAL_XINPUT_DEVICE_COUNT][UNIVERSAL_XINPUT_OUT_SIZE] {};
+    uint8_t lastOutReport[UNIVERSAL_XINPUT_DEVICE_COUNT][UNIVERSAL_XINPUT_OUT_SIZE] {};
     bool outReportPending[UNIVERSAL_XINPUT_DEVICE_COUNT] {};
 };
 
