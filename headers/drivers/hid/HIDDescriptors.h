@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "device/oag_identity.h"
+
 #include <stdint.h>
 
 #define HID_ENDPOINT_SIZE 64
@@ -65,8 +67,8 @@ typedef struct __attribute((packed, aligned(1)))
 } HIDReport;
 
 static const uint8_t hid_string_language[]     = { 0x09, 0x04 };
-static const uint8_t hid_string_manufacturer[] = "Open Stick Community";
-static const uint8_t hid_string_product[]      = "GP2040-CE (Generic)";
+static const uint8_t hid_string_manufacturer[] = OAG_USB_MANUFACTURER_STRING;
+static const uint8_t hid_string_product[]      = OAG_USB_PRODUCT_STRING;
 static const uint8_t hid_string_version[]      = "1.0";
 
 static const uint8_t *hid_string_descriptors[] __attribute__((unused)) =
