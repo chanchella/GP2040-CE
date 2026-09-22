@@ -1,0 +1,101 @@
+name: Universal Dongle G1 Pico2
+
+on:
+  push:
+    branches:
+      - universal-dongle/g1
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  web:
+    uses: ./.github/workflows/node.js.yml
+
+  build-g1-pico2:
+    needs: web
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout G1 branch with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.17.x"
+
+      - name: Setup Pico SDK pipeline
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Download Web Config artifact
+        uses: actions/download-artifact@v4.1.2
+        with:
+          name: fsData
+          path: ${{ github.workspace }}/lib/httpd/
+
+      - name: G1A patch Pico-PIO-USB for three root ports
+        shell: bash
+        run: |
+          set -euo pipefail
+          CFG="lib/pico_pio_usb/src/pio_usb_configuration.h"
+          test -f "$CFG"
+          grep -q '^#define PIO_USB_ROOT_PORT_CNT 2$' "$CFG"
+          sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G1A/' "$CFG"
+          grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
+
+      - name: Verify G1A source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '#define USB_PERIPHERAL_PIN_DPLUS 2' configs/Pico2/BoardConfig.h
+          grep -q '#define UNIVERSAL_XINPUT_HOST_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'G1A_PORT2_DP = 4' src/usbhostmanager.cpp
+          grep -q 'G1A_PORT3_DP = 6' src/usbhostmanager.cpp
+          grep -q 'UniversalXInputHostAddon' src/addons/universal_xinput_host.cpp
+          grep -q '^#define PIO_USB_ROOT_PORT_CNT 3' lib/pico_pio_usb/src/pio_usb_configuration.h
+          echo "G1A_SOURCE_VERIFY=PASS"
+
+      - name: Configure Pico2
+        shell: bash
+        run: |
+          PICO_SDK_PATH=${{ github.workspace }}/pico-sdk \
+          GP2040_BOARDCONFIG=Pico2 \
+          SKIP_WEBBUILD=TRUE \
+          SKIP_SUBMODULES=TRUE \
+          cmake -B ${{ github.workspace }}/build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DPICO_BOARD=pico2 \
+            -DPICO_PLATFORM=rp2350-arm-s
+
+      - name: Build G1A
+        shell: bash
+        run: |
+          GP2040_BOARDCONFIG=Pico2 \
+          cmake --build ${{ github.workspace }}/build \
+            --config ${{ env.BUILD_TYPE }} \
+            --parallel 2
+
+      - name: Show build outputs
+        shell: bash
+        run: |
+          find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
+
+      - name: Upload G1A UF2
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: Universal-Dongle-G1A-Pico2-UF2
+          path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
+          if-no-files-found: error
+
+      - name: Upload G1A ELF
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: Universal-Dongle-G1A-Pico2-ELF
+          path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
+          if-no-files-found: error
