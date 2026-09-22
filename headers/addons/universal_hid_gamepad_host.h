@@ -93,6 +93,11 @@ private:
         uint8_t bitSize
     );
 
+    static int32_t signedFieldValue(
+        HidField const& field,
+        uint32_t raw
+    );
+
     static uint16_t scaleAxis(
         int32_t value,
         int32_t logicalMin,
