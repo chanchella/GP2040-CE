@@ -25,7 +25,7 @@ public:
     void unmount(uint8_t dev_addr) override;
     void report_received(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) override;
     void report_sent(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) override {}
-    void set_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override {}
+    void set_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override;
     void get_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override {}
 
 private:
@@ -61,6 +61,8 @@ private:
 
         bool parsed = false;
         bool isGamepad = false;
+        bool hasOutputReport = false;
+        bool hasVendorOutputReport = false;
         uint16_t topUsagePage = 0;
         uint16_t topUsage = 0;
 
@@ -75,6 +77,12 @@ private:
         UniversalDeviceMatch device {};
         GamepadState lastState {};
         bool lastStateValid = false;
+
+        uint32_t feedbackGeneration = 0;
+        bool rumblePending = false;
+        bool dragonRiseLatchPending = false;
+        uint8_t rumbleBuffer[8] {};
+        uint8_t rumbleLength = 0;
     };
 
     InterfaceState interfaces[MAX_INTERFACES] {};
@@ -85,6 +93,8 @@ private:
     void resetInterface(InterfaceState& state);
     void parseDescriptor(InterfaceState& state);
     void processReport(InterfaceState& state);
+    void serviceRumble(InterfaceState& state);
+    void sendDragonRiseLatch(InterfaceState& state);
 
     static uint32_t extractBits(
         uint8_t const* data,
