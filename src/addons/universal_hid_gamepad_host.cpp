@@ -6,6 +6,7 @@
 #include "host/usbh.h"
 #include "class/hid/hid_host.h"
 #include "peripheralmanager.h"
+#include "output/universal_feedback_manager.h"
 #include "tusb.h"
 
 namespace {
@@ -137,6 +138,8 @@ void UniversalHIDGamepadHostAddon::preprocess() {
             state.reportPending = false;
             processReport(state);
         }
+
+        serviceRumble(state);
     }
 }
 
@@ -281,11 +284,156 @@ void UniversalHIDGamepadHostAddon::report_received(
     state->reportPending = true;
 }
 
+void UniversalHIDGamepadHostAddon::set_report_complete(
+    uint8_t dev_addr,
+    uint8_t instance,
+    uint8_t report_id,
+    uint8_t report_type,
+    uint16_t len
+) {
+    (void)report_id;
+    (void)report_type;
+
+    InterfaceState* state =
+        findInterface(dev_addr, instance);
+
+    if (state == nullptr) {
+        return;
+    }
+
+    state->rumblePending = false;
+
+    if (len == 0) {
+        state->dragonRiseLatchPending = false;
+        return;
+    }
+
+    if (state->dragonRiseLatchPending) {
+        state->dragonRiseLatchPending = false;
+        sendDragonRiseLatch(*state);
+    }
+}
+
+void UniversalHIDGamepadHostAddon::sendDragonRiseLatch(
+    InterfaceState& state
+) {
+    if (
+        !state.active ||
+        state.rumblePending ||
+        !state.hasOutputReport
+    ) {
+        return;
+    }
+
+    memset(state.rumbleBuffer, 0, sizeof(state.rumbleBuffer));
+    state.rumbleBuffer[0] = 0xFA;
+    state.rumbleBuffer[1] = 0xFE;
+    state.rumbleLength = 7;
+
+    if (
+        tuh_hid_set_report(
+            state.devAddr,
+            state.instance,
+            0,
+            HID_REPORT_TYPE_OUTPUT,
+            state.rumbleBuffer,
+            state.rumbleLength
+        )
+    ) {
+        state.rumblePending = true;
+    }
+}
+
+void UniversalHIDGamepadHostAddon::serviceRumble(
+    InterfaceState& state
+) {
+    if (
+        !state.active ||
+        state.globalSlot == UNIVERSAL_INPUT_SLOT_INVALID ||
+        state.rumblePending ||
+        !state.hasOutputReport
+    ) {
+        return;
+    }
+
+    UniversalRumbleSnapshot feedback {};
+    if (!UFEEDBACK.snapshot(state.globalSlot, feedback)) {
+        return;
+    }
+
+    if (feedback.generation == state.feedbackGeneration) {
+        return;
+    }
+
+    const bool shanWanFamily =
+        state.device.profile == UniversalDeviceProfileId::SHANWAN_HID_2563_0575 ||
+        state.device.profile == UniversalDeviceProfileId::REDRAGON_G808_2563_0526 ||
+        state.device.profile == UniversalDeviceProfileId::REDRAGON_G808_2563_0575;
+
+    const bool dragonRiseFamily =
+        state.device.profile == UniversalDeviceProfileId::GIGAMAX_0079_0006 ||
+        (state.vid == 0x0079 && state.pid == 0x0006);
+
+    bool queued = false;
+
+    memset(state.rumbleBuffer, 0, sizeof(state.rumbleBuffer));
+
+    if (shanWanFamily && state.hasVendorOutputReport) {
+        // ShanWan rich-mode dual-rumble output packet.
+        state.rumbleBuffer[0] = 0x02;
+        state.rumbleBuffer[1] = 0x08;
+        state.rumbleBuffer[2] = feedback.weak;
+        state.rumbleBuffer[3] = feedback.strong;
+        state.rumbleBuffer[4] = 0xFF;
+        state.rumbleLength = 8;
+
+        queued = tuh_hid_set_report(
+            state.devAddr,
+            state.instance,
+            0,
+            HID_REPORT_TYPE_OUTPUT,
+            state.rumbleBuffer,
+            state.rumbleLength
+        );
+    } else if (dragonRiseFamily) {
+        state.rumbleLength = 7;
+
+        if (feedback.strong != 0 || feedback.weak != 0) {
+            state.rumbleBuffer[0] = 0x51;
+            state.rumbleBuffer[1] = 0x00;
+            state.rumbleBuffer[2] =
+                feedback.weak == 0x0A ? 0x0B : feedback.weak;
+            state.rumbleBuffer[4] = feedback.strong;
+            state.dragonRiseLatchPending = true;
+        } else {
+            state.rumbleBuffer[0] = 0xF3;
+            state.rumbleBuffer[1] = 0x00;
+            state.dragonRiseLatchPending = false;
+        }
+
+        queued = tuh_hid_set_report(
+            state.devAddr,
+            state.instance,
+            0,
+            HID_REPORT_TYPE_OUTPUT,
+            state.rumbleBuffer,
+            state.rumbleLength
+        );
+    }
+
+    if (queued) {
+        state.rumblePending = true;
+        state.feedbackGeneration = feedback.generation;
+    }
+}
+
 void UniversalHIDGamepadHostAddon::parseDescriptor(
     InterfaceState& state
 ) {
     state.parsed = true;
     state.isGamepad = false;
+    state.hasOutputReport = false;
+    state.hasVendorOutputReport = false;
     state.fieldCount = 0;
     state.topUsagePage = 0;
     state.topUsage = 0;
@@ -395,6 +543,28 @@ void UniversalHIDGamepadHostAddon::parseDescriptor(
                         static_cast<uint16_t>(global.reportSize) *
                         static_cast<uint16_t>(global.reportCount)
                     );
+                }
+
+                clearLocal(local);
+                continue;
+            }
+
+            // OUTPUT
+            if (tag == 9) {
+                const bool isConstant =
+                    (unsignedValue & 0x01u) != 0;
+
+                if (
+                    gamepadCollectionDepth != 0 &&
+                    !isConstant &&
+                    global.reportSize != 0 &&
+                    global.reportCount != 0
+                ) {
+                    state.hasOutputReport = true;
+
+                    if (global.usagePage >= 0xFF00) {
+                        state.hasVendorOutputReport = true;
+                    }
                 }
 
                 clearLocal(local);
