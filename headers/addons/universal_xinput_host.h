@@ -49,8 +49,7 @@ private:
         uint8_t devAddr,
         uint8_t instance,
         uint8_t subtype,
-        uint16_t vid,
-        uint16_t pid
+        UniversalDeviceMatch const& match
     );
 
     static uint16_t axisX(int16_t value);
