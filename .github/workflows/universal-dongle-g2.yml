@@ -1,4 +1,4 @@
-name: Universal Dongle G2 Pico2
+name: OAG Vortex Universal Dongle G2 Pico2
 
 on:
   push:
@@ -49,7 +49,7 @@ jobs:
           sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
           grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
 
-      - name: Verify G2B source invariants
+      - name: Verify G2B OAG identity invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -66,7 +66,14 @@ jobs:
           grep -q 'UNIVERSAL_OUTPUT_SLOT_1' src/addons/universal_output_router.cpp
           grep -q 'src/input/universal_input_manager.cpp' CMakeLists.txt
           grep -q '^#define PIO_USB_ROOT_PORT_CNT 3' lib/pico_pio_usb/src/pio_usb_configuration.h
-          echo "G2B_SOURCE_VERIFY=PASS"
+          grep -q '#define OAG_PRODUCT_NAME "OAG Vortex Ultra Gaming"' headers/device/oag_identity.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/xinput/XInputDescriptors.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/hid/HIDDescriptors.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/ps3/PS3Descriptors.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/ps4/PS4Descriptors.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/xbone/XBOneDescriptors.h
+          grep -q 'OAG_BLUETOOTH_DEVICE_NAME' headers/device/oag_identity.h
+          echo "G2B_OAG_IDENTITY_VERIFY=PASS"
 
       - name: Configure Pico2
         shell: bash
@@ -80,7 +87,7 @@ jobs:
             -DPICO_BOARD=pico2 \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build G2B
+      - name: Build G2B OAG Identity
         shell: bash
         run: |
           GP2040_BOARDCONFIG=Pico2 \
@@ -93,16 +100,16 @@ jobs:
         run: |
           find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
 
-      - name: Upload G2B UF2
+      - name: Upload G2B OAG UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: Universal-Dongle-G2B-Pico2-UF2
+          name: OAG-Vortex-G2B-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 
-      - name: Upload G2B ELF
+      - name: Upload G2B OAG ELF
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: Universal-Dongle-G2B-Pico2-ELF
+          name: OAG-Vortex-G2B-Pico2-ELF
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
           if-no-files-found: error
