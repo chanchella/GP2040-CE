@@ -11,22 +11,22 @@ static const uint8_t XONE_POWER_ON[] = {
     0x05, 0x20, 0x00, 0x01, 0x00
 };
 
-static const uint8_t XONE_SYSTEM_INIT[] = {
-    0x05, 0x20, 0x00, 0x0F,
-    0x06, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x55,
-    0x53, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00
+static const uint8_t XONE_S_INIT[] = {
+    0x05, 0x20, 0x00, 0x0F, 0x06
 };
 
 static const uint8_t XONE_EXTRA_INPUT[] = {
-    0x4D, 0x10, 0x00,
+    0x4D, 0x10, 0x01,
     0x02, 0x07, 0x00
 };
 
 static const uint8_t XONE_LED_ON[] = {
     0x0A, 0x20, 0x00,
     0x03, 0x00, 0x01, 0x14
+};
+
+static const uint8_t XONE_AUTH_DONE[] = {
+    0x06, 0x20, 0x00, 0x02, 0x01, 0x00
 };
 
 } // namespace
@@ -350,8 +350,8 @@ void UniversalXInputHostAddon::serviceXgipInit(uint8_t localSlot) {
             break;
 
         case XgipInitPhase::SYSTEM_INIT:
-            packet = XONE_SYSTEM_INIT;
-            packetLen = sizeof(XONE_SYSTEM_INIT);
+            packet = XONE_S_INIT;
+            packetLen = sizeof(XONE_S_INIT);
             break;
 
         case XgipInitPhase::EXTRA_INPUT:
@@ -362,6 +362,11 @@ void UniversalXInputHostAddon::serviceXgipInit(uint8_t localSlot) {
         case XgipInitPhase::LED:
             packet = XONE_LED_ON;
             packetLen = sizeof(XONE_LED_ON);
+            break;
+
+        case XgipInitPhase::AUTH_DONE:
+            packet = XONE_AUTH_DONE;
+            packetLen = sizeof(XONE_AUTH_DONE);
             break;
 
         default:
@@ -392,12 +397,23 @@ void UniversalXInputHostAddon::advanceXgipInit(uint8_t localSlot) {
 
     switch (slot.xgipPhase) {
         case XgipInitPhase::POWER:
-            slot.xgipPhase = XgipInitPhase::SYSTEM_INIT;
+            // Xbox One S and Elite Series 2 need the additional POWER
+            // initialization command after ordinary power-on. Other XGIP
+            // controllers can continue directly to the common LED/auth path.
+            if (
+                slot.device.vid == 0x045E &&
+                (
+                    slot.device.pid == 0x02EA ||
+                    slot.device.pid == 0x0B00
+                )
+            ) {
+                slot.xgipPhase = XgipInitPhase::SYSTEM_INIT;
+            } else {
+                slot.xgipPhase = XgipInitPhase::LED;
+            }
             break;
 
         case XgipInitPhase::SYSTEM_INIT:
-            // 045E:0B00 needs the extra input-enable packet used by the
-            // proven earlier OAG host implementation.
             if (slot.device.vid == 0x045E && slot.device.pid == 0x0B00) {
                 slot.xgipPhase = XgipInitPhase::EXTRA_INPUT;
             } else {
@@ -410,6 +426,10 @@ void UniversalXInputHostAddon::advanceXgipInit(uint8_t localSlot) {
             break;
 
         case XgipInitPhase::LED:
+            slot.xgipPhase = XgipInitPhase::AUTH_DONE;
+            break;
+
+        case XgipInitPhase::AUTH_DONE:
             slot.xgipPhase = XgipInitPhase::READY;
             break;
 
