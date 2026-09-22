@@ -119,6 +119,29 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
         );
     }
 
+
+    if (probe.vid == 0x054C && probe.pid == 0x0CE6) {
+        return makeMatch(
+            probe,
+            UniversalTransport::USB_WIRED,
+            UniversalDeviceClass::GAMEPAD,
+            UniversalProtocol::SONY_DUALSENSE,
+            UniversalDriverFamily::PLAYSTATION,
+            UniversalDeviceProfileId::SONY_DUALSENSE_054C_0CE6
+        );
+    }
+
+    if (probe.vid == 0x057E && probe.pid == 0x2009) {
+        return makeMatch(
+            probe,
+            UniversalTransport::USB_WIRED,
+            UniversalDeviceClass::GAMEPAD,
+            UniversalProtocol::NINTENDO_SWITCH_PRO,
+            UniversalDriverFamily::SWITCH,
+            UniversalDeviceProfileId::NINTENDO_SWITCH_PRO_057E_2009
+        );
+    }
+
     return UniversalDeviceMatch {};
 }
 
@@ -296,6 +319,8 @@ const char* UniversalDeviceRegistry::profileName(
         case UniversalDeviceProfileId::SONY_DS3_054C_0268: return "SONY_DS3_054C_0268";
         case UniversalDeviceProfileId::SONY_DS4_054C_05C4: return "SONY_DS4_054C_05C4";
         case UniversalDeviceProfileId::SONY_DS4_054C_09CC: return "SONY_DS4_054C_09CC";
+        case UniversalDeviceProfileId::SONY_DUALSENSE_054C_0CE6: return "SONY_DUALSENSE_054C_0CE6";
+        case UniversalDeviceProfileId::NINTENDO_SWITCH_PRO_057E_2009: return "NINTENDO_SWITCH_PRO_057E_2009";
         case UniversalDeviceProfileId::NONE:
         default:
             return "NONE";
