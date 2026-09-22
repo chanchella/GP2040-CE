@@ -49,7 +49,7 @@ jobs:
           sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
           grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
 
-      - name: Verify G2C0 universal registry invariants
+      - name: Verify G2C0B parser foundation invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -89,7 +89,17 @@ jobs:
           grep -q 'UDEVREG.classifyUsb' src/addons/universal_xinput_host.cpp
           grep -q 'UDEVREG.classifyUsb' src/drivers/shared/xinput_host.cpp
           grep -q 'src/input/universal_device_registry.cpp' CMakeLists.txt
-          echo "G2C0_UNIVERSAL_REGISTRY_VERIFY=PASS"
+          grep -q 'class UniversalGamepadParser' headers/input/universal_gamepad_parser.h
+          grep -q 'parseXusbXbox360' src/input/universal_gamepad_parser.cpp
+          grep -q 'UGAMEPADPARSER.parse' src/addons/universal_xinput_host.cpp
+          ! grep -q 'parseXbox360Report' src/addons/universal_xinput_host.cpp
+          grep -q 'src/input/universal_gamepad_parser.cpp' CMakeLists.txt
+          grep -q 'GIMX' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q 'GPL-3.0' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q 'BlueRetro' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q 'Apache-2.0' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q 'HID-Remapper' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          echo "G2C0B_PARSER_FOUNDATION_VERIFY=PASS"
 
       - name: Configure Pico2
         shell: bash
@@ -103,7 +113,7 @@ jobs:
             -DPICO_BOARD=pico2 \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build G2C0 Universal Registry
+      - name: Build G2C0B Parser Foundation
         shell: bash
         run: |
           GP2040_BOARDCONFIG=Pico2 \
@@ -116,16 +126,16 @@ jobs:
         run: |
           find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
 
-      - name: Upload G2C0 UF2
+      - name: Upload G2C0B UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C0-Pico2-UF2
+          name: OAG-Vortex-G2C0B-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 
-      - name: Upload G2C0 ELF
+      - name: Upload G2C0B ELF
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C0-Pico2-ELF
+          name: OAG-Vortex-G2C0B-Pico2-ELF
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
           if-no-files-found: error
