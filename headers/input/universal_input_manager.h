@@ -84,6 +84,21 @@ public:
 
     void disconnect(uint8_t slot);
 
+    // Shared allocator for all USB controller transports.
+    // Slot 0 remains reserved for Bluetooth. USB devices are assigned
+    // deterministically to the first free slot in 1..3.
+    uint8_t claimUsbSlot(
+        UniversalInputSource source,
+        UniversalDeviceMatch const& match,
+        uint8_t devAddr,
+        uint8_t instance
+    );
+
+    void releaseUsbDevice(
+        UniversalInputSource source,
+        uint8_t devAddr
+    );
+
     bool publish(uint8_t slot, GamepadState const& state);
 
     bool snapshot(
