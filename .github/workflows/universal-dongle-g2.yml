@@ -57,7 +57,7 @@ jobs:
           grep -q 'skip_set_idle' lib/tinyusb/src/class/hid/hid_host.c
           grep -q '0x2563' lib/tinyusb/src/class/hid/hid_host.c
 
-      - name: Verify G2C1 universal HID + browser output invariants
+      - name: Verify G2C2 browser + per-slot rumble invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -126,7 +126,8 @@ jobs:
           grep -q 'tud_hid_n_report' src/drivers/oag/OAGMultiHIDDriver.cpp
           grep -q 'new OAGMultiHIDDriver' src/drivermanager.cpp
           grep -q 'src/drivers/oag/OAGMultiHIDDriver.cpp' CMakeLists.txt
-          grep -q 'REDRAGON_G808_2563_0575' src/input/universal_device_registry.cpp
+          grep -q 'SHANWAN_HID_2563_0575' src/input/universal_device_registry.cpp
+          grep -q 'REDRAGON_G808_2563_0526' src/input/universal_device_registry.cpp
           grep -q 'SHANWAN_FALLBACK_20BC_0055' src/input/universal_device_registry.cpp
           grep -q 'SHANWAN_HID_20BC_5500' src/input/universal_device_registry.cpp
           grep -q 'XBOX_ONE_SPECTRA_24C6_542A' src/input/universal_device_registry.cpp
@@ -138,7 +139,21 @@ jobs:
           grep -q 'USAGE_PAGE_SIMULATION' src/addons/universal_hid_gamepad_host.cpp
           grep -q 'knownZrRightStick' src/addons/universal_hid_gamepad_host.cpp
           grep -q 'patch_oag_tinyusb_hid_host.py' .github/workflows/universal-dongle-g2.yml
-          echo "G2C1_UNIVERSAL_INPUT_BROWSER_OUTPUT_VERIFY=PASS"
+          grep -q 'OAG_PC_PHYSICAL_TO_LOGICAL' headers/output/oag_pc_slot_map.h
+          grep -q 'src/output/universal_feedback_manager.cpp' CMakeLists.txt
+          grep -q 'class UniversalFeedbackManager' headers/output/universal_feedback_manager.h
+          grep -q 'UFEEDBACK.setRumble' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'oagPcLogicalSlot' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'oagPcLogicalSlot' src/drivers/oag/OAGMultiHIDDriver.cpp
+          grep -q 'OAG_HID_KEEPALIVE_MS' src/drivers/oag/OAGMultiHIDDriver.cpp
+          grep -q 'OAG Vortex Gamepad 1' src/drivers/oag/OAGMultiHIDDriver.cpp
+          grep -q 'report.lt = state.lt' src/drivers/oag/OAGMultiHIDDriver.cpp
+          grep -q 'serviceRumble' src/addons/universal_xinput_host.cpp
+          grep -q 'HID_REPORT_TYPE_OUTPUT' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'dragonRiseLatchPending' headers/addons/universal_hid_gamepad_host.h
+          grep -q 'new OAGMultiHIDDriver' src/drivermanager.cpp
+          grep -q 'new OAGMultiXInputDriver' src/drivermanager.cpp
+          echo "G2C2_BROWSER_RUMBLE_VERIFY=PASS"
 
       - name: Configure Pico2
         shell: bash
@@ -152,7 +167,7 @@ jobs:
             -DPICO_BOARD=pico2 \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build G2C1 Universal Input + Browser Output
+      - name: Build G2C2 Browser + Rumble Routing
         shell: bash
         run: |
           GP2040_BOARDCONFIG=Pico2 \
@@ -165,16 +180,16 @@ jobs:
         run: |
           find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
 
-      - name: Upload G2C1 UF2
+      - name: Upload G2C2 UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C1-Pico2-UF2
+          name: OAG-Vortex-G2C2-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 
-      - name: Upload G2C1 ELF
+      - name: Upload G2C2 ELF
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C1-Pico2-ELF
+          name: OAG-Vortex-G2C2-Pico2-ELF
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
           if-no-files-found: error
