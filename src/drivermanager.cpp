@@ -20,6 +20,9 @@
 #if defined(OAG_MULTI_XINPUT_ENABLED) && OAG_MULTI_XINPUT_ENABLED
 #include "drivers/oag/OAGMultiXInputDriver.h"
 #endif
+#if defined(OAG_PC_MULTI_HID_ENABLED) && OAG_PC_MULTI_HID_ENABLED
+#include "drivers/oag/OAGMultiHIDDriver.h"
+#endif
 
 #include "usbhostmanager.h"
 
@@ -71,7 +74,13 @@ void DriverManager::setup(InputMode mode) {
             driver = new XboxOriginalDriver();
             break;
         case INPUT_MODE_XINPUT:
-#if defined(OAG_MULTI_XINPUT_ENABLED) && OAG_MULTI_XINPUT_ENABLED
+#if defined(OAG_PC_MULTI_HID_ENABLED) && OAG_PC_MULTI_HID_ENABLED
+            // G2C1 PC/browser validation profile:
+            // expose four independent standards-compliant HID gamepads.
+            // The multi-XInput driver remains compiled as a separate backend
+            // for later platform-profile selection.
+            driver = new OAGMultiHIDDriver();
+#elif defined(OAG_MULTI_XINPUT_ENABLED) && OAG_MULTI_XINPUT_ENABLED
             driver = new OAGMultiXInputDriver();
 #else
             driver = new XInputDriver();
