@@ -37,8 +37,7 @@ new = """bool hidh_set_config(uint8_t daddr, uint8_t itf_num) {
 
   if (tuh_vid_pid_get(daddr, &vid, &pid)) {
     skip_set_idle =
-        (vid == 0x2563 && pid == 0x0575) ||
-        (vid == 0x24C6 && pid == 0x542A);
+        (vid == 0x2563 && pid == 0x0575);
   }
 
   tuh_xfer_t xfer;
@@ -60,7 +59,7 @@ if old not in text:
 text = text.replace(old, new, 1)
 path.write_text(text)
 
-if "skip_set_idle" not in text or "0x2563" not in text or "0x542A" not in text:
+if "skip_set_idle" not in text or "0x2563" not in text:
     raise SystemExit("OAG TinyUSB HID patch verification failed")
 
 print("OAG_TINYUSB_HID_QUIRK_PATCH=PASS")
