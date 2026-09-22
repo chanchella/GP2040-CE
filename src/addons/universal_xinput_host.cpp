@@ -3,6 +3,7 @@
 #include "peripheralmanager.h"
 #include "drivers/shared/xinput_host.h"
 #include "input/universal_gamepad_parser.h"
+#include "output/universal_feedback_manager.h"
 #include "tusb.h"
 
 namespace {
@@ -56,6 +57,7 @@ void UniversalXInputHostAddon::preprocess() {
         // Xbox One / Series wired controllers require a short normal GIP
         // initialization exchange before they begin ordinary input traffic.
         serviceXgipInit(i);
+        serviceRumble(i);
 
         // Retry/maintain the gameplay IN endpoint. The low-level XInput host
         // also re-arms on successful completion; this path recovers idle/busy
@@ -306,6 +308,96 @@ void UniversalXInputHostAddon::report_sent(
 
     slot.xgipTxPending = false;
     advanceXgipInit(static_cast<uint8_t>(slotIndex));
+}
+
+void UniversalXInputHostAddon::serviceRumble(
+    uint8_t localSlot
+) {
+    if (
+        localSlot >= USB_SLOT_COUNT ||
+        !slots[localSlot].mounted ||
+        slots[localSlot].globalSlot == UNIVERSAL_INPUT_SLOT_INVALID
+    ) {
+        return;
+    }
+
+    XInputTransportSlot& slot = slots[localSlot];
+
+    UniversalRumbleSnapshot feedback {};
+    if (!UFEEDBACK.snapshot(slot.globalSlot, feedback)) {
+        return;
+    }
+
+    if (feedback.generation == slot.feedbackGeneration) {
+        return;
+    }
+
+    // Do not collide with the Xbox One startup exchange.
+    if (
+        slot.device.protocol == UniversalProtocol::XGIP_XBOX_ONE &&
+        (
+            slot.xgipTxPending ||
+            slot.xgipPhase != XgipInitPhase::READY
+        )
+    ) {
+        return;
+    }
+
+    bool sent = false;
+
+    if (slot.device.protocol == UniversalProtocol::XUSB_XBOX360) {
+        const uint8_t rumble[8] = {
+            0x00, 0x08, 0x00,
+            feedback.strong,
+            feedback.weak,
+            0x00, 0x00, 0x00
+        };
+
+        sent = tuh_xinput_send_report(
+            slot.devAddr,
+            slot.instance,
+            rumble,
+            sizeof(rumble)
+        );
+    } else if (
+        slot.device.protocol == UniversalProtocol::XGIP_XBOX_ONE
+    ) {
+        // Xbox One / Series wired GIP rumble.
+        // Trigger motors are left at zero here; the two XInput motors
+        // are translated to the main left/right motors.
+        uint8_t rumble[13] = {
+            0x09, 0x00,
+            slot.xgipRumbleSequence,
+            0x09,
+            0x00,
+            0x0F,
+            0x00,
+            0x00,
+            feedback.strong,
+            feedback.weak,
+            0xFF,
+            0x00,
+            0x00
+        };
+
+        sent = tuh_xinput_send_report(
+            slot.devAddr,
+            slot.instance,
+            rumble,
+            sizeof(rumble)
+        );
+
+        if (sent) {
+            slot.xgipRumbleSequence++;
+            if (slot.xgipRumbleSequence == 0) {
+                slot.xgipRumbleSequence = 1;
+            }
+        }
+    }
+
+    if (sent) {
+        slot.feedbackGeneration = feedback.generation;
+    }
 }
 
 void UniversalXInputHostAddon::restartXgipInit(uint8_t localSlot) {
