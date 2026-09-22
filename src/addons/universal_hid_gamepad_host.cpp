@@ -768,6 +768,10 @@ void UniversalHIDGamepadHostAddon::processReport(
     }
 
     GamepadState out {};
+    out.lx = GAMEPAD_JOYSTICK_MID;
+    out.ly = GAMEPAD_JOYSTICK_MID;
+    out.rx = GAMEPAD_JOYSTICK_MID;
+    out.ry = GAMEPAD_JOYSTICK_MID;
 
     bool hasX = false;
     bool hasY = false;
