@@ -49,6 +49,15 @@ jobs:
           sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
           grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
 
+      - name: Patch TinyUSB HID enumeration quirks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/patch_oag_tinyusb_hid_host.py
+          grep -q 'skip_set_idle' lib/tinyusb/src/class/hid/hid_host.c
+          grep -q '0x2563' lib/tinyusb/src/class/hid/hid_host.c
+          grep -q '0x542A' lib/tinyusb/src/class/hid/hid_host.c
+
       - name: Verify G2C1 universal HID + browser output invariants
         shell: bash
         run: |
@@ -124,6 +133,9 @@ jobs:
           grep -q 'XBOX_ONE_S_045E_02EA' src/input/universal_device_registry.cpp
           grep -q 'parseXgipXboxOne' src/input/universal_gamepad_parser.cpp
           grep -q 'XONE_SYSTEM_INIT' src/addons/universal_xinput_host.cpp
+          grep -q 'USAGE_PAGE_SIMULATION' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'knownZrRightStick' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'patch_oag_tinyusb_hid_host.py' .github/workflows/universal-dongle-g2.yml
           echo "G2C1_UNIVERSAL_INPUT_BROWSER_OUTPUT_VERIFY=PASS"
 
       - name: Configure Pico2
