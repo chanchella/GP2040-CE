@@ -102,23 +102,6 @@ static bool gamepadUsage(uint16_t page, uint16_t usage) {
         );
 }
 
-static int32_t signedFieldValue(
-    UniversalHIDGamepadHostAddon::HidField const& field,
-    uint32_t raw
-) {
-    if (field.logicalMin >= 0 || field.bitSize >= 32) {
-        return static_cast<int32_t>(raw);
-    }
-
-    const uint32_t sign = 1u << (field.bitSize - 1u);
-
-    if (raw & sign) {
-        raw |= ~((1u << field.bitSize) - 1u);
-    }
-
-    return static_cast<int32_t>(raw);
-}
-
 } // namespace
 
 bool UniversalHIDGamepadHostAddon::available() {
@@ -595,6 +578,23 @@ uint32_t UniversalHIDGamepadHostAddon::extractBits(
     }
 
     return value;
+}
+
+int32_t UniversalHIDGamepadHostAddon::signedFieldValue(
+    HidField const& field,
+    uint32_t raw
+) {
+    if (field.logicalMin >= 0 || field.bitSize >= 32) {
+        return static_cast<int32_t>(raw);
+    }
+
+    const uint32_t sign = 1u << (field.bitSize - 1u);
+
+    if (raw & sign) {
+        raw |= ~((1u << field.bitSize) - 1u);
+    }
+
+    return static_cast<int32_t>(raw);
 }
 
 uint16_t UniversalHIDGamepadHostAddon::scaleAxis(
