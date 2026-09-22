@@ -15,6 +15,8 @@
 
 #include "device/oag_identity.h"
 #include "drivers/shared/driverhelper.h"
+#include "output/oag_pc_slot_map.h"
+#include "output/universal_feedback_manager.h"
 #include "output/universal_output_manager.h"
 #include "pico/unique_id.h"
 
@@ -144,16 +146,37 @@ static bool multiXinputXferCallback(
         return true;
     }
 
-    const int8_t slot = slotForOutEndpoint(epAddr);
-    if (slot < 0) {
+    const int8_t physicalSlot = slotForOutEndpoint(epAddr);
+    if (physicalSlot < 0) {
         return true;
+    }
+
+    // Standard Xbox 360 rumble packet from the PC:
+    // 00 08 00 <strong> <weak> 00 00 00
+    if (
+        xferredBytes >= 5 &&
+        outBuffers[physicalSlot][0] == 0x00 &&
+        outBuffers[physicalSlot][1] == 0x08
+    ) {
+        const uint8_t logicalSlot =
+            oagPcLogicalSlot(
+                static_cast<uint8_t>(physicalSlot)
+            );
+
+        if (logicalSlot != 0xFF) {
+            UFEEDBACK.setRumble(
+                logicalSlot,
+                outBuffers[physicalSlot][3],
+                outBuffers[physicalSlot][4]
+            );
+        }
     }
 
     // Keep the endpoint continuously armed for per-slot rumble / LED data.
     usbd_edpt_xfer(
         rhport,
-        endpointOut[slot],
-        outBuffers[slot],
+        endpointOut[physicalSlot],
+        outBuffers[physicalSlot],
         OAG_MULTI_XINPUT_ENDPOINT_SIZE
     );
 
@@ -237,6 +260,7 @@ static void armOutEndpoint(uint8_t slot) {
 
 void OAGMultiXInputDriver::initialize() {
     resetUsbState();
+    UFEEDBACK.resetAll();
     buildConfigurationDescriptor();
 
     class_driver = {
@@ -257,10 +281,18 @@ bool OAGMultiXInputDriver::process(Gamepad* gamepad) {
 
     bool anySent = false;
 
-    for (uint8_t slot = 0; slot < OAG_MULTI_XINPUT_SLOT_COUNT; slot++) {
+    for (
+        uint8_t physicalSlot = 0;
+        physicalSlot < OAG_MULTI_XINPUT_SLOT_COUNT;
+        physicalSlot++
+    ) {
+        const uint8_t logicalSlot =
+            oagPcLogicalSlot(physicalSlot);
+
         UniversalOutputSlotSnapshot output {};
         const bool hasOutput =
-            UOUTPUT.snapshot(slot, output) &&
+            logicalSlot != 0xFF &&
+            UOUTPUT.snapshot(logicalSlot, output) &&
             output.connected &&
             output.hasReport;
 
@@ -268,13 +300,13 @@ bool OAGMultiXInputDriver::process(Gamepad* gamepad) {
             hasOutput ? buildXinputReport(output.state) : neutralReport();
 
         if (
-            endpointIn[slot] != 0 &&
+            endpointIn[physicalSlot] != 0 &&
             tud_ready() &&
-            !usbd_edpt_busy(0, endpointIn[slot]) &&
+            !usbd_edpt_busy(0, endpointIn[physicalSlot]) &&
             (
-                !lastReportValid[slot] ||
+                !lastReportValid[physicalSlot] ||
                 memcmp(
-                    &lastReports[slot],
+                    &lastReports[physicalSlot],
                     &report,
                     sizeof(XInputReport)
                 ) != 0
@@ -282,25 +314,25 @@ bool OAGMultiXInputDriver::process(Gamepad* gamepad) {
         ) {
             // TinyUSB completes asynchronously, so the transfer buffer
             // must outlive this process() iteration.
-            txReports[slot] = report;
+            txReports[physicalSlot] = report;
 
-            usbd_edpt_claim(0, endpointIn[slot]);
+            usbd_edpt_claim(0, endpointIn[physicalSlot]);
             const bool queued = usbd_edpt_xfer(
                 0,
-                endpointIn[slot],
-                reinterpret_cast<uint8_t*>(&txReports[slot]),
+                endpointIn[physicalSlot],
+                reinterpret_cast<uint8_t*>(&txReports[physicalSlot]),
                 sizeof(XInputReport)
             );
-            usbd_edpt_release(0, endpointIn[slot]);
+            usbd_edpt_release(0, endpointIn[physicalSlot]);
 
             if (queued) {
-                lastReports[slot] = report;
-                lastReportValid[slot] = true;
+                lastReports[physicalSlot] = report;
+                lastReportValid[physicalSlot] = true;
                 anySent = true;
             }
         }
 
-        armOutEndpoint(slot);
+        armOutEndpoint(physicalSlot);
     }
 
     return anySent;
