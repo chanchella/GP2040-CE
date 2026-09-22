@@ -20,6 +20,13 @@ struct UniversalOutputSlotSnapshot {
     uint8_t inputSlot = UNIVERSAL_INPUT_SLOT_INVALID;
     UniversalInputSource source = UniversalInputSource::NONE;
 
+    UniversalTransport transport = UniversalTransport::UNKNOWN;
+    UniversalDeviceClass deviceClass = UniversalDeviceClass::UNKNOWN;
+    UniversalProtocol protocol = UniversalProtocol::UNKNOWN;
+    UniversalDriverFamily driverFamily = UniversalDriverFamily::NONE;
+    UniversalDeviceProfileId profile = UniversalDeviceProfileId::NONE;
+    uint32_t quirks = UNIVERSAL_QUIRK_NONE;
+
     uint16_t vid = 0;
     uint16_t pid = 0;
 
@@ -38,7 +45,7 @@ public:
 
     void resetAll();
 
-    // G2B policy: deterministic 1:1 routing.
+    // G2B/G2C0 policy: deterministic 1:1 routing.
     // Input Slot N -> Logical Output Slot N.
     void syncFromInputs();
 
@@ -56,6 +63,13 @@ private:
 
         uint8_t inputSlot = UNIVERSAL_INPUT_SLOT_INVALID;
         UniversalInputSource source = UniversalInputSource::NONE;
+
+        UniversalTransport transport = UniversalTransport::UNKNOWN;
+        UniversalDeviceClass deviceClass = UniversalDeviceClass::UNKNOWN;
+        UniversalProtocol protocol = UniversalProtocol::UNKNOWN;
+        UniversalDriverFamily driverFamily = UniversalDriverFamily::NONE;
+        UniversalDeviceProfileId profile = UniversalDeviceProfileId::NONE;
+        uint32_t quirks = UNIVERSAL_QUIRK_NONE;
 
         uint16_t vid = 0;
         uint16_t pid = 0;
