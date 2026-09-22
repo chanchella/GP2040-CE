@@ -10,12 +10,25 @@
 #include "class/hid/hid_device.h"
 #include "device/oag_identity.h"
 #include "drivers/shared/driverhelper.h"
+#include "output/oag_pc_slot_map.h"
 #include "output/universal_output_manager.h"
+#include "pico/time.h"
 #include "pico/unique_id.h"
 
 namespace {
 
 static char serialString[17] = "0000000000000000";
+
+static constexpr uint32_t OAG_HID_KEEPALIVE_MS = 16;
+
+static GamepadState neutralGamepadState() {
+    GamepadState state {};
+    state.lx = GAMEPAD_JOYSTICK_MID;
+    state.ly = GAMEPAD_JOYSTICK_MID;
+    state.rx = GAMEPAD_JOYSTICK_MID;
+    state.ry = GAMEPAD_JOYSTICK_MID;
+    return state;
+}
 
 static bool oagHidControlXfer(
     uint8_t rhport,
@@ -31,6 +44,7 @@ void OAGMultiHIDDriver::initialize() {
     memset(reports, 0, sizeof(reports));
     memset(lastReports, 0, sizeof(lastReports));
     memset(lastReportValid, 0, sizeof(lastReportValid));
+    memset(lastSendMs, 0, sizeof(lastSendMs));
 
     buildConfigurationDescriptor();
 
@@ -83,6 +97,8 @@ OAGMultiHIDReport OAGMultiHIDDriver::buildReport(
     report.ly = static_cast<uint8_t>(state.ly >> 8);
     report.rx = static_cast<uint8_t>(state.rx >> 8);
     report.ry = static_cast<uint8_t>(state.ry >> 8);
+    report.lt = state.lt;
+    report.rt = state.rt;
 
     return report;
 }
@@ -92,41 +108,65 @@ bool OAGMultiHIDDriver::process(Gamepad* gamepad) {
 
     bool anySent = false;
 
-    for (uint8_t slot = 0; slot < OAG_MULTI_HID_SLOT_COUNT; slot++) {
+    const uint32_t nowMs =
+        static_cast<uint32_t>(
+            to_ms_since_boot(get_absolute_time())
+        );
+
+    for (
+        uint8_t physicalSlot = 0;
+        physicalSlot < OAG_MULTI_HID_SLOT_COUNT;
+        physicalSlot++
+    ) {
+        const uint8_t logicalSlot =
+            oagPcLogicalSlot(physicalSlot);
+
         UniversalOutputSlotSnapshot output {};
 
         const bool hasOutput =
-            UOUTPUT.snapshot(slot, output) &&
+            logicalSlot != 0xFF &&
+            UOUTPUT.snapshot(logicalSlot, output) &&
             output.connected &&
             output.hasReport;
 
-        GamepadState neutral {};
+        const GamepadState neutral =
+            neutralGamepadState();
+
         const GamepadState& state =
             hasOutput ? output.state : neutral;
 
-        reports[slot] = buildReport(state);
+        reports[physicalSlot] = buildReport(state);
 
         const bool changed =
-            !lastReportValid[slot] ||
+            !lastReportValid[physicalSlot] ||
             memcmp(
-                &lastReports[slot],
-                &reports[slot],
+                &lastReports[physicalSlot],
+                &reports[physicalSlot],
                 sizeof(OAGMultiHIDReport)
             ) != 0;
 
+        const bool keepAliveDue =
+            !lastReportValid[physicalSlot] ||
+            (
+                nowMs - lastSendMs[physicalSlot]
+            ) >= OAG_HID_KEEPALIVE_MS;
+
         if (
-            changed &&
+            (changed || keepAliveDue) &&
             tud_ready() &&
-            tud_hid_n_ready(slot) &&
+            tud_hid_n_ready(physicalSlot) &&
             tud_hid_n_report(
-                slot,
+                physicalSlot,
                 0,
-                &reports[slot],
+                &reports[physicalSlot],
                 sizeof(OAGMultiHIDReport)
             )
         ) {
-            lastReports[slot] = reports[slot];
-            lastReportValid[slot] = true;
+            lastReports[physicalSlot] =
+                reports[physicalSlot];
+
+            lastReportValid[physicalSlot] = true;
+            lastSendMs[physicalSlot] = nowMs;
             anySent = true;
         }
     }
@@ -197,6 +237,20 @@ const uint16_t* OAGMultiHIDDriver::get_descriptor_string_cb(
         return getStringDescriptor(serialString, index);
     }
 
+    if (index >= 4 && index <= 7) {
+        static const char* interfaceNames[] = {
+            "OAG Vortex Gamepad 1",
+            "OAG Vortex Gamepad 2",
+            "OAG Vortex Gamepad 3",
+            "OAG Vortex Gamepad 4"
+        };
+
+        return getStringDescriptor(
+            interfaceNames[index - 4],
+            index
+        );
+    }
+
     return nullptr;
 }
 
@@ -262,7 +316,7 @@ void OAGMultiHIDDriver::buildConfigurationDescriptor() {
             0x03,
             0x00,
             0x00,
-            0x00,
+            static_cast<uint8_t>(4 + slot),
 
             // HID descriptor
             0x09, 0x21,
