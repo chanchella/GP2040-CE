@@ -1,0 +1,104 @@
+name: Universal Dongle G2 Pico2
+
+on:
+  push:
+    branches:
+      - universal-dongle/g2
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  web:
+    uses: ./.github/workflows/node.js.yml
+
+  build-g2-pico2:
+    needs: web
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout G2 branch with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.17.x"
+
+      - name: Setup Pico SDK pipeline
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Download Web Config artifact
+        uses: actions/download-artifact@v4.1.2
+        with:
+          name: fsData
+          path: ${{ github.workspace }}/lib/httpd/
+
+      - name: Patch Pico-PIO-USB for three root ports
+        shell: bash
+        run: |
+          set -euo pipefail
+          CFG="lib/pico_pio_usb/src/pio_usb_configuration.h"
+          test -f "$CFG"
+          grep -q '^#define PIO_USB_ROOT_PORT_CNT 2$' "$CFG"
+          sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
+          grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
+
+      - name: Verify G2A source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '#define USB_PERIPHERAL_PIN_DPLUS 2' configs/Pico2/BoardConfig.h
+          grep -q '#define UNIVERSAL_XINPUT_HOST_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'G1A_PORT2_DP = 4' src/usbhostmanager.cpp
+          grep -q 'G1A_PORT3_DP = 6' src/usbhostmanager.cpp
+          grep -q 'UNIVERSAL_INPUT_SLOT_BLUETOOTH = 0' headers/input/universal_input_manager.h
+          grep -q 'UNIVERSAL_INPUT_SLOT_USB_1 = 1' headers/input/universal_input_manager.h
+          grep -q 'UniversalInputSource::USB_XINPUT' src/addons/universal_xinput_host.cpp
+          grep -q 'src/input/universal_input_manager.cpp' CMakeLists.txt
+          grep -q '^#define PIO_USB_ROOT_PORT_CNT 3' lib/pico_pio_usb/src/pio_usb_configuration.h
+          echo "G2A_SOURCE_VERIFY=PASS"
+
+      - name: Configure Pico2
+        shell: bash
+        run: |
+          PICO_SDK_PATH=${{ github.workspace }}/pico-sdk \
+          GP2040_BOARDCONFIG=Pico2 \
+          SKIP_WEBBUILD=TRUE \
+          SKIP_SUBMODULES=TRUE \
+          cmake -B ${{ github.workspace }}/build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DPICO_BOARD=pico2 \
+            -DPICO_PLATFORM=rp2350-arm-s
+
+      - name: Build G2A
+        shell: bash
+        run: |
+          GP2040_BOARDCONFIG=Pico2 \
+          cmake --build ${{ github.workspace }}/build \
+            --config ${{ env.BUILD_TYPE }} \
+            --parallel 2
+
+      - name: Show build outputs
+        shell: bash
+        run: |
+          find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
+
+      - name: Upload G2A UF2
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: Universal-Dongle-G2A-Pico2-UF2
+          path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
+          if-no-files-found: error
+
+      - name: Upload G2A ELF
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: Universal-Dongle-G2A-Pico2-ELF
+          path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
+          if-no-files-found: error
