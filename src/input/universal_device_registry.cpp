@@ -104,6 +104,30 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
         );
     }
 
+    // Shanwan-compatible receivers may deliberately re-enumerate into
+    // fallback HID identities after an unsupported host-side control request.
+    if (probe.vid == 0x20BC && probe.pid == 0x0055) {
+        return makeMatch(
+            probe,
+            UniversalTransport::USB_2_4GHZ_DONGLE,
+            UniversalDeviceClass::GAMEPAD,
+            UniversalProtocol::HID_GAMEPAD,
+            UniversalDriverFamily::HID,
+            UniversalDeviceProfileId::SHANWAN_FALLBACK_20BC_0055
+        );
+    }
+
+    if (probe.vid == 0x20BC && probe.pid == 0x5500) {
+        return makeMatch(
+            probe,
+            UniversalTransport::USB_2_4GHZ_DONGLE,
+            UniversalDeviceClass::GAMEPAD,
+            UniversalProtocol::HID_GAMEPAD,
+            UniversalDriverFamily::HID,
+            UniversalDeviceProfileId::SHANWAN_FALLBACK_20BC_5500
+        );
+    }
+
     // A commonly reported GIGAMAX / Speedlink-compatible USB identity.
     // Other GIGAMAX models remain covered by descriptor-driven Generic HID.
     if (probe.vid == 0x0079 && probe.pid == 0x0006) {
@@ -362,6 +386,8 @@ const char* UniversalDeviceRegistry::profileName(
         case UniversalDeviceProfileId::XUSB_045E_028E_COMPAT: return "XUSB_045E_028E_COMPAT";
         case UniversalDeviceProfileId::REDRAGON_G808_2563_0575: return "REDRAGON_G808_2563_0575";
         case UniversalDeviceProfileId::REDRAGON_G808_RAW_24C6_542A: return "REDRAGON_G808_RAW_24C6_542A";
+        case UniversalDeviceProfileId::SHANWAN_FALLBACK_20BC_0055: return "SHANWAN_FALLBACK_20BC_0055";
+        case UniversalDeviceProfileId::SHANWAN_FALLBACK_20BC_5500: return "SHANWAN_FALLBACK_20BC_5500";
         case UniversalDeviceProfileId::GIGAMAX_0079_0006: return "GIGAMAX_0079_0006";
         case UniversalDeviceProfileId::XBOX_ONE_S_045E_02EA: return "XBOX_ONE_S_045E_02EA";
         case UniversalDeviceProfileId::SONY_DS3_054C_0268: return "SONY_DS3_054C_0268";
