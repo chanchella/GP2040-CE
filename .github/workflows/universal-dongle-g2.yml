@@ -49,7 +49,7 @@ jobs:
           sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
           grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
 
-      - name: Verify G2C0B parser foundation invariants
+      - name: Verify G2C multi-controller output invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -99,7 +99,18 @@ jobs:
           grep -q 'BlueRetro' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
           grep -q 'Apache-2.0' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
           grep -q 'HID-Remapper' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
-          echo "G2C0B_PARSER_FOUNDATION_VERIFY=PASS"
+          grep -q '#define OAG_MULTI_XINPUT_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'OAG_MULTI_XINPUT_SLOT_COUNT = 4' headers/drivers/oag/OAGMultiXInputDescriptors.h
+          grep -q 'OAG_MULTI_XINPUT_CONFIG_SIZE' headers/drivers/oag/OAGMultiXInputDescriptors.h
+          grep -q 'class OAGMultiXInputDriver' headers/drivers/oag/OAGMultiXInputDriver.h
+          grep -q 'OAG-MULTI-XINPUT' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'UOUTPUT.snapshot(slot' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'endpointIn\[OAG_MULTI_XINPUT_SLOT_COUNT\]' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'endpointOut\[OAG_MULTI_XINPUT_SLOT_COUNT\]' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'new OAGMultiXInputDriver' src/drivermanager.cpp
+          grep -q 'src/drivers/oag/OAGMultiXInputDriver.cpp' CMakeLists.txt
+          ! grep -q 'Storage::getInstance().GetGamepad' src/addons/universal_output_router.cpp
+          echo "G2C_MULTI_CONTROLLER_OUTPUT_VERIFY=PASS"
 
       - name: Configure Pico2
         shell: bash
@@ -113,7 +124,7 @@ jobs:
             -DPICO_BOARD=pico2 \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build G2C0B Parser Foundation
+      - name: Build G2C Multi-Controller Output
         shell: bash
         run: |
           GP2040_BOARDCONFIG=Pico2 \
@@ -126,16 +137,16 @@ jobs:
         run: |
           find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
 
-      - name: Upload G2C0B UF2
+      - name: Upload G2C UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C0B-Pico2-UF2
+          name: OAG-Vortex-G2C-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 
-      - name: Upload G2C0B ELF
+      - name: Upload G2C ELF
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C0B-Pico2-ELF
+          name: OAG-Vortex-G2C-Pico2-ELF
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
           if-no-files-found: error
