@@ -17,6 +17,21 @@ void USBHostManager::start() {
         pio_usb_configuration_t* pio_cfg = PeripheralManager::getInstance().getUSB(0)->getController();
         tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, pio_cfg);
         tuh_init(BOARD_TUH_RHPORT);
+
+        // G1A: root 0 comes from BoardConfig (DP=GPIO2).
+        // Add the two proven extra root ports.
+        static constexpr uint8_t G1A_PORT2_DP = 4;
+        static constexpr uint8_t G1A_PORT3_DP = 6;
+
+        const int port2Result = pio_usb_host_add_port(G1A_PORT2_DP, PIO_USB_PINOUT_DPDM);
+        const int port3Result = pio_usb_host_add_port(G1A_PORT3_DP, PIO_USB_PINOUT_DPDM);
+
+        if (port2Result != 0 || port3Result != 0) {
+            tuh_deinit(BOARD_TUH_RHPORT);
+            tuh_ready = false;
+            return;
+        }
+
         sleep_us(10); // ensure we are ready
         tuh_ready = true;
     } else {
