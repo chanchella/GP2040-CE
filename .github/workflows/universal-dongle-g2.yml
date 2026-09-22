@@ -49,7 +49,7 @@ jobs:
           sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
           grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
 
-      - name: Verify G2B OAG identity invariants
+      - name: Verify G2C0 universal registry invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -73,7 +73,21 @@ jobs:
           grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/ps4/PS4Descriptors.h
           grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/xbone/XBOneDescriptors.h
           grep -q 'OAG_BLUETOOTH_DEVICE_NAME' headers/device/oag_identity.h
-          echo "G2B_OAG_IDENTITY_VERIFY=PASS"
+          grep -q 'enum class UniversalProtocol' headers/input/universal_device_registry.h
+          grep -q 'XUSB_XBOX360' headers/input/universal_device_registry.h
+          grep -q 'HID_GAMEPAD' headers/input/universal_device_registry.h
+          grep -q 'SONY_DS3' headers/input/universal_device_registry.h
+          grep -q 'SONY_DS4' headers/input/universal_device_registry.h
+          grep -q 'SONY_DUALSENSE' headers/input/universal_device_registry.h
+          grep -q 'XGIP_XBOX_ONE' headers/input/universal_device_registry.h
+          grep -q 'XBOX360_WIRELESS_RECEIVER' headers/input/universal_device_registry.h
+          grep -q 'REDRAGON_G808_2563_0575' headers/input/universal_device_registry.h
+          grep -q 'UNIVERSAL_QUIRK_SKIP_SET_IDLE' headers/input/universal_device_registry.h
+          grep -q 'connectClassified' headers/input/universal_input_manager.h
+          grep -q 'UDEVREG.classifyUsb' src/addons/universal_xinput_host.cpp
+          grep -q 'UDEVREG.classifyUsb' src/drivers/shared/xinput_host.cpp
+          grep -q 'src/input/universal_device_registry.cpp' CMakeLists.txt
+          echo "G2C0_UNIVERSAL_REGISTRY_VERIFY=PASS"
 
       - name: Configure Pico2
         shell: bash
@@ -87,7 +101,7 @@ jobs:
             -DPICO_BOARD=pico2 \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build G2B OAG Identity
+      - name: Build G2C0 Universal Registry
         shell: bash
         run: |
           GP2040_BOARDCONFIG=Pico2 \
@@ -100,16 +114,16 @@ jobs:
         run: |
           find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
 
-      - name: Upload G2B OAG UF2
+      - name: Upload G2C0 UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2B-Pico2-UF2
+          name: OAG-Vortex-G2C0-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 
-      - name: Upload G2B OAG ELF
+      - name: Upload G2C0 ELF
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2B-Pico2-ELF
+          name: OAG-Vortex-G2C0-Pico2-ELF
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
           if-no-files-found: error
