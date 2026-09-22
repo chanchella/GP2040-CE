@@ -54,6 +54,7 @@ private:
     OAGMultiHIDReport reports[OAG_MULTI_HID_SLOT_COUNT] {};
     OAGMultiHIDReport lastReports[OAG_MULTI_HID_SLOT_COUNT] {};
     bool lastReportValid[OAG_MULTI_HID_SLOT_COUNT] {};
+    uint32_t lastSendMs[OAG_MULTI_HID_SLOT_COUNT] {};
 
     void buildConfigurationDescriptor();
 
