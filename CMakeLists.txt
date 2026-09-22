@@ -188,6 +188,7 @@ src/drivers/keyboard/KeyboardDriver.cpp
 src/drivers/mdmini/MDMiniDriver.cpp
 src/drivers/neogeo/NeoGeoDriver.cpp
 src/drivers/net/NetDriver.cpp
+src/drivers/oag/OAGMultiXInputDriver.cpp
 src/drivers/pcengine/PCEngineDriver.cpp
 src/drivers/ps3/PS3Driver.cpp
 src/drivers/ps4/PS4Auth.cpp
