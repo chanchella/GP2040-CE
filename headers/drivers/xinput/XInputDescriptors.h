@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <pico/unique_id.h>
+#include "device/oag_identity.h"
 
 #define XINPUT_ENDPOINT_SIZE 20
 
@@ -63,8 +64,8 @@ typedef enum {
 
 static const uint8_t xinput_string_language[]    = { 0x09, 0x04 };
 static const uint8_t xinput_string_serial[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-static const uint8_t xinput_string_manfacturer[] = "\xa9Microsoft Corporation";
-static const uint8_t xinput_string_product[]     = "Controller";
+static const uint8_t xinput_string_manfacturer[] = OAG_USB_MANUFACTURER_STRING;
+static const uint8_t xinput_string_product[]     = OAG_USB_PRODUCT_STRING;
 static uint8_t xinput_string_version[]     = "08FEC93"; // Serial that is overridden by Pico ID
 static const uint8_t xinput_string_xsm3[]        = "Xbox Security Method 3, Version 1.00, \xa9 2005 Microsoft Corporation. All rights reserved.";
 
