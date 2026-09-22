@@ -66,8 +66,7 @@ int8_t UniversalXInputHostAddon::allocateSlot(
     uint8_t devAddr,
     uint8_t instance,
     uint8_t subtype,
-    uint16_t vid,
-    uint16_t pid
+    UniversalDeviceMatch const& match
 ) {
     const int8_t existing = findSlot(devAddr, instance);
     if (existing >= 0) {
@@ -91,11 +90,10 @@ int8_t UniversalXInputHostAddon::allocateSlot(
         slots[i].globalSlot = globalSlot;
 
         if (
-            !UINPUT.connect(
+            !UINPUT.connectClassified(
                 globalSlot,
                 UniversalInputSource::USB_XINPUT,
-                vid,
-                pid,
+                match,
                 devAddr,
                 instance
             )
@@ -124,16 +122,26 @@ void UniversalXInputHostAddon::xmount(
     uint16_t pid = 0;
     const bool hasVidPid = tuh_vid_pid_get(dev_addr, &vid, &pid);
 
-    // Exact compatibility fallback for the user's T29/XUSB identity.
-    const bool t29Fallback =
-        hasVidPid &&
-        vid == 0x045E &&
-        pid == 0x028E &&
+    UniversalUsbProbe probe {};
+    probe.vid = hasVidPid ? vid : 0;
+    probe.pid = hasVidPid ? pid : 0;
+
+    // xmount() is reached only after the custom XInput host driver has
+    // claimed an Xbox 360 gameplay-compatible interface.
+    probe.interfaceClass = 0xFF;
+    probe.interfaceSubClass = 0x5D;
+    probe.interfaceProtocol = 0x01;
+    probe.endpointCount = 2;
+
+    const UniversalDeviceMatch match = UDEVREG.classifyUsb(probe);
+
+    const bool exactCompatFallback =
+        match.profile == UniversalDeviceProfileId::XUSB_045E_028E_COMPAT &&
         instance == 0;
 
     // Some compatible wired controllers omit a useful subtype.
     // Instance 0 is accepted as the normal gameplay interface.
-    if (subtype == 0 && instance != 0 && !t29Fallback) {
+    if (subtype == 0 && instance != 0 && !exactCompatFallback) {
         return;
     }
 
@@ -141,8 +149,7 @@ void UniversalXInputHostAddon::xmount(
         dev_addr,
         instance,
         subtype,
-        hasVidPid ? vid : 0,
-        hasVidPid ? pid : 0
+        match
     );
 }
 
