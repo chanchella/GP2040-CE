@@ -56,7 +56,6 @@ jobs:
           python3 .github/scripts/patch_oag_tinyusb_hid_host.py
           grep -q 'skip_set_idle' lib/tinyusb/src/class/hid/hid_host.c
           grep -q '0x2563' lib/tinyusb/src/class/hid/hid_host.c
-          grep -q '0x542A' lib/tinyusb/src/class/hid/hid_host.c
 
       - name: Verify G2C1 universal HID + browser output invariants
         shell: bash
@@ -128,7 +127,9 @@ jobs:
           grep -q 'new OAGMultiHIDDriver' src/drivermanager.cpp
           grep -q 'src/drivers/oag/OAGMultiHIDDriver.cpp' CMakeLists.txt
           grep -q 'REDRAGON_G808_2563_0575' src/input/universal_device_registry.cpp
-          grep -q 'REDRAGON_G808_RAW_24C6_542A' src/input/universal_device_registry.cpp
+          grep -q 'SHANWAN_FALLBACK_20BC_0055' src/input/universal_device_registry.cpp
+          grep -q 'SHANWAN_HID_20BC_5500' src/input/universal_device_registry.cpp
+          grep -q 'XBOX_ONE_SPECTRA_24C6_542A' src/input/universal_device_registry.cpp
           grep -q 'GIGAMAX_0079_0006' src/input/universal_device_registry.cpp
           grep -q 'XBOX_ONE_S_045E_02EA' src/input/universal_device_registry.cpp
           grep -q 'parseXgipXboxOne' src/input/universal_gamepad_parser.cpp
