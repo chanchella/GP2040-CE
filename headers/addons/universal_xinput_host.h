@@ -25,20 +25,35 @@ public:
     void xmount(uint8_t dev_addr, uint8_t instance, uint8_t controllerType, uint8_t subtype) override;
     void unmount(uint8_t dev_addr) override;
     void report_received(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) override;
-    void report_sent(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) override {}
+    void report_sent(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) override;
     void set_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override {}
     void get_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override {}
 
 private:
     static constexpr uint8_t USB_SLOT_COUNT = 3;
 
+    enum class XgipInitPhase : uint8_t {
+        NONE = 0,
+        POWER,
+        SYSTEM_INIT,
+        EXTRA_INPUT,
+        LED,
+        READY,
+    };
+
     struct XInputTransportSlot {
         bool mounted = false;
         uint8_t devAddr = 0;
         uint8_t instance = 0;
+        uint8_t controllerType = 0;
         uint8_t subtype = 0;
         uint8_t globalSlot = UNIVERSAL_INPUT_SLOT_INVALID;
+        UniversalInputSource source = UniversalInputSource::NONE;
         UniversalDeviceMatch device {};
+        GamepadState state {};
+
+        XgipInitPhase xgipPhase = XgipInitPhase::NONE;
+        bool xgipTxPending = false;
     };
 
     XInputTransportSlot slots[USB_SLOT_COUNT];
@@ -49,10 +64,15 @@ private:
     int8_t allocateSlot(
         uint8_t devAddr,
         uint8_t instance,
+        uint8_t controllerType,
         uint8_t subtype,
+        UniversalInputSource source,
         UniversalDeviceMatch const& match
     );
 
+    void restartXgipInit(uint8_t localSlot);
+    void serviceXgipInit(uint8_t localSlot);
+    void advanceXgipInit(uint8_t localSlot);
 };
 
 #endif
