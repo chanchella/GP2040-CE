@@ -11,19 +11,21 @@ bool UniversalXInputHostAddon::available() {
 }
 
 void UniversalXInputHostAddon::setup() {
-    for (uint8_t i = 0; i < SLOT_COUNT; i++) {
+    // USB transport owns only global slots 1..3.
+    // Slot 0 is reserved for the future Bluetooth transport.
+    UINPUT.disconnect(UNIVERSAL_INPUT_SLOT_USB_1);
+    UINPUT.disconnect(UNIVERSAL_INPUT_SLOT_USB_2);
+    UINPUT.disconnect(UNIVERSAL_INPUT_SLOT_USB_3);
+
+    for (uint8_t i = 0; i < USB_SLOT_COUNT; i++) {
         resetSlot(i);
     }
 }
 
 void UniversalXInputHostAddon::preprocess() {
-    // G1C hot-plug recovery:
-    // A freshly mounted XInput endpoint can occasionally fail its first
-    // receive arm because enumeration/configuration has only just completed.
-    // If an endpoint is mounted and currently idle, retry the receive arm.
-    // Once a transfer is pending, tuh_xinput_ready() becomes false, so this
-    // does not queue duplicate transfers.
-    for (uint8_t i = 0; i < SLOT_COUNT; i++) {
+    // G1C hot-plug recovery remains in place.
+    // If a mounted endpoint is idle, retry the receive arm.
+    for (uint8_t i = 0; i < USB_SLOT_COUNT; i++) {
         if (
             slots[i].mounted &&
             tuh_xinput_mounted(slots[i].devAddr, slots[i].instance) &&
@@ -33,9 +35,16 @@ void UniversalXInputHostAddon::preprocess() {
         }
     }
 
-    // Route USB/XInput logical slot 0 to the existing GP2040 output.
-    // Slots 1 and 2 remain independent and reserved for later multi-output routing.
-    if (!slots[0].mounted || !slots[0].hasReport) {
+    // G2A compatibility bridge:
+    // Global USB Slot 1 feeds the existing single GP2040 output.
+    // It is intentionally a read from UniversalInputManager now;
+    // the USB parser no longer owns or writes gamepad->state directly.
+    UniversalInputSlotSnapshot primary {};
+    if (
+        !UINPUT.snapshot(UNIVERSAL_INPUT_SLOT_USB_1, primary) ||
+        !primary.connected ||
+        !primary.hasReport
+    ) {
         return;
     }
 
@@ -43,42 +52,77 @@ void UniversalXInputHostAddon::preprocess() {
     gamepad->hasAnalogTriggers = true;
     gamepad->hasLeftAnalogStick = true;
     gamepad->hasRightAnalogStick = true;
-    gamepad->state = slots[0].state;
+    gamepad->state = primary.state;
 }
 
 void UniversalXInputHostAddon::resetSlot(uint8_t slot) {
-    if (slot >= SLOT_COUNT) {
+    if (slot >= USB_SLOT_COUNT) {
         return;
     }
-    slots[slot] = XInputSlot {};
+
+    slots[slot] = XInputTransportSlot {};
 }
 
-int8_t UniversalXInputHostAddon::findSlot(uint8_t devAddr, uint8_t instance) const {
-    for (uint8_t i = 0; i < SLOT_COUNT; i++) {
-        if (slots[i].mounted &&
+int8_t UniversalXInputHostAddon::findSlot(
+    uint8_t devAddr,
+    uint8_t instance
+) const {
+    for (uint8_t i = 0; i < USB_SLOT_COUNT; i++) {
+        if (
+            slots[i].mounted &&
             slots[i].devAddr == devAddr &&
-            slots[i].instance == instance) {
+            slots[i].instance == instance
+        ) {
             return static_cast<int8_t>(i);
         }
     }
+
     return -1;
 }
 
-int8_t UniversalXInputHostAddon::allocateSlot(uint8_t devAddr, uint8_t instance, uint8_t subtype) {
+int8_t UniversalXInputHostAddon::allocateSlot(
+    uint8_t devAddr,
+    uint8_t instance,
+    uint8_t subtype,
+    uint16_t vid,
+    uint16_t pid
+) {
     const int8_t existing = findSlot(devAddr, instance);
     if (existing >= 0) {
         return existing;
     }
 
-    for (uint8_t i = 0; i < SLOT_COUNT; i++) {
-        if (!slots[i].mounted) {
-            resetSlot(i);
-            slots[i].mounted = true;
-            slots[i].devAddr = devAddr;
-            slots[i].instance = instance;
-            slots[i].subtype = subtype;
-            return static_cast<int8_t>(i);
+    for (uint8_t i = 0; i < USB_SLOT_COUNT; i++) {
+        if (slots[i].mounted) {
+            continue;
         }
+
+        const uint8_t globalSlot =
+            static_cast<uint8_t>(UNIVERSAL_INPUT_SLOT_USB_1 + i);
+
+        resetSlot(i);
+
+        slots[i].mounted = true;
+        slots[i].devAddr = devAddr;
+        slots[i].instance = instance;
+        slots[i].subtype = subtype;
+        slots[i].globalSlot = globalSlot;
+
+        if (
+            !UINPUT.connect(
+                globalSlot,
+                UniversalInputSource::USB_XINPUT,
+                vid,
+                pid,
+                devAddr,
+                instance
+            )
+        ) {
+            resetSlot(i);
+            return -1;
+        }
+
+        return static_cast<int8_t>(i);
     }
 
     return -1;
@@ -98,30 +142,39 @@ void UniversalXInputHostAddon::xmount(
     uint16_t pid = 0;
     const bool hasVidPid = tuh_vid_pid_get(dev_addr, &vid, &pid);
 
-    // Normal Xbox 360 gameplay interfaces expose a non-zero subtype.
-    // T29 has been observed as 045E:028E; accept instance 0 as a safe
-    // compatibility fallback even if a clone omits the subtype.
+    // Exact compatibility fallback for the user's T29/XUSB identity.
     const bool t29Fallback =
         hasVidPid &&
         vid == 0x045E &&
         pid == 0x028E &&
         instance == 0;
 
-    // Some compatible wired controllers do not expose a useful subtype.
-    // Instance 0 is the normal gameplay interface; the exact T29 identity
-    // is accepted explicitly as well.
+    // Some compatible wired controllers omit a useful subtype.
+    // Instance 0 is accepted as the normal gameplay interface.
     if (subtype == 0 && instance != 0 && !t29Fallback) {
         return;
     }
 
-    allocateSlot(dev_addr, instance, subtype);
+    allocateSlot(
+        dev_addr,
+        instance,
+        subtype,
+        hasVidPid ? vid : 0,
+        hasVidPid ? pid : 0
+    );
 }
 
 void UniversalXInputHostAddon::unmount(uint8_t dev_addr) {
-    for (uint8_t i = 0; i < SLOT_COUNT; i++) {
-        if (slots[i].mounted && slots[i].devAddr == dev_addr) {
-            resetSlot(i);
+    for (uint8_t i = 0; i < USB_SLOT_COUNT; i++) {
+        if (!slots[i].mounted || slots[i].devAddr != dev_addr) {
+            continue;
         }
+
+        if (slots[i].globalSlot != UNIVERSAL_INPUT_SLOT_INVALID) {
+            UINPUT.disconnect(slots[i].globalSlot);
+        }
+
+        resetSlot(i);
     }
 }
 
@@ -141,18 +194,26 @@ void UniversalXInputHostAddon::report_received(
         return;
     }
 
-    slots[slotIndex].state = next;
-    slots[slotIndex].hasReport = true;
+    const uint8_t globalSlot = slots[slotIndex].globalSlot;
+    if (globalSlot == UNIVERSAL_INPUT_SLOT_INVALID) {
+        return;
+    }
+
+    UINPUT.publish(globalSlot, next);
 }
 
 uint16_t UniversalXInputHostAddon::axisX(int16_t value) {
-    return static_cast<uint16_t>(static_cast<int32_t>(value) + 32768);
+    return static_cast<uint16_t>(
+        static_cast<int32_t>(value) + 32768
+    );
 }
 
 uint16_t UniversalXInputHostAddon::axisY(int16_t value) {
     // GP2040's XInput device driver inverts Y on output.
     // Store the host value in GP2040's internal orientation.
-    return static_cast<uint16_t>(32767 - static_cast<int32_t>(value));
+    return static_cast<uint16_t>(
+        32767 - static_cast<int32_t>(value)
+    );
 }
 
 bool UniversalXInputHostAddon::parseXbox360Report(
@@ -164,8 +225,7 @@ bool UniversalXInputHostAddon::parseXbox360Report(
         return false;
     }
 
-    // The proven T29 parser only requires the XUSB payload-size byte.
-    // Some clones vary the first status byte.
+    // Proven T29 parser requirement.
     if (report[1] != 0x14) {
         return false;
     }
@@ -194,6 +254,7 @@ bool UniversalXInputHostAddon::parseXbox360Report(
 
     out.lt = report[4];
     out.rt = report[5];
+
     if (out.lt != 0) out.buttons |= GAMEPAD_MASK_L2;
     if (out.rt != 0) out.buttons |= GAMEPAD_MASK_R2;
 
@@ -201,6 +262,7 @@ bool UniversalXInputHostAddon::parseXbox360Report(
         const uint16_t raw =
             static_cast<uint16_t>(report[offset]) |
             (static_cast<uint16_t>(report[offset + 1]) << 8);
+
         return static_cast<int16_t>(raw);
     };
 
