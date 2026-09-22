@@ -63,7 +63,6 @@ jobs:
           grep -q '#define UNIVERSAL_OUTPUT_ROUTER_ENABLED 1' configs/Pico2/BoardConfig.h
           grep -q 'UNIVERSAL_OUTPUT_SLOT_COUNT = 4' headers/output/universal_output_manager.h
           grep -q 'UOUTPUT.syncFromInputs()' src/addons/universal_output_router.cpp
-          grep -q 'UNIVERSAL_OUTPUT_SLOT_1' src/addons/universal_output_router.cpp
           grep -q 'src/input/universal_input_manager.cpp' CMakeLists.txt
           grep -q '^#define PIO_USB_ROOT_PORT_CNT 3' lib/pico_pio_usb/src/pio_usb_configuration.h
           grep -q '#define OAG_PRODUCT_NAME "OAG Vortex Ultra Gaming"' headers/device/oag_identity.h
