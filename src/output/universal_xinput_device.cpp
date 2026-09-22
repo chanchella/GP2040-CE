@@ -253,11 +253,11 @@ bool UniversalXInputDevice::xfer(
 
         if (result == XFER_RESULT_SUCCESS) {
             const uint32_t copyLength =
-                xferredBytes < XINPUT_OUT_SIZE
+                xferredBytes < UNIVERSAL_XINPUT_OUT_SIZE
                     ? xferredBytes
-                    : XINPUT_OUT_SIZE;
+                    : UNIVERSAL_XINPUT_OUT_SIZE;
 
-            memset(lastOutReport[slot], 0, XINPUT_OUT_SIZE);
+            memset(lastOutReport[slot], 0, UNIVERSAL_XINPUT_OUT_SIZE);
             memcpy(
                 lastOutReport[slot],
                 outTransferBuffer[slot],
@@ -271,7 +271,7 @@ bool UniversalXInputDevice::xfer(
             rhport,
             endpointOut[slot],
             outTransferBuffer[slot],
-            XINPUT_OUT_SIZE
+            UNIVERSAL_XINPUT_OUT_SIZE
         );
     }
 
@@ -359,7 +359,7 @@ bool UniversalXInputDevice::process() {
                     0,
                     endpointOut[slot],
                     outTransferBuffer[slot],
-                    XINPUT_OUT_SIZE
+                    UNIVERSAL_XINPUT_OUT_SIZE
                 )) {
                 usbd_edpt_release(0, endpointOut[slot]);
             }
