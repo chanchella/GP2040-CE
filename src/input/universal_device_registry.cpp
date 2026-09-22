@@ -70,8 +70,9 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
         );
     }
 
-    // Redragon Harrow G808 identities found in public hardware reports.
-    // 2563:0575 has been reported for the G808 USB receiver.
+    // ShanWan-family rich HID identity. This VID/PID is shared by
+    // multiple low-cost controllers and must not be treated as a unique
+    // Redragon model identifier.
     if (probe.vid == 0x2563 && probe.pid == 0x0575) {
         return makeMatch(
             probe,
@@ -79,7 +80,20 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
             UniversalDeviceClass::GAMEPAD,
             UniversalProtocol::HID_GAMEPAD,
             UniversalDriverFamily::HID,
-            UniversalDeviceProfileId::REDRAGON_G808_2563_0575
+            UniversalDeviceProfileId::SHANWAN_HID_2563_0575
+        );
+    }
+
+    // Redragon Harrow G808 has also been publicly observed as
+    // ShanWan PC/PS3/Android Gamepad 2563:0526.
+    if (probe.vid == 0x2563 && probe.pid == 0x0526) {
+        return makeMatch(
+            probe,
+            UniversalTransport::USB_2_4GHZ_DONGLE,
+            UniversalDeviceClass::GAMEPAD,
+            UniversalProtocol::HID_GAMEPAD,
+            UniversalDriverFamily::HID,
+            UniversalDeviceProfileId::REDRAGON_G808_2563_0526
         );
     }
 
@@ -377,7 +391,9 @@ const char* UniversalDeviceRegistry::profileName(
         case UniversalDeviceProfileId::GENERIC_XGIP: return "GENERIC_XGIP";
         case UniversalDeviceProfileId::GENERIC_XID: return "GENERIC_XID";
         case UniversalDeviceProfileId::XUSB_045E_028E_COMPAT: return "XUSB_045E_028E_COMPAT";
-        case UniversalDeviceProfileId::REDRAGON_G808_2563_0575: return "REDRAGON_G808_2563_0575";
+        case UniversalDeviceProfileId::REDRAGON_G808_2563_0575: return "REDRAGON_G808_2563_0575_LEGACY";
+        case UniversalDeviceProfileId::SHANWAN_HID_2563_0575: return "SHANWAN_HID_2563_0575";
+        case UniversalDeviceProfileId::REDRAGON_G808_2563_0526: return "REDRAGON_G808_2563_0526";
         case UniversalDeviceProfileId::XBOX_ONE_SPECTRA_24C6_542A: return "XBOX_ONE_SPECTRA_24C6_542A";
         case UniversalDeviceProfileId::SHANWAN_FALLBACK_20BC_0055: return "SHANWAN_FALLBACK_20BC_0055";
         case UniversalDeviceProfileId::SHANWAN_HID_20BC_5500: return "SHANWAN_HID_20BC_5500";
