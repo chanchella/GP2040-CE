@@ -82,6 +82,8 @@ enum class UniversalDeviceProfileId : uint8_t {
     SONY_DS3_054C_0268,
     SONY_DS4_054C_05C4,
     SONY_DS4_054C_09CC,
+    SONY_DUALSENSE_054C_0CE6,
+    NINTENDO_SWITCH_PRO_057E_2009,
 };
 
 enum UniversalDeviceQuirk : uint32_t {
