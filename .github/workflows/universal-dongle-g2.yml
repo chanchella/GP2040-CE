@@ -3,7 +3,7 @@ name: OAG Vortex Universal Dongle G2 Pico2
 on:
   push:
     branches:
-      - universal-dongle/g2
+      - universal-dongle/g2c
   workflow_dispatch:
 
 env:
@@ -49,7 +49,7 @@ jobs:
           sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
           grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
 
-      - name: Verify G2C0 universal registry invariants
+      - name: Verify G2C1 multi-controller invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -89,7 +89,16 @@ jobs:
           grep -q 'UDEVREG.classifyUsb' src/addons/universal_xinput_host.cpp
           grep -q 'UDEVREG.classifyUsb' src/drivers/shared/xinput_host.cpp
           grep -q 'src/input/universal_device_registry.cpp' CMakeLists.txt
-          echo "G2C0_UNIVERSAL_REGISTRY_VERIFY=PASS"
+          grep -q '#define UNIVERSAL_MULTI_XINPUT_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'UNIVERSAL_XINPUT_DEVICE_COUNT = 4' headers/output/universal_xinput_device.h
+          grep -q '0xA9, 0x00' src/output/universal_xinput_device.cpp
+          grep -q '0x81, 0x14' src/output/universal_xinput_device.cpp
+          grep -q '0x83, 0x14' src/output/universal_xinput_device.cpp
+          grep -q '0x85, 0x14' src/output/universal_xinput_device.cpp
+          grep -q '0x87, 0x14' src/output/universal_xinput_device.cpp
+          grep -q 'UXINPUT_DEVICE.process()' src/drivers/xinput/XInputDriver.cpp
+          grep -q 'src/output/universal_xinput_device.cpp' CMakeLists.txt
+          echo "G2C1_MULTI_XINPUT_VERIFY=PASS"
 
       - name: Configure Pico2
         shell: bash
@@ -103,7 +112,7 @@ jobs:
             -DPICO_BOARD=pico2 \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build G2C0 Universal Registry
+      - name: Build G2C1 Multi XInput
         shell: bash
         run: |
           GP2040_BOARDCONFIG=Pico2 \
@@ -116,16 +125,16 @@ jobs:
         run: |
           find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
 
-      - name: Upload G2C0 UF2
+      - name: Upload G2C1 UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C0-Pico2-UF2
+          name: OAG-Vortex-G2C1-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 
-      - name: Upload G2C0 ELF
+      - name: Upload G2C1 ELF
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C0-Pico2-ELF
+          name: OAG-Vortex-G2C1-Pico2-ELF
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
           if-no-files-found: error
