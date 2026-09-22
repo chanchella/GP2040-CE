@@ -1,3 +1,4 @@
+#include "BoardConfig.h"
 #include "drivermanager.h"
 
 #include "drivers/net/NetDriver.h"
@@ -16,6 +17,9 @@
 #include "drivers/xbone/XBOneDriver.h"
 #include "drivers/xboxog/XboxOriginalDriver.h"
 #include "drivers/xinput/XInputDriver.h"
+#if defined(OAG_MULTI_XINPUT_ENABLED) && OAG_MULTI_XINPUT_ENABLED
+#include "drivers/oag/OAGMultiXInputDriver.h"
+#endif
 
 #include "usbhostmanager.h"
 
@@ -67,7 +71,11 @@ void DriverManager::setup(InputMode mode) {
             driver = new XboxOriginalDriver();
             break;
         case INPUT_MODE_XINPUT:
+#if defined(OAG_MULTI_XINPUT_ENABLED) && OAG_MULTI_XINPUT_ENABLED
+            driver = new OAGMultiXInputDriver();
+#else
             driver = new XInputDriver();
+#endif
             break;
         case INPUT_MODE_SWITCH_PRO:
             driver = new SwitchProDriver();
