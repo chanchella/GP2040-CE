@@ -15,7 +15,7 @@
 
 static constexpr uint8_t OAG_MULTI_HID_SLOT_COUNT = 4;
 static constexpr uint8_t OAG_MULTI_HID_ENDPOINT_SIZE = 64;
-static constexpr uint16_t OAG_MULTI_HID_REPORT_DESC_SIZE = 69;
+static constexpr uint16_t OAG_MULTI_HID_REPORT_DESC_SIZE = 73;
 static constexpr uint16_t OAG_MULTI_HID_CONFIG_SIZE =
     9 + (OAG_MULTI_HID_SLOT_COUNT * (9 + 9 + 7));
 
