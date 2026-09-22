@@ -1,0 +1,132 @@
+#include "input/universal_input_manager.h"
+
+UniversalInputManager& UniversalInputManager::getInstance() {
+    static UniversalInputManager instance;
+    return instance;
+}
+
+UniversalInputManager::UniversalInputManager() {
+    critical_section_init(&lock);
+
+    for (uint8_t i = 0; i < UNIVERSAL_INPUT_SLOT_COUNT; i++) {
+        resetSlotUnlocked(i);
+    }
+}
+
+void UniversalInputManager::resetSlotUnlocked(uint8_t slot) {
+    const uint32_t nextGeneration = slots[slot].generation + 1;
+
+    slots[slot] = Slot {};
+    slots[slot].generation = nextGeneration;
+}
+
+void UniversalInputManager::resetAll() {
+    critical_section_enter_blocking(&lock);
+
+    for (uint8_t i = 0; i < UNIVERSAL_INPUT_SLOT_COUNT; i++) {
+        resetSlotUnlocked(i);
+    }
+
+    critical_section_exit(&lock);
+}
+
+bool UniversalInputManager::connect(
+    uint8_t slot,
+    UniversalInputSource source,
+    uint16_t vid,
+    uint16_t pid,
+    uint8_t devAddr,
+    uint8_t instance
+) {
+    if (!validSlot(slot) || source == UniversalInputSource::NONE) {
+        return false;
+    }
+
+    critical_section_enter_blocking(&lock);
+
+    Slot& target = slots[slot];
+
+    const bool sameIdentity =
+        target.connected &&
+        target.source == source &&
+        target.vid == vid &&
+        target.pid == pid &&
+        target.devAddr == devAddr &&
+        target.instance == instance;
+
+    if (!sameIdentity) {
+        const uint32_t nextGeneration = target.generation + 1;
+
+        target = Slot {};
+        target.generation = nextGeneration;
+        target.connected = true;
+        target.source = source;
+        target.vid = vid;
+        target.pid = pid;
+        target.devAddr = devAddr;
+        target.instance = instance;
+    }
+
+    critical_section_exit(&lock);
+    return true;
+}
+
+void UniversalInputManager::disconnect(uint8_t slot) {
+    if (!validSlot(slot)) {
+        return;
+    }
+
+    critical_section_enter_blocking(&lock);
+    resetSlotUnlocked(slot);
+    critical_section_exit(&lock);
+}
+
+bool UniversalInputManager::publish(
+    uint8_t slot,
+    GamepadState const& state
+) {
+    if (!validSlot(slot)) {
+        return false;
+    }
+
+    critical_section_enter_blocking(&lock);
+
+    Slot& target = slots[slot];
+
+    if (!target.connected) {
+        critical_section_exit(&lock);
+        return false;
+    }
+
+    target.state = state;
+    target.hasReport = true;
+
+    critical_section_exit(&lock);
+    return true;
+}
+
+bool UniversalInputManager::snapshot(
+    uint8_t slot,
+    UniversalInputSlotSnapshot& out
+) const {
+    if (!validSlot(slot)) {
+        return false;
+    }
+
+    critical_section_enter_blocking(&lock);
+
+    const Slot& source = slots[slot];
+
+    out.connected = source.connected;
+    out.hasReport = source.hasReport;
+    out.source = source.source;
+    out.vid = source.vid;
+    out.pid = source.pid;
+    out.devAddr = source.devAddr;
+    out.instance = source.instance;
+    out.generation = source.generation;
+    out.state = source.state;
+
+    critical_section_exit(&lock);
+    return true;
+}
