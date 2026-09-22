@@ -38,6 +38,26 @@ bool UniversalInputManager::connect(
     uint8_t devAddr,
     uint8_t instance
 ) {
+    UniversalDeviceMatch match {};
+    match.vid = vid;
+    match.pid = pid;
+
+    return connectClassified(
+        slot,
+        source,
+        match,
+        devAddr,
+        instance
+    );
+}
+
+bool UniversalInputManager::connectClassified(
+    uint8_t slot,
+    UniversalInputSource source,
+    UniversalDeviceMatch const& match,
+    uint8_t devAddr,
+    uint8_t instance
+) {
     if (!validSlot(slot) || source == UniversalInputSource::NONE) {
         return false;
     }
@@ -49,8 +69,14 @@ bool UniversalInputManager::connect(
     const bool sameIdentity =
         target.connected &&
         target.source == source &&
-        target.vid == vid &&
-        target.pid == pid &&
+        target.transport == match.transport &&
+        target.deviceClass == match.deviceClass &&
+        target.protocol == match.protocol &&
+        target.driverFamily == match.driverFamily &&
+        target.profile == match.profile &&
+        target.quirks == match.quirks &&
+        target.vid == match.vid &&
+        target.pid == match.pid &&
         target.devAddr == devAddr &&
         target.instance == instance;
 
@@ -61,8 +87,14 @@ bool UniversalInputManager::connect(
         target.generation = nextGeneration;
         target.connected = true;
         target.source = source;
-        target.vid = vid;
-        target.pid = pid;
+        target.transport = match.transport;
+        target.deviceClass = match.deviceClass;
+        target.protocol = match.protocol;
+        target.driverFamily = match.driverFamily;
+        target.profile = match.profile;
+        target.quirks = match.quirks;
+        target.vid = match.vid;
+        target.pid = match.pid;
         target.devAddr = devAddr;
         target.instance = instance;
     }
@@ -120,6 +152,12 @@ bool UniversalInputManager::snapshot(
     out.connected = source.connected;
     out.hasReport = source.hasReport;
     out.source = source.source;
+    out.transport = source.transport;
+    out.deviceClass = source.deviceClass;
+    out.protocol = source.protocol;
+    out.driverFamily = source.driverFamily;
+    out.profile = source.profile;
+    out.quirks = source.quirks;
     out.vid = source.vid;
     out.pid = source.pid;
     out.devAddr = source.devAddr;
