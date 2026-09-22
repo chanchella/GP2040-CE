@@ -2,8 +2,14 @@
 #include "storagemanager.h"
 
 void PeripheralManager::initUSB(){
+#if UNIVERSAL_XINPUT_HOST_ENABLED
+    // Universal Dongle G1A must not depend on stale persisted GP2040 settings.
+    // Force the proven primary PIO USB Host root onto GPIO2/3.
+    blockUSB0.setConfig(0, 2, -1, 0);
+#else
     const PeripheralOptions& peripheralOptions = Storage::getInstance().getPeripheralOptions();
     if (peripheralOptions.blockUSB0.enabled) blockUSB0.setConfig(0, peripheralOptions.blockUSB0.dp, peripheralOptions.blockUSB0.enable5v, peripheralOptions.blockUSB0.order);
+#endif
 }
 
 void PeripheralManager::initI2C(){
