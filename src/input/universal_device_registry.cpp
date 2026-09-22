@@ -70,9 +70,8 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
         );
     }
 
-    // Redragon G808 identity observed in the earlier working dongle
-    // experiments. Driver implementation remains a later phase; the
-    // registry records the identity and its proven SET_IDLE quirk now.
+    // Redragon Harrow G808 identities found in public hardware reports.
+    // 2563:0575 has been reported for the G808 USB receiver.
     if (probe.vid == 0x2563 && probe.pid == 0x0575) {
         return makeMatch(
             probe,
@@ -80,8 +79,53 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
             UniversalDeviceClass::GAMEPAD,
             UniversalProtocol::HID_GAMEPAD,
             UniversalDriverFamily::HID,
-            UniversalDeviceProfileId::REDRAGON_G808_2563_0575,
-            UNIVERSAL_QUIRK_SKIP_SET_IDLE
+            UniversalDeviceProfileId::REDRAGON_G808_2563_0575
+        );
+    }
+
+    // Some G808 receivers have also been observed in a pre-XInput/raw stage
+    // as 24C6:542A. If that stage is HID, the generic HID parser can consume
+    // it. Otherwise keep the identity visible as vendor-specific for a later
+    // mode-switch driver rather than pretending it is already XInput.
+    if (probe.vid == 0x24C6 && probe.pid == 0x542A) {
+        const bool hidInterface = probe.interfaceClass == 0x03;
+
+        return makeMatch(
+            probe,
+            UniversalTransport::USB_2_4GHZ_DONGLE,
+            UniversalDeviceClass::GAMEPAD,
+            hidInterface
+                ? UniversalProtocol::HID_GAMEPAD
+                : UniversalProtocol::VENDOR_SPECIFIC,
+            hidInterface
+                ? UniversalDriverFamily::HID
+                : UniversalDriverFamily::VENDOR,
+            UniversalDeviceProfileId::REDRAGON_G808_RAW_24C6_542A
+        );
+    }
+
+    // A commonly reported GIGAMAX / Speedlink-compatible USB identity.
+    // Other GIGAMAX models remain covered by descriptor-driven Generic HID.
+    if (probe.vid == 0x0079 && probe.pid == 0x0006) {
+        return makeMatch(
+            probe,
+            UniversalTransport::USB_WIRED,
+            UniversalDeviceClass::GAMEPAD,
+            UniversalProtocol::HID_GAMEPAD,
+            UniversalDriverFamily::HID,
+            UniversalDeviceProfileId::GIGAMAX_0079_0006
+        );
+    }
+
+    // Xbox One S wired controller.
+    if (probe.vid == 0x045E && probe.pid == 0x02EA) {
+        return makeMatch(
+            probe,
+            UniversalTransport::USB_WIRED,
+            UniversalDeviceClass::GAMEPAD,
+            UniversalProtocol::XGIP_XBOX_ONE,
+            UniversalDriverFamily::XGIP,
+            UniversalDeviceProfileId::XBOX_ONE_S_045E_02EA
         );
     }
 
@@ -317,6 +361,9 @@ const char* UniversalDeviceRegistry::profileName(
         case UniversalDeviceProfileId::GENERIC_XID: return "GENERIC_XID";
         case UniversalDeviceProfileId::XUSB_045E_028E_COMPAT: return "XUSB_045E_028E_COMPAT";
         case UniversalDeviceProfileId::REDRAGON_G808_2563_0575: return "REDRAGON_G808_2563_0575";
+        case UniversalDeviceProfileId::REDRAGON_G808_RAW_24C6_542A: return "REDRAGON_G808_RAW_24C6_542A";
+        case UniversalDeviceProfileId::GIGAMAX_0079_0006: return "GIGAMAX_0079_0006";
+        case UniversalDeviceProfileId::XBOX_ONE_S_045E_02EA: return "XBOX_ONE_S_045E_02EA";
         case UniversalDeviceProfileId::SONY_DS3_054C_0268: return "SONY_DS3_054C_0268";
         case UniversalDeviceProfileId::SONY_DS4_054C_05C4: return "SONY_DS4_054C_05C4";
         case UniversalDeviceProfileId::SONY_DS4_054C_09CC: return "SONY_DS4_054C_09CC";
