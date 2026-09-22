@@ -168,6 +168,7 @@ src/gp2040.cpp
 src/gp2040aux.cpp
 src/gamepad.cpp
 src/gamepad/GamepadState.cpp
+src/input/universal_input_manager.cpp
 src/addonmanager.cpp
 src/playerleds.cpp
 src/drivers/shared/xinput_host.cpp
