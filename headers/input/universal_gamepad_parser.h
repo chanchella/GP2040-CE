@@ -40,6 +40,13 @@ private:
         uint16_t len,
         GamepadState& out
     ) const;
+
+    bool parseXgipXboxOne(
+        UniversalDeviceMatch const& device,
+        uint8_t const* report,
+        uint16_t len,
+        GamepadState& out
+    ) const;
 };
 
 #define UGAMEPADPARSER UniversalGamepadParser::getInstance()
