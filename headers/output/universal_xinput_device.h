@@ -7,7 +7,7 @@
 #include "drivers/xinput/XInputDescriptors.h"
 
 static constexpr uint8_t UNIVERSAL_XINPUT_DEVICE_COUNT = 4;
-static constexpr uint8_t UNIVERSAL_UNIVERSAL_XINPUT_OUT_SIZE = 32;
+static constexpr uint8_t UNIVERSAL_XINPUT_OUT_SIZE = 32;
 
 class UniversalXInputDevice {
 public:
