@@ -111,7 +111,7 @@ jobs:
           grep -q 'OAG_MULTI_XINPUT_CONFIG_SIZE' headers/drivers/oag/OAGMultiXInputDescriptors.h
           grep -q 'class OAGMultiXInputDriver' headers/drivers/oag/OAGMultiXInputDriver.h
           grep -q 'OAG-MULTI-XINPUT' src/drivers/oag/OAGMultiXInputDriver.cpp
-          grep -q 'UOUTPUT.snapshot(slot' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'UOUTPUT.snapshot(logicalSlot' src/drivers/oag/OAGMultiXInputDriver.cpp
           grep -q 'endpointIn\[OAG_MULTI_XINPUT_SLOT_COUNT\]' src/drivers/oag/OAGMultiXInputDriver.cpp
           grep -q 'endpointOut\[OAG_MULTI_XINPUT_SLOT_COUNT\]' src/drivers/oag/OAGMultiXInputDriver.cpp
           grep -q 'new OAGMultiXInputDriver' src/drivermanager.cpp
