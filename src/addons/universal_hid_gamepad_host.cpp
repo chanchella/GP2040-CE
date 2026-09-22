@@ -919,6 +919,8 @@ void UniversalHIDGamepadHostAddon::processReport(
     // Z/Rz (including the public G808 and GIGAMAX-style descriptors).
     // Prefer explicit Simulation Brake/Accelerator usages for triggers.
     const bool knownZrRightStick =
+        state.device.profile == UniversalDeviceProfileId::SHANWAN_HID_2563_0575 ||
+        state.device.profile == UniversalDeviceProfileId::REDRAGON_G808_2563_0526 ||
         state.device.profile == UniversalDeviceProfileId::REDRAGON_G808_2563_0575 ||
         state.device.profile == UniversalDeviceProfileId::GIGAMAX_0079_0006;
 
