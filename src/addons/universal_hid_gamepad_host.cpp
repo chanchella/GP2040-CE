@@ -291,6 +291,10 @@ void UniversalHIDGamepadHostAddon::parseDescriptor(
     state.topUsage = 0;
     state.lastStateValid = false;
 
+    const bool forceFallbackGamepad =
+        (state.vid == 0x20BC && state.pid == 0x0055) ||
+        (state.vid == 0x20BC && state.pid == 0x5500);
+
     GlobalState global {};
     GlobalState globalStack[GLOBAL_STACK_DEPTH] {};
     uint8_t globalStackCount = 0;
@@ -406,11 +410,20 @@ void UniversalHIDGamepadHostAddon::parseDescriptor(
 
                 if (
                     collectionDepth == 0 &&
-                    gamepadUsage(global.usagePage, usage)
+                    (
+                        gamepadUsage(global.usagePage, usage) ||
+                        forceFallbackGamepad
+                    )
                 ) {
                     state.isGamepad = true;
-                    state.topUsagePage = global.usagePage;
-                    state.topUsage = usage;
+                    state.topUsagePage =
+                        forceFallbackGamepad && global.usagePage == 0
+                            ? USAGE_PAGE_GENERIC_DESKTOP
+                            : global.usagePage;
+                    state.topUsage =
+                        forceFallbackGamepad && usage == 0
+                            ? USAGE_GAMEPAD
+                            : usage;
                     gamepadCollectionDepth = newDepth;
                 }
 
