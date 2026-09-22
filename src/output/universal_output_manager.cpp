@@ -41,6 +41,12 @@ void UniversalOutputManager::publishFromInputUnlocked(
         !target.connected ||
         target.inputSlot != inputSlot ||
         target.source != input.source ||
+        target.transport != input.transport ||
+        target.deviceClass != input.deviceClass ||
+        target.protocol != input.protocol ||
+        target.driverFamily != input.driverFamily ||
+        target.profile != input.profile ||
+        target.quirks != input.quirks ||
         target.vid != input.vid ||
         target.pid != input.pid ||
         target.inputGeneration != input.generation;
@@ -56,6 +62,12 @@ void UniversalOutputManager::publishFromInputUnlocked(
     target.hasReport = input.hasReport;
     target.inputSlot = inputSlot;
     target.source = input.source;
+    target.transport = input.transport;
+    target.deviceClass = input.deviceClass;
+    target.protocol = input.protocol;
+    target.driverFamily = input.driverFamily;
+    target.profile = input.profile;
+    target.quirks = input.quirks;
     target.vid = input.vid;
     target.pid = input.pid;
     target.inputGeneration = input.generation;
@@ -103,6 +115,12 @@ bool UniversalOutputManager::snapshot(
     out.hasReport = source.hasReport;
     out.inputSlot = source.inputSlot;
     out.source = source.source;
+    out.transport = source.transport;
+    out.deviceClass = source.deviceClass;
+    out.protocol = source.protocol;
+    out.driverFamily = source.driverFamily;
+    out.profile = source.profile;
+    out.quirks = source.quirks;
     out.vid = source.vid;
     out.pid = source.pid;
     out.generation = source.generation;
