@@ -78,7 +78,9 @@ enum class UniversalDeviceProfileId : uint8_t {
 
     // Known identities already encountered / useful for future drivers
     XUSB_045E_028E_COMPAT,
-    REDRAGON_G808_2563_0575,
+    REDRAGON_G808_2563_0575, // legacy alias; do not use for new matches
+    SHANWAN_HID_2563_0575,
+    REDRAGON_G808_2563_0526,
     XBOX_ONE_SPECTRA_24C6_542A,
     SHANWAN_FALLBACK_20BC_0055,
     SHANWAN_HID_20BC_5500,
