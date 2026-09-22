@@ -13,12 +13,12 @@
 
 // Main pin mapping Configuration
 //                                                  // GP2040 | Xinput | Switch  | PS3/4/5  | Dinput | Arcade |
-#define GPIO_PIN_02 GpioAction::BUTTON_PRESS_UP     // UP     | UP     | UP      | UP       | UP     | UP     |
-#define GPIO_PIN_03 GpioAction::BUTTON_PRESS_DOWN   // DOWN   | DOWN   | DOWN    | DOWN     | DOWN   | DOWN   |
-#define GPIO_PIN_04 GpioAction::BUTTON_PRESS_RIGHT  // RIGHT  | RIGHT  | RIGHT   | RIGHT    | RIGHT  | RIGHT  |
-#define GPIO_PIN_05 GpioAction::BUTTON_PRESS_LEFT   // LEFT   | LEFT   | LEFT    | LEFT     | LEFT   | LEFT   |
-#define GPIO_PIN_06 GpioAction::BUTTON_PRESS_B1     // B1     | A      | B       | Cross    | 2      | K1     |
-#define GPIO_PIN_07 GpioAction::BUTTON_PRESS_B2     // B2     | B      | A       | Circle   | 3      | K2     |
+#define GPIO_PIN_02 GpioAction::ASSIGNED_TO_ADDON   // G1A USB Host D+
+#define GPIO_PIN_03 GpioAction::ASSIGNED_TO_ADDON   // G1A USB Host D-
+#define GPIO_PIN_04 GpioAction::ASSIGNED_TO_ADDON   // G1A USB Host D+
+#define GPIO_PIN_05 GpioAction::ASSIGNED_TO_ADDON   // G1A USB Host D-
+#define GPIO_PIN_06 GpioAction::ASSIGNED_TO_ADDON   // G1A USB Host D+
+#define GPIO_PIN_07 GpioAction::ASSIGNED_TO_ADDON   // G1A USB Host D-
 #define GPIO_PIN_08 GpioAction::BUTTON_PRESS_R2     // R2     | RT     | ZR      | R2       | 8      | K3     |
 #define GPIO_PIN_09 GpioAction::BUTTON_PRESS_L2     // L2     | LT     | ZL      | L2       | 7      | K4     |
 #define GPIO_PIN_10 GpioAction::BUTTON_PRESS_B3     // B3     | X      | Y       | Square   | 1      | P1     |
@@ -94,5 +94,20 @@
 #define I2C0_PIN_SCL 1
 #define BUTTON_LAYOUT BUTTON_LAYOUT_STICKLESS
 #define BUTTON_LAYOUT_RIGHT BUTTON_LAYOUT_STICKLESSB
+
+// ============================================================
+// Universal Input Dongle - G1A
+// P1: D+ GPIO2 / D- GPIO3
+// P2: D+ GPIO4 / D- GPIO5
+// P3: D+ GPIO6 / D- GPIO7
+// ============================================================
+#define USB_PERIPHERAL_ENABLED 1
+#define USB_PERIPHERAL_PIN_DPLUS 2
+#define USB_PERIPHERAL_PIN_ORDER 0
+#define USB_PERIPHERAL_PIN_5V -1
+
+#define GAMEPAD_USB_HOST_ENABLED 1
+#define KEYBOARD_HOST_ENABLED 0
+#define UNIVERSAL_XINPUT_HOST_ENABLED 1
 
 #endif
