@@ -38,6 +38,7 @@ private:
         uint8_t instance = 0;
         uint8_t subtype = 0;
         uint8_t globalSlot = UNIVERSAL_INPUT_SLOT_INVALID;
+        UniversalDeviceMatch device {};
     };
 
     XInputTransportSlot slots[USB_SLOT_COUNT];
@@ -52,9 +53,6 @@ private:
         UniversalDeviceMatch const& match
     );
 
-    static uint16_t axisX(int16_t value);
-    static uint16_t axisY(int16_t value);
-    static bool parseXbox360Report(GamepadState& out, uint8_t const* report, uint16_t len);
 };
 
 #endif
