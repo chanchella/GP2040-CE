@@ -11,6 +11,7 @@
 namespace {
 
 static constexpr uint16_t USAGE_PAGE_GENERIC_DESKTOP = 0x01;
+static constexpr uint16_t USAGE_PAGE_SIMULATION = 0x02;
 static constexpr uint16_t USAGE_PAGE_BUTTON = 0x09;
 
 static constexpr uint16_t USAGE_JOYSTICK = 0x04;
@@ -24,6 +25,9 @@ static constexpr uint16_t USAGE_RX = 0x33;
 static constexpr uint16_t USAGE_RY = 0x34;
 static constexpr uint16_t USAGE_RZ = 0x35;
 static constexpr uint16_t USAGE_HAT = 0x39;
+
+static constexpr uint16_t USAGE_SIM_ACCELERATOR = 0xC4;
+static constexpr uint16_t USAGE_SIM_BRAKE = 0xC5;
 
 struct GlobalState {
     uint16_t usagePage = 0;
@@ -768,6 +772,15 @@ void UniversalHIDGamepadHostAddon::processReport(
     int32_t rzMin = 0;
     int32_t rzMax = 0;
 
+    bool hasAccelerator = false;
+    bool hasBrake = false;
+    int32_t acceleratorValue = 0;
+    int32_t acceleratorMin = 0;
+    int32_t acceleratorMax = 0;
+    int32_t brakeValue = 0;
+    int32_t brakeMin = 0;
+    int32_t brakeMax = 0;
+
     for (uint8_t i = 0; i < state.fieldCount; i++) {
         HidField const& field = state.fields[i];
 
@@ -791,6 +804,29 @@ void UniversalHIDGamepadHostAddon::processReport(
 
         if (field.usagePage == USAGE_PAGE_BUTTON) {
             applyButton(out, field.usage, value != 0);
+            continue;
+        }
+
+        if (field.usagePage == USAGE_PAGE_SIMULATION) {
+            switch (field.usage) {
+                case USAGE_SIM_ACCELERATOR:
+                    hasAccelerator = true;
+                    acceleratorValue = value;
+                    acceleratorMin = field.logicalMin;
+                    acceleratorMax = field.logicalMax;
+                    break;
+
+                case USAGE_SIM_BRAKE:
+                    hasBrake = true;
+                    brakeValue = value;
+                    brakeMin = field.logicalMin;
+                    brakeMax = field.logicalMax;
+                    break;
+
+                default:
+                    break;
+            }
+
             continue;
         }
 
@@ -862,32 +898,56 @@ void UniversalHIDGamepadHostAddon::processReport(
         }
     }
 
-    // Common HID convention: signed centered Z/Rz can be a right stick.
+    // Generic DirectInput gamepads commonly expose the second stick as
+    // Z/Rz (including the public G808 and GIGAMAX-style descriptors).
+    // Prefer explicit Simulation Brake/Accelerator usages for triggers.
+    const bool knownZrRightStick =
+        state.device.profile == UniversalDeviceProfileId::REDRAGON_G808_2563_0575 ||
+        state.device.profile == UniversalDeviceProfileId::GIGAMAX_0079_0006;
+
     if (
         !hasRx &&
         !hasRy &&
         hasZ &&
         hasRz &&
-        zMin < 0 &&
-        rzMin < 0
+        (
+            knownZrRightStick ||
+            hasAccelerator ||
+            hasBrake ||
+            (zMin < 0 && rzMin < 0)
+        )
     ) {
         out.rx = scaleAxis(zValue, zMin, zMax);
         out.ry = scaleAxis(rzValue, rzMin, rzMax);
         hasRx = true;
         hasRy = true;
-    } else {
-        if (hasZ && zMin >= 0) {
-            out.lt = scaleTrigger(zValue, zMin, zMax);
-            if (out.lt != 0) {
-                out.buttons |= GAMEPAD_MASK_L2;
-            }
-        }
+    }
 
-        if (hasRz && rzMin >= 0) {
-            out.rt = scaleTrigger(rzValue, rzMin, rzMax);
-            if (out.rt != 0) {
-                out.buttons |= GAMEPAD_MASK_R2;
-            }
+    if (hasBrake) {
+        out.lt = scaleTrigger(brakeValue, brakeMin, brakeMax);
+        if (out.lt != 0) {
+            out.buttons |= GAMEPAD_MASK_L2;
+        }
+    } else if (hasZ && !hasRx && zMin >= 0) {
+        out.lt = scaleTrigger(zValue, zMin, zMax);
+        if (out.lt != 0) {
+            out.buttons |= GAMEPAD_MASK_L2;
+        }
+    }
+
+    if (hasAccelerator) {
+        out.rt = scaleTrigger(
+            acceleratorValue,
+            acceleratorMin,
+            acceleratorMax
+        );
+        if (out.rt != 0) {
+            out.buttons |= GAMEPAD_MASK_R2;
+        }
+    } else if (hasRz && !hasRy && rzMin >= 0) {
+        out.rt = scaleTrigger(rzValue, rzMin, rzMax);
+        if (out.rt != 0) {
+            out.buttons |= GAMEPAD_MASK_R2;
         }
     }
 
