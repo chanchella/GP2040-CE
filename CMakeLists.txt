@@ -169,6 +169,7 @@ src/gp2040aux.cpp
 src/gamepad.cpp
 src/gamepad/GamepadState.cpp
 src/input/universal_device_registry.cpp
+src/input/universal_gamepad_parser.cpp
 src/input/universal_input_manager.cpp
 src/output/universal_output_manager.cpp
 src/addonmanager.cpp
