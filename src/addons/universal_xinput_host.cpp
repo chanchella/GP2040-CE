@@ -17,7 +17,23 @@ void UniversalXInputHostAddon::setup() {
 }
 
 void UniversalXInputHostAddon::preprocess() {
-    // G1A routes USB/XInput logical slot 0 to the existing GP2040 output.
+    // G1C hot-plug recovery:
+    // A freshly mounted XInput endpoint can occasionally fail its first
+    // receive arm because enumeration/configuration has only just completed.
+    // If an endpoint is mounted and currently idle, retry the receive arm.
+    // Once a transfer is pending, tuh_xinput_ready() becomes false, so this
+    // does not queue duplicate transfers.
+    for (uint8_t i = 0; i < SLOT_COUNT; i++) {
+        if (
+            slots[i].mounted &&
+            tuh_xinput_mounted(slots[i].devAddr, slots[i].instance) &&
+            tuh_xinput_ready(slots[i].devAddr, slots[i].instance)
+        ) {
+            tuh_xinput_receive_report(slots[i].devAddr, slots[i].instance);
+        }
+    }
+
+    // Route USB/XInput logical slot 0 to the existing GP2040 output.
     // Slots 1 and 2 remain independent and reserved for later multi-output routing.
     if (!slots[0].mounted || !slots[0].hasReport) {
         return;
