@@ -55,6 +55,9 @@ private:
 
         XgipInitPhase xgipPhase = XgipInitPhase::NONE;
         bool xgipTxPending = false;
+
+        uint32_t feedbackGeneration = 0;
+        uint8_t xgipRumbleSequence = 1;
     };
 
     XInputTransportSlot slots[USB_SLOT_COUNT];
@@ -74,6 +77,7 @@ private:
     void restartXgipInit(uint8_t localSlot);
     void serviceXgipInit(uint8_t localSlot);
     void advanceXgipInit(uint8_t localSlot);
+    void serviceRumble(uint8_t localSlot);
 };
 
 #endif
