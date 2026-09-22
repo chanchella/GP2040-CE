@@ -251,7 +251,8 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyUsbSignature(
 
         const bool gamepadOrJoystick =
             probe.hidUsage == 0x04 ||
-            probe.hidUsage == 0x05;
+            probe.hidUsage == 0x05 ||
+            probe.hidUsage == 0x08;
 
         if (genericDesktop && gamepadOrJoystick) {
             return makeMatch(
