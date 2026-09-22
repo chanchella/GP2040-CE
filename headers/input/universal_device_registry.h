@@ -79,6 +79,9 @@ enum class UniversalDeviceProfileId : uint8_t {
     // Known identities already encountered / useful for future drivers
     XUSB_045E_028E_COMPAT,
     REDRAGON_G808_2563_0575,
+    REDRAGON_G808_RAW_24C6_542A,
+    GIGAMAX_0079_0006,
+    XBOX_ONE_S_045E_02EA,
     SONY_DS3_054C_0268,
     SONY_DS4_054C_05C4,
     SONY_DS4_054C_09CC,
