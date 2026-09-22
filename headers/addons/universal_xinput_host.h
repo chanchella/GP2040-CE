@@ -4,6 +4,7 @@
 #include "gpaddon.h"
 #include "usblistener.h"
 #include "gamepad.h"
+#include "input/universal_input_manager.h"
 
 #ifndef UNIVERSAL_XINPUT_HOST_ENABLED
 #define UNIVERSAL_XINPUT_HOST_ENABLED 0
@@ -29,22 +30,28 @@ public:
     void get_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override {}
 
 private:
-    static constexpr uint8_t SLOT_COUNT = 3;
+    static constexpr uint8_t USB_SLOT_COUNT = 3;
 
-    struct XInputSlot {
+    struct XInputTransportSlot {
         bool mounted = false;
-        bool hasReport = false;
         uint8_t devAddr = 0;
         uint8_t instance = 0;
         uint8_t subtype = 0;
-        GamepadState state {};
+        uint8_t globalSlot = UNIVERSAL_INPUT_SLOT_INVALID;
     };
 
-    XInputSlot slots[SLOT_COUNT];
+    XInputTransportSlot slots[USB_SLOT_COUNT];
 
     void resetSlot(uint8_t slot);
     int8_t findSlot(uint8_t devAddr, uint8_t instance) const;
-    int8_t allocateSlot(uint8_t devAddr, uint8_t instance, uint8_t subtype);
+
+    int8_t allocateSlot(
+        uint8_t devAddr,
+        uint8_t instance,
+        uint8_t subtype,
+        uint16_t vid,
+        uint16_t pid
+    );
 
     static uint16_t axisX(int16_t value);
     static uint16_t axisY(int16_t value);
