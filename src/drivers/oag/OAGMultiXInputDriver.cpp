@@ -26,6 +26,7 @@ static uint8_t endpointOut[OAG_MULTI_XINPUT_SLOT_COUNT] {};
 static uint8_t outBuffers[OAG_MULTI_XINPUT_SLOT_COUNT]
                          [OAG_MULTI_XINPUT_ENDPOINT_SIZE] {};
 
+static XInputReport txReports[OAG_MULTI_XINPUT_SLOT_COUNT] {};
 static XInputReport lastReports[OAG_MULTI_XINPUT_SLOT_COUNT] {};
 static bool lastReportValid[OAG_MULTI_XINPUT_SLOT_COUNT] {};
 
@@ -35,6 +36,7 @@ static void resetUsbState() {
     memset(endpointIn, 0, sizeof(endpointIn));
     memset(endpointOut, 0, sizeof(endpointOut));
     memset(outBuffers, 0, sizeof(outBuffers));
+    memset(txReports, 0, sizeof(txReports));
     memset(lastReports, 0, sizeof(lastReports));
     memset(lastReportValid, 0, sizeof(lastReportValid));
 }
@@ -278,13 +280,15 @@ bool OAGMultiXInputDriver::process(Gamepad* gamepad) {
                 ) != 0
             )
         ) {
+            // TinyUSB completes asynchronously, so the transfer buffer
+            // must outlive this process() iteration.
+            txReports[slot] = report;
+
             usbd_edpt_claim(0, endpointIn[slot]);
             const bool queued = usbd_edpt_xfer(
                 0,
                 endpointIn[slot],
-                reinterpret_cast<uint8_t*>(
-                    const_cast<XInputReport*>(&report)
-                ),
+                reinterpret_cast<uint8_t*>(&txReports[slot]),
                 sizeof(XInputReport)
             );
             usbd_edpt_release(0, endpointIn[slot]);
