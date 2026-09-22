@@ -49,7 +49,7 @@ jobs:
           sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
           grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
 
-      - name: Verify G2A source invariants
+      - name: Verify G2B source invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -60,9 +60,13 @@ jobs:
           grep -q 'UNIVERSAL_INPUT_SLOT_BLUETOOTH = 0' headers/input/universal_input_manager.h
           grep -q 'UNIVERSAL_INPUT_SLOT_USB_1 = 1' headers/input/universal_input_manager.h
           grep -q 'UniversalInputSource::USB_XINPUT' src/addons/universal_xinput_host.cpp
+          grep -q '#define UNIVERSAL_OUTPUT_ROUTER_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'UNIVERSAL_OUTPUT_SLOT_COUNT = 4' headers/output/universal_output_manager.h
+          grep -q 'UOUTPUT.syncFromInputs()' src/addons/universal_output_router.cpp
+          grep -q 'UNIVERSAL_OUTPUT_SLOT_1' src/addons/universal_output_router.cpp
           grep -q 'src/input/universal_input_manager.cpp' CMakeLists.txt
           grep -q '^#define PIO_USB_ROOT_PORT_CNT 3' lib/pico_pio_usb/src/pio_usb_configuration.h
-          echo "G2A_SOURCE_VERIFY=PASS"
+          echo "G2B_SOURCE_VERIFY=PASS"
 
       - name: Configure Pico2
         shell: bash
@@ -76,7 +80,7 @@ jobs:
             -DPICO_BOARD=pico2 \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build G2A
+      - name: Build G2B
         shell: bash
         run: |
           GP2040_BOARDCONFIG=Pico2 \
@@ -89,16 +93,16 @@ jobs:
         run: |
           find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
 
-      - name: Upload G2A UF2
+      - name: Upload G2B UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: Universal-Dongle-G2A-Pico2-UF2
+          name: Universal-Dongle-G2B-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 
-      - name: Upload G2A ELF
+      - name: Upload G2B ELF
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: Universal-Dongle-G2A-Pico2-ELF
+          name: Universal-Dongle-G2B-Pico2-ELF
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
           if-no-files-found: error
