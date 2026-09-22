@@ -38,6 +38,7 @@ private:
         SYSTEM_INIT,
         EXTRA_INPUT,
         LED,
+        AUTH_DONE,
         READY,
     };
 
