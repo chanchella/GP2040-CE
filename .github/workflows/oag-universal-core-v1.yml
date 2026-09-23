@@ -140,7 +140,8 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U1-HW3"\n          assert manifest["features"]["host_root_watchdog_2s"] is True
+          assert manifest["phase"] == "U1-HW3"
+          assert manifest["features"]["host_root_watchdog_2s"] is True
           assert manifest["dependencies"]["pico_pio_usb"] == "5a37a66dc5d3fbe0ef3cdbeda923a757440f984f"
           assert manifest["dependencies"]["tinyusb"] == "9865cba11ecbcdd25237ba9cf4ccbe3fd1fd821d"
           assert manifest["verification"]["ci_verified"] is True
