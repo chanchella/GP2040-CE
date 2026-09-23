@@ -1,5 +1,7 @@
 #include "output/universal_output_manager.h"
 #include "output/universal_feedback_manager.h"
+#include "addons/universal_defense_combo.h"
+#include "pico/time.h"
 
 UniversalOutputManager& UniversalOutputManager::getInstance() {
     static UniversalOutputManager instance;
@@ -27,6 +29,7 @@ void UniversalOutputManager::resetAll() {
 
     for (uint8_t i = 0; i < UNIVERSAL_OUTPUT_SLOT_COUNT; i++) {
         clearSlotUnlocked(i);
+        UDEFENSECOMBO.reset(i);
     }
 
     critical_section_exit(&lock);
@@ -88,6 +91,8 @@ void UniversalOutputManager::syncFromInputs() {
         UINPUT.snapshot(i, inputSnapshots[i]);
     }
 
+    const uint64_t nowUs = time_us_64();
+
     critical_section_enter_blocking(&lock);
 
     for (uint8_t i = 0; i < UNIVERSAL_OUTPUT_SLOT_COUNT; i++) {
@@ -96,11 +101,13 @@ void UniversalOutputManager::syncFromInputs() {
         if (!input.connected) {
             if (slots[i].connected) {
                 clearSlotUnlocked(i);
+                UDEFENSECOMBO.reset(i);
             }
             continue;
         }
 
         publishFromInputUnlocked(i, i, input);
+        UDEFENSECOMBO.process(slots[i].state, i, nowUs);
     }
 
     critical_section_exit(&lock);
