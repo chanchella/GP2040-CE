@@ -1,6 +1,7 @@
 #include "addons/universal_output_router.h"
 
 #include "output/universal_output_manager.h"
+#include "output/universal_feedback_manager.h"
 
 bool UniversalOutputRouterAddon::available() {
     return UNIVERSAL_OUTPUT_ROUTER_ENABLED;
@@ -8,6 +9,7 @@ bool UniversalOutputRouterAddon::available() {
 
 void UniversalOutputRouterAddon::setup() {
     UOUTPUT.resetAll();
+    UFEEDBACK.resetAll();
 }
 
 void UniversalOutputRouterAddon::preprocess() {

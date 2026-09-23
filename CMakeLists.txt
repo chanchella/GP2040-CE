@@ -172,6 +172,7 @@ src/input/universal_device_registry.cpp
 src/input/universal_gamepad_parser.cpp
 src/input/universal_input_manager.cpp
 src/output/universal_output_manager.cpp
+src/output/universal_feedback_manager.cpp
 src/addonmanager.cpp
 src/playerleds.cpp
 src/drivers/shared/xinput_host.cpp

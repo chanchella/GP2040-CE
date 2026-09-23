@@ -1,4 +1,5 @@
 #include "output/universal_output_manager.h"
+#include "output/universal_feedback_manager.h"
 
 UniversalOutputManager& UniversalOutputManager::getInstance() {
     static UniversalOutputManager instance;
@@ -18,6 +19,7 @@ void UniversalOutputManager::clearSlotUnlocked(uint8_t slot) {
 
     slots[slot] = Slot {};
     slots[slot].generation = nextGeneration;
+    UFEEDBACK.invalidate(slot);
 }
 
 void UniversalOutputManager::resetAll() {
@@ -56,6 +58,7 @@ void UniversalOutputManager::publishFromInputUnlocked(
 
         target = Slot {};
         target.generation = nextGeneration;
+        UFEEDBACK.invalidate(outputSlot);
     }
 
     target.connected = input.connected;
