@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <optional>
 
 #include "pico/stdlib.h"
 #include "pico/time.h"
@@ -85,18 +86,28 @@ public:
             return;
         }
 
+        const auto primaryBefore = primaryPcSlot();
         const auto slot = slots_.slotFor(*id);
 
         if (slot) {
             states_[*slot] = {};
-
-            if (*slot == 0) {
-                pcOutput_.sendNeutral();
-            }
         }
 
         slots_.release(*id);
         registry_.disconnect(*id);
+
+        if (slot && primaryBefore && *slot == *primaryBefore) {
+            sendPrimaryPcOutput();
+        }
+    }
+
+    void onUsbDeviceUnmounted(std::uint8_t devAddr) {
+        // TinyUSB calls the generic device-unmount callback before closing
+        // class drivers. Clean every possible U1 XUSB interface here as a
+        // transport-level safety net; the later class callback is idempotent.
+        for (std::uint8_t instance = 0; instance < CFG_TUH_XINPUT; ++instance) {
+            onXusbUnmounted(devAddr, instance);
+        }
     }
 
     void onXusbReport(
@@ -130,17 +141,40 @@ public:
             return;
         }
 
-        // U1-HW1 exposes one PC HID gamepad while keeping the internal
-        // slot model independent and four-wide.
-        if (*slot == 0) {
-            const oag::LogicalGamepadState logical =
-                mapping_.process(states_[*slot]);
-
-            pcOutput_.send(logical);
+        // U1-HW1 exposes one PC HID gamepad while retaining four independent
+        // internal slots. The primary output is deterministic: the lowest
+        // currently bound slot, never whichever controller was active last.
+        const auto primary = primaryPcSlot();
+        if (primary && *slot == *primary) {
+            pcOutput_.send(mapping_.process(states_[*slot]));
         }
     }
 
 private:
+    std::optional<oag::LogicalSlotId> primaryPcSlot() const {
+        for (std::size_t i = 0; i < oag::LogicalSlotManager::kGamepadSlots; ++i) {
+            const auto slot = static_cast<oag::LogicalSlotId>(i);
+            if (slots_.deviceFor(slot).valid()) {
+                return slot;
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    void sendPrimaryPcOutput() {
+        const auto primary = primaryPcSlot();
+
+        if (!primary ||
+            *primary >= states_.size() ||
+            !states_[*primary].connected) {
+            pcOutput_.sendNeutral();
+            return;
+        }
+
+        pcOutput_.send(mapping_.process(states_[*primary]));
+    }
+
     oag::firmware::UsbPioHost usbHost_;
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;
@@ -173,6 +207,10 @@ extern "C" void tuh_xinput_umount_cb(
     std::uint8_t instance
 ) {
     gCore.onXusbUnmounted(dev_addr, instance);
+}
+
+extern "C" void tuh_umount_cb(std::uint8_t dev_addr) {
+    gCore.onUsbDeviceUnmounted(dev_addr);
 }
 
 extern "C" void tuh_xinput_report_received_cb(

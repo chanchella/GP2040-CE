@@ -65,9 +65,9 @@ bool XusbInputDriver::parse(
     next.rightTrigger = normalizeTrigger(report[5]);
 
     next.lx = normalizeAxis(readS16(report, 6));
-    next.ly = normalizeAxis(readS16(report, 8));
+    next.ly = normalizeYAxis(readS16(report, 8));
     next.rx = normalizeAxis(readS16(report, 10));
-    next.ry = normalizeAxis(readS16(report, 12));
+    next.ry = normalizeYAxis(readS16(report, 12));
 
     output = next;
     return true;
@@ -88,6 +88,20 @@ std::int32_t XusbInputDriver::normalizeAxis(std::int16_t value) {
         std::numeric_limits<std::int16_t>::max();
 
     return static_cast<std::int32_t>(scaled);
+}
+
+std::int32_t XusbInputDriver::normalizeYAxis(std::int16_t value) {
+    const std::int32_t normalized = normalizeAxis(value);
+
+    // XUSB reports positive Y upward, while the canonical OAG/HID-facing
+    // orientation follows G2E3: upward is negative and downward is positive.
+    // Saturate the one asymmetric two's-complement endpoint instead of
+    // overflowing when negating INT32_MIN.
+    if (normalized == std::numeric_limits<std::int32_t>::min()) {
+        return std::numeric_limits<std::int32_t>::max();
+    }
+
+    return -normalized;
 }
 
 std::uint32_t XusbInputDriver::normalizeTrigger(std::uint8_t value) {

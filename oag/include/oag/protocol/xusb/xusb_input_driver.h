@@ -20,6 +20,7 @@ public:
 
 private:
     static std::int32_t normalizeAxis(std::int16_t value);
+    static std::int32_t normalizeYAxis(std::int16_t value);
     static std::uint32_t normalizeTrigger(std::uint8_t value);
 };
 

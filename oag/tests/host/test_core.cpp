@@ -65,9 +65,9 @@ int main() {
         0x11, 0x14, // Up + Start + Guide + South(A)
         0xFF, 0x80, // LT max, RT mid
         0x00, 0x80, // LX = -32768
-        0xFF, 0x7F, // LY = +32767
+        0xFF, 0x7F, // LY = +32767 (XUSB Up)
         0x00, 0x00, // RX = 0
-        0x01, 0x00, // RY = +1
+        0x01, 0x00, // RY = +1 (XUSB Up)
         0, 0, 0, 0, 0, 0
     };
 
@@ -84,9 +84,24 @@ int main() {
     assert(input.leftTrigger == std::numeric_limits<std::uint32_t>::max());
     assert(input.rightTrigger == 0x80808080u);
     assert(input.lx == std::numeric_limits<std::int32_t>::min());
-    assert(input.ly == std::numeric_limits<std::int32_t>::max());
+    assert(input.ly == -std::numeric_limits<std::int32_t>::max());
     assert(input.rx == 0);
-    assert(input.ry > 0);
+    assert(input.ry < 0);
+
+    UniversalGamepadState yDown {};
+    std::uint8_t yDownReport[20] = {
+        0x00, 0x14,
+        0x00, 0x00,
+        0x00, 0x00,
+        0x00, 0x00,
+        0x00, 0x80, // LY = -32768 (XUSB Down)
+        0x00, 0x00,
+        0x00, 0x80, // RY = -32768 (XUSB Down)
+        0, 0, 0, 0, 0, 0
+    };
+    assert(xusb.parse(*second, yDownReport, sizeof(yDownReport), 1000100, yDown));
+    assert(yDown.ly == std::numeric_limits<std::int32_t>::max());
+    assert(yDown.ry == std::numeric_limits<std::int32_t>::max());
 
     UniversalGamepadState rejected {};
     std::uint8_t invalidReport[20] = {};

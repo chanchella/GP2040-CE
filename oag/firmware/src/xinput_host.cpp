@@ -240,17 +240,21 @@ extern "C" bool xinputh_xfer_cb(
                 iface->epInBuffer,
                 static_cast<std::uint16_t>(xferred_bytes)
             );
-        }
 
-        if (iface->gameplay &&
-            iface->epIn != 0 &&
-            iface->epInSize != 0) {
-            usbh_edpt_xfer(
-                dev_addr,
-                iface->epIn,
-                iface->epInBuffer,
-                iface->epInSize
-            );
+            // Rearm only after a successful transfer. Re-queueing an IN
+            // transfer after a failed/disconnected transaction can keep stale
+            // endpoint state alive while TinyUSB is processing removal.
+            if (iface->gameplay &&
+                iface->epIn != 0 &&
+                iface->epInSize != 0 &&
+                tuh_ready(dev_addr)) {
+                usbh_edpt_xfer(
+                    dev_addr,
+                    iface->epIn,
+                    iface->epInBuffer,
+                    iface->epInSize
+                );
+            }
         }
     } else if (result == XFER_RESULT_SUCCESS) {
         tuh_xinput_report_sent_cb(
