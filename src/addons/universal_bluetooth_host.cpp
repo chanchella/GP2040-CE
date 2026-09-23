@@ -140,6 +140,7 @@ static BluetoothGamepadProfile activeBluetoothProfile =
 static uint32_t lastBluetoothFeedbackGeneration = 0;
 static uint64_t lastBluetoothFeedbackAttemptUs = 0;
 static uint8_t dualsenseOutputSequence = 0;
+static uint8_t switchOutputPacketNumber = 0;
 
 static uint64_t diagnosticLastToggleUs = 0;
 static bool diagnosticLedState = false;
@@ -241,12 +242,19 @@ static BluetoothGamepadProfile classifyClassicInquiry(
                 return BluetoothGamepadProfile::SONY_DS4_CLASSIC;
             }
 
-            if (pid == 0x0CE6) {
+            if (pid == 0x0CE6 || pid == 0x0DF2) {
                 return BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC;
             }
         }
 
-        if (vid == 0x057E && pid == 0x2009) {
+        if (
+            vid == 0x057E &&
+            (
+                pid == 0x2006 || // Joy-Con L
+                pid == 0x2007 || // Joy-Con R
+                pid == 0x2009    // Pro Controller
+            )
+        ) {
             return BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC;
         }
     }
@@ -266,6 +274,7 @@ static BluetoothGamepadProfile classifyClassicInquiry(
 
         if (
             asciiContains(name, nameLength, "Pro Controller") ||
+            asciiContains(name, nameLength, "Joy-Con") ||
             asciiContains(name, nameLength, "Nintendo")
         ) {
             return BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC;
@@ -295,6 +304,7 @@ static void resetBluetoothGamepadState() {
     lastBluetoothFeedbackGeneration = 0;
     lastBluetoothFeedbackAttemptUs = 0;
     dualsenseOutputSequence = 0;
+    switchOutputPacketNumber = 0;
 
     if (bluetoothSlotConnected) {
         UINPUT.disconnect(UNIVERSAL_INPUT_SLOT_BLUETOOTH);
@@ -1613,6 +1623,85 @@ static void serviceDualSenseClassicFeedback(
     }
 }
 
+static void encodeSwitchRumbleMotor(
+    uint8_t magnitude,
+    uint8_t out[4]
+) {
+    if (magnitude == 0) {
+        out[0] = 0x00;
+        out[1] = 0x01;
+        out[2] = 0x40;
+        out[3] = 0x40;
+        return;
+    }
+
+    // Fixed 160/80 Hz carrier pair with stepped amplitudes from the
+    // documented Nintendo HD-rumble encoding table.
+    out[0] = 0x80;
+
+    if (magnitude < 64) {
+        out[1] = 0x24;
+        out[2] = 0x20;
+        out[3] = 0x49;
+    } else if (magnitude < 128) {
+        out[1] = 0x4A;
+        out[2] = 0xA0;
+        out[3] = 0x52;
+    } else if (magnitude < 192) {
+        out[1] = 0x88;
+        out[2] = 0x20;
+        out[3] = 0x62;
+    } else {
+        out[1] = 0xC8;
+        out[2] = 0x20;
+        out[3] = 0x72;
+    }
+}
+
+static void serviceSwitchClassicFeedback(
+    UniversalFeedbackSlotSnapshot const& feedback
+) {
+    if (
+        classicHidCid == 0 ||
+        !classicDescriptorAvailable ||
+        activeBluetoothProfile !=
+            BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC
+    ) {
+        return;
+    }
+
+    uint8_t payload[9] {};
+
+    payload[0] = switchOutputPacketNumber;
+    switchOutputPacketNumber =
+        static_cast<uint8_t>(
+            (switchOutputPacketNumber + 1) & 0x0F
+        );
+
+    encodeSwitchRumbleMotor(
+        feedback.leftMotor,
+        &payload[1]
+    );
+
+    encodeSwitchRumbleMotor(
+        feedback.rightMotor,
+        &payload[5]
+    );
+
+    const uint8_t status =
+        hid_host_send_report(
+            classicHidCid,
+            0x10,
+            payload,
+            sizeof(payload)
+        );
+
+    if (status == ERROR_CODE_SUCCESS) {
+        lastBluetoothFeedbackGeneration =
+            feedback.generation;
+    }
+}
+
 static void serviceBluetoothFeedback() {
     const uint64_t nowUs = time_us_64();
 
@@ -1658,6 +1747,9 @@ static void serviceBluetoothFeedback() {
             break;
 
         case BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC:
+            serviceSwitchClassicFeedback(feedback);
+            break;
+
         case BluetoothGamepadProfile::GENERIC_HID:
         default:
             // Generic HID has no universal rumble report format. Input stays
@@ -1708,6 +1800,36 @@ static void handleBleHidReport(
     );
 }
 
+static BluetoothGamepadProfile detectClassicProfileFromReport(
+    const uint8_t* report,
+    uint16_t reportLength
+) {
+    if (report == nullptr || reportLength == 0) {
+        return BluetoothGamepadProfile::GENERIC_HID;
+    }
+
+    if (report[0] == 0x31 && reportLength >= 70) {
+        return BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC;
+    }
+
+    if (
+        (report[0] == 0x11 && reportLength >= 70) ||
+        (report[0] == 0x01 && reportLength == 10)
+    ) {
+        return BluetoothGamepadProfile::SONY_DS4_CLASSIC;
+    }
+
+    if (
+        report[0] == 0x3F ||
+        report[0] == 0x30 ||
+        report[0] == 0x21
+    ) {
+        return BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC;
+    }
+
+    return BluetoothGamepadProfile::GENERIC_HID;
+}
+
 static void handleClassicHidReport(
     uint8_t const* report,
     uint16_t reportLength
@@ -1730,6 +1852,28 @@ static void handleClassicHidReport(
 
     if (reportLength == 0) {
         return;
+    }
+
+    if (
+        classicCache.profile ==
+            BluetoothGamepadProfile::GENERIC_HID
+    ) {
+        const BluetoothGamepadProfile runtimeProfile =
+            detectClassicProfileFromReport(
+                report,
+                reportLength
+            );
+
+        if (
+            runtimeProfile !=
+                BluetoothGamepadProfile::GENERIC_HID
+        ) {
+            classicCache.profile = runtimeProfile;
+            classicRemote.profile =
+                static_cast<uint8_t>(runtimeProfile);
+            classicRemotePersisted = false;
+            saveStoredClassicRemote();
+        }
     }
 
     const uint8_t* descriptor =
