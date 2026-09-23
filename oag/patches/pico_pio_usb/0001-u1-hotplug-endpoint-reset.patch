@@ -1,0 +1,14 @@
+--- a/src/pio_usb_host.c
++++ b/src/pio_usb_host.c
+@@
+ void pio_usb_host_close_device(uint8_t root_idx, uint8_t device_address) {
+   for (int ep_pool_idx = 0; ep_pool_idx < PIO_USB_EP_POOL_CNT; ep_pool_idx++) {
+     endpoint_t *ep = PIO_USB_ENDPOINT(ep_pool_idx);
+     if ((ep->root_idx == root_idx) && (ep->dev_addr == device_address) &&
+         ep->size) {
+-      ep->size = 0;
+-      ep->has_transfer = false;
++      memset(ep, 0, sizeof(*ep));
+     }
+   }
+ }
