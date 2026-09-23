@@ -69,15 +69,17 @@ static const uint8_t oag_multi_hid_report_descriptor[] = {
     0x75, 0x04,
     0x81, 0x01,
 
-    // Four axes, matching GP2040 Generic HID:
-    // X/Y = left stick, Z/Rz = right stick.
+    // Four contiguous Chromium/Windows RawInput axes:
+    // X/Y = left stick, Z/Rx = right stick.
+    // Chromium indexes Generic Desktop axes from Usage 0x30, so Z/Rx become
+    // axes[2]/axes[3] with no gap.
     0x05, 0x01,
     0x26, 0xFF, 0x00,
     0x46, 0xFF, 0x00,
     0x09, 0x30,        // X
     0x09, 0x31,        // Y
-    0x09, 0x32,        // Z
-    0x09, 0x35,        // Rz
+    0x09, 0x32,        // Z  -> right stick X / axes[2]
+    0x09, 0x33,        // Rx -> right stick Y / axes[3]
     0x75, 0x08,
     0x95, 0x04,
     0x81, 0x02,
@@ -113,7 +115,7 @@ static const uint8_t oag_multi_hid_device_descriptor[] = {
     0xC4, 0x10, // VID 10C4
     0xC0, 0x82, // PID 82C0
 
-    0x02, 0x02, // bcdDevice 2.02
+    0x03, 0x02, // bcdDevice 2.03
     0x01,       // manufacturer
     0x02,       // product
     0x03,       // serial
