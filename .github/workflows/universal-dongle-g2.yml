@@ -5,6 +5,7 @@ on:
     branches:
       - universal-dongle/g2
       - universal-dongle/g2c1-rumble
+      - universal-dongle/g2c1-next
   workflow_dispatch:
 
 env:
