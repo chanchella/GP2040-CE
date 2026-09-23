@@ -155,6 +155,7 @@ static void* tlvContext = nullptr;
 
 static void startBleScan();
 static void startClassicInquiry();
+static void publishRuntimeDiagnostic(uint32_t buttons);
 static void connectStoredRemote();
 static void connectStoredClassic();
 static void connectHids();
@@ -165,6 +166,43 @@ static void handleGattClientEvent(
     uint8_t* packet,
     uint16_t size
 );
+
+static void publishRuntimeDiagnostic(uint32_t buttons) {
+    UniversalDeviceMatch match {};
+    match.recognized = true;
+    match.transport = UniversalTransport::BLUETOOTH_LE;
+    match.deviceClass = UniversalDeviceClass::GAMEPAD;
+    match.protocol = UniversalProtocol::HID_GAMEPAD;
+    match.driverFamily = UniversalDriverFamily::HID;
+    match.profile = UniversalDeviceProfileId::GENERIC_HID_GAMEPAD;
+    match.capabilities = UNIVERSAL_CAP_WIRELESS_PAIRING;
+
+    UniversalInputSlotSnapshot existing {};
+    const bool haveSlot =
+        UINPUT.snapshot(
+            UNIVERSAL_INPUT_SLOT_BLUETOOTH,
+            existing
+        ) &&
+        existing.connected;
+
+    if (!haveSlot) {
+        UINPUT.connectClassified(
+            UNIVERSAL_INPUT_SLOT_BLUETOOTH,
+            UniversalInputSource::BLUETOOTH_GAMEPAD,
+            match,
+            0,
+            0
+        );
+    }
+
+    GamepadState state {};
+    state.buttons = buttons;
+
+    UINPUT.publish(
+        UNIVERSAL_INPUT_SLOT_BLUETOOTH,
+        state
+    );
+}
 
 static void resetBluetoothGamepadState() {
     bluetoothGamepadState = GamepadState {};
@@ -1385,6 +1423,9 @@ static void btPacketHandler(
                 return;
             }
 
+            // Runtime diagnostic: B4 means HCI reached WORKING.
+            publishRuntimeDiagnostic(GAMEPAD_MASK_B4);
+
             if (remoteKnown) {
                 connectStoredRemote();
             } else if (classicRemoteKnown) {
@@ -1735,16 +1776,29 @@ void UniversalBluetoothHostAddon::setup() {
     // USB Host first, Bluetooth second.
     initialized = false;
     bleState = BleHostState::WAITING_HCI;
+
+    // Runtime diagnostic: B1 means the Bluetooth addon was loaded and setup()
+    // executed. This does not depend on CYW43 or BTstack being functional.
+    publishRuntimeDiagnostic(GAMEPAD_MASK_B1);
 #endif
 }
 
 void UniversalBluetoothHostAddon::preprocess() {
 #if OAG_BLUETOOTH_HOST_ENABLED && defined(PICO_CYW43_SUPPORTED)
     if (!initialized) {
+        // Runtime diagnostic: B2 means preprocess() was reached and CYW43
+        // initialization is about to be attempted.
+        publishRuntimeDiagnostic(GAMEPAD_MASK_B2);
+
         // This now runs only after USBHostManager::start() has completed.
         if (cyw43_arch_init() != PICO_OK) {
+            // Leave B2 asserted so joy.cpl exposes an init failure.
             return;
         }
+
+        // Runtime diagnostic: B3 means CYW43 + BTstack architecture init
+        // returned successfully. HCI working will advance this to B4.
+        publishRuntimeDiagnostic(GAMEPAD_MASK_B3);
 
         resetBluetoothGamepadState();
         resetServiceCaches();
