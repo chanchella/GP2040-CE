@@ -341,6 +341,17 @@ void GP2040::run() {
 		// Copy Processed Gamepad for Core1 (race condition otherwise)
 		memcpy(&processedGamepad->state, &gamepad->state, sizeof(GamepadState));
 
+		// OAG low-latency USB device service:
+		// In the OAG PC multi-HID profile, service TinyUSB immediately before
+		// attempting to queue the newest gamepad report. This lets completed
+		// interrupt-IN transfers become ready as early as possible in the same
+		// main-loop iteration. The ordinary post-send tud_task() remains below.
+#if defined(OAG_PC_MULTI_HID_ENABLED) && OAG_PC_MULTI_HID_ENABLED
+		if (DriverManager::getInstance().getInputMode() == INPUT_MODE_XINPUT) {
+			tud_task();
+		}
+#endif
+
 		// Process Input Driver
 		bool processed = inputDriver->process(gamepad);
 
