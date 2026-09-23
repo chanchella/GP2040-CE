@@ -186,6 +186,14 @@ static HidServiceCache classicCache {};
 
 static HidServiceCache serviceCaches[MAX_HID_SERVICES] {};
 
+static void clearHidServiceCache(HidServiceCache& cache) {
+    // The enlarged cache contains descriptor metadata plus per-report
+    // keyboard/mouse contributions. ARM GCC can ICE on aggregate assignment
+    // of this object, so clear the trivially-stored state explicitly.
+    std::memset(&cache, 0, sizeof(cache));
+    cache.profile = BluetoothGamepadProfile::GENERIC_HID;
+}
+
 static GamepadState bluetoothGamepadState {};
 static bool bluetoothGamepadStateValid = false;
 static bool bluetoothSlotConnected = false;
@@ -374,10 +382,10 @@ static void resetBluetoothGamepadState() {
 
 static void resetServiceCaches() {
     for (uint8_t i = 0; i < MAX_HID_SERVICES; i++) {
-        serviceCaches[i] = HidServiceCache {};
+        clearHidServiceCache(serviceCaches[i]);
     }
 
-    classicCache = HidServiceCache {};
+    clearHidServiceCache(classicCache);
     classicDescriptorAvailable = false;
 }
 
@@ -716,7 +724,7 @@ static HidServiceCache* ensureServiceCache(uint8_t serviceIndex) {
         return &cache;
     }
 
-    cache = HidServiceCache {};
+    clearHidServiceCache(cache);
     cache.parsed = true;
 
     const uint8_t* descriptor =
@@ -1148,7 +1156,7 @@ static void populateHidCache(
     uint8_t const* descriptor,
     uint16_t descriptorLength
 ) {
-    cache = HidServiceCache {};
+    clearHidServiceCache(cache);
     cache.parsed = true;
 
     if (descriptor == nullptr || descriptorLength == 0) {
@@ -3117,7 +3125,7 @@ static void btPacketHandler(
                     classicRemoteKnown = true;
                     classicRemotePersisted = false;
                     classicDescriptorAvailable = false;
-                    classicCache = HidServiceCache {};
+                    clearHidServiceCache(classicCache);
                     break;
                 }
 
@@ -3198,7 +3206,7 @@ static void btPacketHandler(
                     classicConnecting = false;
                     classicHidCid = 0;
                     classicDescriptorAvailable = false;
-                    classicCache = HidServiceCache {};
+                    clearHidServiceCache(classicCache);
                     resetBluetoothGamepadState();
                     resetBluetoothHumanInterfaceState();
 
