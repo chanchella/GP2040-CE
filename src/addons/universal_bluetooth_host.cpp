@@ -65,6 +65,7 @@ struct HidFieldRange {
 struct HidServiceCache {
     bool parsed = false;
     bool looksLikeGamepad = false;
+    bool xboxBleButtonLayout = false;
     uint8_t fieldCount = 0;
     HidFieldRange fields[MAX_FIELD_RANGES] {};
 };
@@ -646,7 +647,34 @@ static uint8_t scaleTrigger(
     );
 }
 
-static uint32_t buttonMaskForUsage(uint16_t usage) {
+static uint32_t buttonMaskForUsage(
+    uint16_t usage,
+    bool xboxBleLayout
+) {
+    if (xboxBleLayout) {
+        // Xbox One / Series Bluetooth HID layout verified against the
+        // user's previously working BluetoothHIDMaster -> XInput path.
+        //
+        // HID Button usages are intentionally sparse:
+        // 1=A, 2=B, 4=X, 5=Y, 7=LB, 8=RB,
+        // 11=View, 12=Menu, 13=Guide, 14=L3, 15=R3.
+        switch (usage) {
+            case 1:  return GAMEPAD_MASK_B1; // A
+            case 2:  return GAMEPAD_MASK_B2; // B
+            case 4:  return GAMEPAD_MASK_B3; // X
+            case 5:  return GAMEPAD_MASK_B4; // Y
+            case 7:  return GAMEPAD_MASK_L1; // LB
+            case 8:  return GAMEPAD_MASK_R1; // RB
+            case 11: return GAMEPAD_MASK_S1; // View / Back
+            case 12: return GAMEPAD_MASK_S2; // Menu / Start
+            case 13: return GAMEPAD_MASK_A1; // Guide / Home
+            case 14: return GAMEPAD_MASK_L3;
+            case 15: return GAMEPAD_MASK_R3;
+            default: return 0;
+        }
+    }
+
+    // Generic HID fallback.
     switch (usage) {
         case 1:  return GAMEPAD_MASK_B1;
         case 2:  return GAMEPAD_MASK_B2;
@@ -753,6 +781,19 @@ static void populateHidCache(
 
     bool hasAxis = false;
     bool hasButtons = false;
+    bool hasAccelerator = false;
+    bool hasBrake = false;
+    bool hasXboxButton1 = false;
+    bool hasXboxButton2 = false;
+    bool hasXboxButton4 = false;
+    bool hasXboxButton5 = false;
+    bool hasXboxButton7 = false;
+    bool hasXboxButton8 = false;
+    bool hasXboxButton11 = false;
+    bool hasXboxButton12 = false;
+    bool hasXboxButton13 = false;
+    bool hasXboxButton14 = false;
+    bool hasXboxButton15 = false;
 
     while (
         btstack_hid_usage_iterator_has_more(&iterator) &&
@@ -784,6 +825,29 @@ static void populateHidCache(
 
         if (field.usagePage == USAGE_PAGE_BUTTON) {
             hasButtons = true;
+
+            switch (field.usage) {
+                case 1:  hasXboxButton1 = true; break;
+                case 2:  hasXboxButton2 = true; break;
+                case 4:  hasXboxButton4 = true; break;
+                case 5:  hasXboxButton5 = true; break;
+                case 7:  hasXboxButton7 = true; break;
+                case 8:  hasXboxButton8 = true; break;
+                case 11: hasXboxButton11 = true; break;
+                case 12: hasXboxButton12 = true; break;
+                case 13: hasXboxButton13 = true; break;
+                case 14: hasXboxButton14 = true; break;
+                case 15: hasXboxButton15 = true; break;
+                default: break;
+            }
+        }
+
+        if (field.usagePage == USAGE_PAGE_SIMULATION) {
+            if (field.usage == USAGE_SIM_ACCELERATOR) {
+                hasAccelerator = true;
+            } else if (field.usage == USAGE_SIM_BRAKE) {
+                hasBrake = true;
+            }
         }
 
         if (
@@ -803,6 +867,25 @@ static void populateHidCache(
     }
 
     cache.looksLikeGamepad = hasAxis && hasButtons;
+
+    // Xbox Bluetooth HID uses sparse button usages plus the Simulation
+    // Accelerator/Brake fields for its analog triggers. Keep this
+    // descriptor-driven so other generic HID controllers retain the
+    // generic sequential mapping.
+    cache.xboxBleButtonLayout =
+        hasAccelerator &&
+        hasBrake &&
+        hasXboxButton1 &&
+        hasXboxButton2 &&
+        hasXboxButton4 &&
+        hasXboxButton5 &&
+        hasXboxButton7 &&
+        hasXboxButton8 &&
+        hasXboxButton11 &&
+        hasXboxButton12 &&
+        hasXboxButton13 &&
+        hasXboxButton14 &&
+        hasXboxButton15;
 }
 
 static void handleGenericHidGamepadReport(
@@ -919,7 +1002,11 @@ static void handleGenericHidGamepadReport(
 
             if (value != 0) {
                 reportButtons |=
-                    buttonMaskForUsage(usage);
+                    buttonMaskForUsage(
+                        usage,
+                        transport == UniversalTransport::BLUETOOTH_LE &&
+                        cache.xboxBleButtonLayout
+                    );
             }
 
             continue;
