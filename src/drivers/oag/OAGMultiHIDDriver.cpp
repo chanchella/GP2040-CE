@@ -39,12 +39,10 @@ static uint32_t standardButtonsForState(GamepadState const& state) {
     if (state.buttons & GAMEPAD_MASK_L3) buttons |= 1UL << 10;
     if (state.buttons & GAMEPAD_MASK_R3) buttons |= 1UL << 11;
 
-    // Standard Gamepad API D-pad button positions.
-    if (state.dpad & GAMEPAD_MASK_UP)    buttons |= 1UL << 12;
-    if (state.dpad & GAMEPAD_MASK_DOWN)  buttons |= 1UL << 13;
-    if (state.dpad & GAMEPAD_MASK_LEFT)  buttons |= 1UL << 14;
-    if (state.dpad & GAMEPAD_MASK_RIGHT) buttons |= 1UL << 15;
-
+    // D-pad is intentionally emitted only through the HID Hat Switch below.
+    // Do not duplicate it into Button usages: generic-HID consumers can assign
+    // those raw button indexes differently, which caused D-pad Up to appear as
+    // Home/Guide on the user's Windows/browser path.
     if (state.buttons & GAMEPAD_MASK_A1) buttons |= 1UL << 16; // Home / Guide
     if (state.buttons & GAMEPAD_MASK_A2) buttons |= 1UL << 17; // Capture / Touchpad
     if (state.buttons & GAMEPAD_MASK_A3) buttons |= 1UL << 18;
@@ -116,9 +114,8 @@ OAGMultiHIDReport OAGMultiHIDDriver::buildReport(
 ) {
     OAGMultiHIDReport report {};
 
-    // Project the internal canonical namespace to the standard browser /
-    // Windows button order. In particular, Home is Button 17 rather than
-    // Button 13 (which standard Gamepad APIs reserve for D-pad Up).
+    // Project canonical controller buttons to a stable generic-HID order.
+    // D-pad is not duplicated here; it is represented exclusively by Hat.
     report.buttons = standardButtonsForState(state);
     report.hat = dpadToHat(state.dpad);
 
