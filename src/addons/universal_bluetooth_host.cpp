@@ -21,6 +21,7 @@
 
 #include "device/oag_identity.h"
 #include "input/universal_input_manager.h"
+#include "output/universal_feedback_manager.h"
 
 namespace {
 
@@ -41,6 +42,10 @@ static constexpr uint16_t USAGE_RX = 0x33;
 static constexpr uint16_t USAGE_RY = 0x34;
 static constexpr uint16_t USAGE_RZ = 0x35;
 static constexpr uint16_t USAGE_HAT = 0x39;
+static constexpr uint16_t USAGE_DPAD_UP = 0x90;
+static constexpr uint16_t USAGE_DPAD_DOWN = 0x91;
+static constexpr uint16_t USAGE_DPAD_RIGHT = 0x92;
+static constexpr uint16_t USAGE_DPAD_LEFT = 0x93;
 
 static constexpr uint16_t USAGE_SIM_ACCELERATOR = 0xC4;
 static constexpr uint16_t USAGE_SIM_BRAKE = 0xC5;
@@ -62,10 +67,16 @@ struct HidFieldRange {
     int32_t logicalMax = 0;
 };
 
+enum class BluetoothGamepadProfile : uint8_t {
+    GENERIC_HID = 0,
+    XBOX_BLE,
+};
+
 struct HidServiceCache {
     bool parsed = false;
     bool looksLikeGamepad = false;
     bool xboxBleButtonLayout = false;
+    BluetoothGamepadProfile profile = BluetoothGamepadProfile::GENERIC_HID;
     uint8_t fieldCount = 0;
     HidFieldRange fields[MAX_FIELD_RANGES] {};
 };
@@ -117,6 +128,10 @@ static HidServiceCache serviceCaches[MAX_HID_SERVICES] {};
 static GamepadState bluetoothGamepadState {};
 static bool bluetoothGamepadStateValid = false;
 static bool bluetoothSlotConnected = false;
+static BluetoothGamepadProfile activeBluetoothProfile =
+    BluetoothGamepadProfile::GENERIC_HID;
+
+static uint32_t lastBluetoothFeedbackGeneration = 0;
 
 static uint64_t diagnosticLastToggleUs = 0;
 static bool diagnosticLedState = false;
@@ -188,6 +203,8 @@ static void handleGattClientEvent(
 static void resetBluetoothGamepadState() {
     bluetoothGamepadState = GamepadState {};
     bluetoothGamepadStateValid = false;
+    activeBluetoothProfile = BluetoothGamepadProfile::GENERIC_HID;
+    lastBluetoothFeedbackGeneration = 0;
 
     if (bluetoothSlotConnected) {
         UINPUT.disconnect(UNIVERSAL_INPUT_SLOT_BLUETOOTH);
@@ -731,7 +748,8 @@ static uint8_t hatToDpad(
 }
 
 static void ensureBluetoothSlotConnected(
-    UniversalTransport transport
+    UniversalTransport transport,
+    BluetoothGamepadProfile profile
 ) {
     if (bluetoothSlotConnected) {
         return;
@@ -745,6 +763,14 @@ static void ensureBluetoothSlotConnected(
     match.driverFamily = UniversalDriverFamily::HID;
     match.profile = UniversalDeviceProfileId::GENERIC_HID_GAMEPAD;
     match.capabilities = UNIVERSAL_CAP_WIRELESS_PAIRING;
+
+    if (profile == BluetoothGamepadProfile::XBOX_BLE) {
+        match.capabilities |=
+            UNIVERSAL_CAP_RUMBLE |
+            UNIVERSAL_CAP_TRIGGER_RUMBLE;
+    }
+
+    activeBluetoothProfile = profile;
 
     if (
         UINPUT.connectClassified(
@@ -859,7 +885,11 @@ static void populateHidCache(
                 field.usage == USAGE_RX ||
                 field.usage == USAGE_RY ||
                 field.usage == USAGE_RZ ||
-                field.usage == USAGE_HAT
+                field.usage == USAGE_HAT ||
+                field.usage == USAGE_DPAD_UP ||
+                field.usage == USAGE_DPAD_DOWN ||
+                field.usage == USAGE_DPAD_RIGHT ||
+                field.usage == USAGE_DPAD_LEFT
             )
         ) {
             hasAxis = true;
@@ -886,6 +916,11 @@ static void populateHidCache(
         hasXboxButton13 &&
         hasXboxButton14 &&
         hasXboxButton15;
+
+    cache.profile =
+        cache.xboxBleButtonLayout
+            ? BluetoothGamepadProfile::XBOX_BLE
+            : BluetoothGamepadProfile::GENERIC_HID;
 }
 
 static void handleGenericHidGamepadReport(
@@ -1104,6 +1139,34 @@ static void handleGenericHidGamepadReport(
                 sawUsefulGamepadField = true;
                 break;
 
+            case USAGE_DPAD_UP:
+                if (value) next.dpad |= GAMEPAD_MASK_UP;
+                else next.dpad &= ~GAMEPAD_MASK_UP;
+                next.dpadOriginal = next.dpad;
+                sawUsefulGamepadField = true;
+                break;
+
+            case USAGE_DPAD_DOWN:
+                if (value) next.dpad |= GAMEPAD_MASK_DOWN;
+                else next.dpad &= ~GAMEPAD_MASK_DOWN;
+                next.dpadOriginal = next.dpad;
+                sawUsefulGamepadField = true;
+                break;
+
+            case USAGE_DPAD_RIGHT:
+                if (value) next.dpad |= GAMEPAD_MASK_RIGHT;
+                else next.dpad &= ~GAMEPAD_MASK_RIGHT;
+                next.dpadOriginal = next.dpad;
+                sawUsefulGamepadField = true;
+                break;
+
+            case USAGE_DPAD_LEFT:
+                if (value) next.dpad |= GAMEPAD_MASK_LEFT;
+                else next.dpad &= ~GAMEPAD_MASK_LEFT;
+                next.dpadOriginal = next.dpad;
+                sawUsefulGamepadField = true;
+                break;
+
             default:
                 break;
         }
@@ -1191,7 +1254,8 @@ static void handleGenericHidGamepadReport(
     }
 
     ensureBluetoothSlotConnected(
-        transport
+        transport,
+        cache.profile
     );
 
     if (!bluetoothSlotConnected) {
@@ -1219,6 +1283,105 @@ static void handleGenericHidGamepadReport(
 }
 
 
+
+
+static uint8_t scaleMotor255To100(uint8_t value) {
+    return static_cast<uint8_t>(
+        (static_cast<uint16_t>(value) * 100U) / 255U
+    );
+}
+
+static void serviceXboxBleFeedback(
+    UniversalFeedbackSlotSnapshot const& feedback
+) {
+    if (
+        hidsCid == 0 ||
+        bleState != BleHostState::READY ||
+        activeBluetoothProfile != BluetoothGamepadProfile::XBOX_BLE
+    ) {
+        return;
+    }
+
+    uint8_t report[8] {};
+
+    const uint8_t strong =
+        scaleMotor255To100(feedback.leftMotor);
+    const uint8_t weak =
+        scaleMotor255To100(feedback.rightMotor);
+    const uint8_t leftTrigger =
+        scaleMotor255To100(feedback.leftTrigger);
+    const uint8_t rightTrigger =
+        scaleMotor255To100(feedback.rightTrigger);
+
+    uint8_t actuatorMask = 0;
+
+    if (weak != 0) actuatorMask |= 0x01;
+    if (strong != 0) actuatorMask |= 0x02;
+    if (rightTrigger != 0) actuatorMask |= 0x04;
+    if (leftTrigger != 0) actuatorMask |= 0x08;
+
+    // Xbox BLE Output Report 0x03.
+    // Payload order follows the controller HID descriptor:
+    // mask, LT, RT, strong, weak, duration, delay, loop count.
+    report[0] = actuatorMask == 0 ? 0x0F : actuatorMask;
+    report[1] = leftTrigger;
+    report[2] = rightTrigger;
+    report[3] = strong;
+    report[4] = weak;
+
+    if (actuatorMask != 0) {
+        report[5] = 0xFF;
+        report[6] = 0x00;
+        report[7] = 25;
+    }
+
+    const uint8_t status =
+        hids_client_send_write_report(
+            hidsCid,
+            0x03,
+            BT_HID_REPORT_TYPE_OUTPUT,
+            report,
+            sizeof(report)
+        );
+
+    if (status == ERROR_CODE_SUCCESS) {
+        lastBluetoothFeedbackGeneration =
+            feedback.generation;
+    }
+}
+
+static void serviceBluetoothFeedback() {
+    UniversalFeedbackSlotSnapshot feedback {};
+
+    if (
+        !UFEEDBACK.snapshot(
+            UNIVERSAL_INPUT_SLOT_BLUETOOTH,
+            feedback
+        ) ||
+        !feedback.valid
+    ) {
+        return;
+    }
+
+    if (
+        feedback.generation ==
+        lastBluetoothFeedbackGeneration
+    ) {
+        return;
+    }
+
+    switch (activeBluetoothProfile) {
+        case BluetoothGamepadProfile::XBOX_BLE:
+            serviceXboxBleFeedback(feedback);
+            break;
+
+        case BluetoothGamepadProfile::GENERIC_HID:
+        default:
+            // Generic HID has no universal rumble report format. Input stays
+            // fully functional; feedback is enabled only by a verified profile.
+            break;
+    }
+}
 
 static void handleBleHidReport(
     uint8_t serviceIndex,
@@ -1940,6 +2103,7 @@ void UniversalBluetoothHostAddon::preprocess() {
     }
 
     // pico_btstack_cyw43 is serviced by the SDK async-context run loop.
+    serviceBluetoothFeedback();
     serviceBluetoothDiagnosticLed();
 #endif
 }
