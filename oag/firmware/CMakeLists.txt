@@ -28,6 +28,7 @@ add_executable(OAG_Abo_Gemi_Ultra_Gaming_U1
     src/xinput_host.cpp
     src/pc_hid_output.cpp
     src/usb_descriptors.cpp
+    src/interval_override.c
 
     ../src/device/device_registry.cpp
     ../src/protocol/xusb/xusb_input_driver.cpp
