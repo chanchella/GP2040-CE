@@ -119,7 +119,11 @@ jobs:
           ! grep -q 'Storage::getInstance().GetGamepad' src/addons/universal_output_router.cpp
           grep -q '#define UNIVERSAL_HID_GAMEPAD_HOST_ENABLED 1' configs/Pico2/BoardConfig.h
           grep -q '#define OAG_PC_MULTI_HID_ENABLED 1' configs/Pico2/BoardConfig.h
-          grep -q '#define CFG_TUD_HID              4' headers/tusb_config.h
+          grep -q '#define CFG_TUD_HID              6' headers/tusb_config.h
+          grep -q 'OAG_MULTI_HID_SLOT_COUNT = 4' headers/drivers/oag/OAGMultiHIDDescriptors.h
+          grep -q 'OAG_MULTI_HID_KEYBOARD_INTERFACE = 4' headers/drivers/oag/OAGMultiHIDDescriptors.h
+          grep -q 'OAG_MULTI_HID_MOUSE_INTERFACE = 5' headers/drivers/oag/OAGMultiHIDDescriptors.h
+          grep -q 'OAG_MULTI_HID_INTERFACE_COUNT = 6' headers/drivers/oag/OAGMultiHIDDescriptors.h
           grep -q 'UniversalHIDGamepadHostAddon' src/gp2040.cpp
           grep -q 'claimUsbSlot' src/addons/universal_hid_gamepad_host.cpp
           grep -q 'OAG_MULTI_HID_SLOT_COUNT = 4' headers/drivers/oag/OAGMultiHIDDescriptors.h
