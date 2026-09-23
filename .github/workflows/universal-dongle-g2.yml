@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - universal-dongle/g2
+      - universal-dongle/g2c1-rumble
   workflow_dispatch:
 
 env:
