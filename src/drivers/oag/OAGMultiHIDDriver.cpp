@@ -11,6 +11,7 @@
 #include "device/oag_identity.h"
 #include "drivers/shared/driverhelper.h"
 #include "output/universal_output_manager.h"
+#include "output/universal_feedback_manager.h"
 #include "pico/unique_id.h"
 
 namespace {
@@ -132,6 +133,33 @@ bool OAGMultiHIDDriver::process(Gamepad* gamepad) {
     }
 
     return anySent;
+}
+
+void OAGMultiHIDDriver::set_report_with_itf(
+    uint8_t itf,
+    uint8_t report_id,
+    hid_report_type_t report_type,
+    uint8_t const* buffer,
+    uint16_t bufsize
+) {
+    (void)report_id;
+
+    if (
+        itf >= OAG_MULTI_HID_SLOT_COUNT ||
+        report_type != HID_REPORT_TYPE_OUTPUT ||
+        buffer == nullptr ||
+        bufsize < 2
+    ) {
+        return;
+    }
+
+    UFEEDBACK.publish(
+        itf,
+        buffer[0],
+        buffer[1],
+        bufsize > 2 ? buffer[2] : 0,
+        bufsize > 3 ? buffer[3] : 0
+    );
 }
 
 uint16_t OAGMultiHIDDriver::get_report(

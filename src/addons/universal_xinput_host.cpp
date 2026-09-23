@@ -3,6 +3,7 @@
 #include "peripheralmanager.h"
 #include "drivers/shared/xinput_host.h"
 #include "input/universal_gamepad_parser.h"
+#include "output/universal_feedback_manager.h"
 #include "tusb.h"
 
 namespace {
@@ -56,6 +57,7 @@ void UniversalXInputHostAddon::preprocess() {
         // Xbox One / Series wired controllers require a short normal GIP
         // initialization exchange before they begin ordinary input traffic.
         serviceXgipInit(i);
+        serviceFeedback(i);
 
         // Retry/maintain the gameplay IN endpoint. The low-level XInput host
         // also re-arms on successful completion; this path recovers idle/busy
@@ -297,6 +299,15 @@ void UniversalXInputHostAddon::report_sent(
 
     XInputTransportSlot& slot = slots[slotIndex];
 
+    if (slot.feedbackTxPending) {
+        slot.feedbackTxPending = false;
+        slot.appliedFeedbackGeneration = slot.pendingFeedbackGeneration;
+        slot.pendingFeedbackGeneration = 0;
+        slot.rumbleSequence++;
+        if (slot.rumbleSequence == 0) slot.rumbleSequence = 1;
+        return;
+    }
+
     if (
         slot.device.protocol != UniversalProtocol::XGIP_XBOX_ONE ||
         !slot.xgipTxPending
@@ -306,6 +317,60 @@ void UniversalXInputHostAddon::report_sent(
 
     slot.xgipTxPending = false;
     advanceXgipInit(static_cast<uint8_t>(slotIndex));
+}
+
+void UniversalXInputHostAddon::serviceFeedback(uint8_t localSlot) {
+    if (localSlot >= USB_SLOT_COUNT || !slots[localSlot].mounted) return;
+
+    XInputTransportSlot& slot = slots[localSlot];
+    if (
+        slot.globalSlot == UNIVERSAL_INPUT_SLOT_INVALID ||
+        slot.feedbackTxPending ||
+        slot.xgipTxPending
+    ) return;
+
+    UniversalFeedbackSlotSnapshot feedback {};
+    if (
+        !UFEEDBACK.snapshot(slot.globalSlot, feedback) ||
+        !feedback.valid ||
+        feedback.generation == slot.appliedFeedbackGeneration
+    ) return;
+
+    uint8_t packet[13] {};
+    uint16_t packetLen = 0;
+
+    if (slot.device.protocol == UniversalProtocol::XUSB_XBOX360) {
+        packet[0] = 0x00;
+        packet[1] = 0x08;
+        packet[2] = 0x00;
+        packet[3] = feedback.leftMotor;
+        packet[4] = feedback.rightMotor;
+        packetLen = 8;
+    } else if (slot.device.protocol == UniversalProtocol::XGIP_XBOX_ONE) {
+        if (slot.xgipPhase != XgipInitPhase::READY) return;
+
+        packet[0] = 0x09;
+        packet[1] = 0x00;
+        packet[2] = slot.rumbleSequence;
+        packet[3] = 0x09;
+        packet[4] = 0x00;
+        packet[5] = 0x0F;
+        packet[6] = feedback.leftTrigger;
+        packet[7] = feedback.rightTrigger;
+        packet[8] = feedback.leftMotor;
+        packet[9] = feedback.rightMotor;
+        packet[10] = 0xFF;
+        packet[11] = 0x00;
+        packet[12] = 0xFF;
+        packetLen = sizeof(packet);
+    } else {
+        return;
+    }
+
+    if (tuh_xinput_send_report(slot.devAddr, slot.instance, packet, packetLen)) {
+        slot.feedbackTxPending = true;
+        slot.pendingFeedbackGeneration = feedback.generation;
+    }
 }
 
 void UniversalXInputHostAddon::restartXgipInit(uint8_t localSlot) {

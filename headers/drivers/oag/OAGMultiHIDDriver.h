@@ -30,6 +30,14 @@ public:
         uint16_t bufsize
     ) override {}
 
+    void set_report_with_itf(
+        uint8_t itf,
+        uint8_t report_id,
+        hid_report_type_t report_type,
+        uint8_t const* buffer,
+        uint16_t bufsize
+    ) override;
+
     bool vendor_control_xfer_cb(
         uint8_t rhport,
         uint8_t stage,
