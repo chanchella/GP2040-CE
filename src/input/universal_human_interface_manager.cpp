@@ -449,3 +449,29 @@ bool UniversalHumanInterfaceManager::snapshotMouse(
     critical_section_exit(&lock);
     return true;
 }
+
+
+void UniversalHumanInterfaceManager::publishKeyboardLedState(
+    uint8_t leds
+) {
+    leds &= 0x1Fu;
+
+    critical_section_enter_blocking(&lock);
+
+    if (keyboardLedState != leds) {
+        keyboardLedState = leds;
+        keyboardLedGeneration++;
+    }
+
+    critical_section_exit(&lock);
+}
+
+void UniversalHumanInterfaceManager::snapshotKeyboardLedState(
+    uint8_t& leds,
+    uint32_t& generation
+) const {
+    critical_section_enter_blocking(&lock);
+    leds = keyboardLedState;
+    generation = keyboardLedGeneration;
+    critical_section_exit(&lock);
+}

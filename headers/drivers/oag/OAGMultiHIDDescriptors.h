@@ -18,7 +18,7 @@ static constexpr uint8_t OAG_MULTI_HID_KEYBOARD_INTERFACE = 4;
 static constexpr uint8_t OAG_MULTI_HID_MOUSE_INTERFACE = 5;
 static constexpr uint8_t OAG_MULTI_HID_INTERFACE_COUNT = 6;
 static constexpr uint8_t OAG_MULTI_HID_ENDPOINT_SIZE = 64;
-static constexpr uint16_t OAG_MULTI_HID_REPORT_DESC_SIZE = 79;
+static constexpr uint16_t OAG_MULTI_HID_REPORT_DESC_SIZE = 101;
 static constexpr uint16_t OAG_MULTI_HID_CONFIG_SIZE =
     9 + (OAG_MULTI_HID_INTERFACE_COUNT * (9 + 9 + 7));
 
@@ -72,13 +72,30 @@ static const uint8_t oag_multi_hid_report_descriptor[] = {
     0x09, 0x05,        // Usage (Game Pad)
     0xA1, 0x01,        // Collection (Application)
 
-    // 32 buttons
+    // Buttons 1..16 keep their existing bit positions.
     0x05, 0x09,
     0x19, 0x01,
-    0x29, 0x20,
+    0x29, 0x10,
     0x15, 0x00,
     0x25, 0x01,
-    0x95, 0x20,
+    0x95, 0x10,
+    0x75, 0x01,
+    0x81, 0x02,
+
+    // Bit 16: semantic Home / Guide button.
+    // Chromium/Windows RawInput recognizes System Main Menu as a special
+    // gamepad button; this is also used by real controllers for Guide/Home.
+    0x05, 0x01,
+    0x09, 0x85,        // System Main Menu
+    0x95, 0x01,
+    0x75, 0x01,
+    0x81, 0x02,
+
+    // Bits 17..31 remain Buttons 18..32, preserving A2/A3/A4/E1..E12.
+    0x05, 0x09,
+    0x19, 0x12,
+    0x29, 0x20,
+    0x95, 0x0F,
     0x75, 0x01,
     0x81, 0x02,
 
@@ -141,6 +158,17 @@ static const uint8_t oag_keyboard_report_descriptor[] = {
     0x75, 0x01,        // Report Size (1)
     0x96, 0x00, 0x01,  // Report Count (256)
     0x81, 0x02,        // Input (Data,Var,Abs)
+
+    // Standard host -> keyboard LED state.
+    0x05, 0x08,        // Usage Page (LEDs)
+    0x19, 0x01,        // Num Lock
+    0x29, 0x05,        // Kana
+    0x95, 0x05,
+    0x75, 0x01,
+    0x91, 0x02,        // Output (Data,Var,Abs)
+    0x95, 0x01,
+    0x75, 0x03,
+    0x91, 0x01,        // Output padding
     0xC0,
 
     // Common consumer/media controls kept on the same physical interface.
@@ -232,7 +260,7 @@ static const uint8_t oag_multi_hid_device_descriptor[] = {
     0xC4, 0x10, // VID 10C4
     0xC0, 0x82, // PID 82C0
 
-    0x04, 0x02, // bcdDevice 2.04
+    0x05, 0x02, // bcdDevice 2.05
     0x01,       // manufacturer
     0x02,       // product
     0x03,       // serial

@@ -189,6 +189,12 @@ public:
         UniversalMouseSlotSnapshot& out
     ) const;
 
+    void publishKeyboardLedState(uint8_t leds);
+    void snapshotKeyboardLedState(
+        uint8_t& leds,
+        uint32_t& generation
+    ) const;
+
 private:
     UniversalHumanInterfaceManager();
 
@@ -225,6 +231,9 @@ private:
     mutable critical_section_t lock;
     KeyboardSlot keyboardSlots[UNIVERSAL_HID_SLOT_COUNT] {};
     MouseSlot mouseSlots[UNIVERSAL_HID_SLOT_COUNT] {};
+
+    uint8_t keyboardLedState = 0;
+    uint32_t keyboardLedGeneration = 0;
 
     static bool validSlot(uint8_t slot) {
         return slot < UNIVERSAL_HID_SLOT_COUNT;

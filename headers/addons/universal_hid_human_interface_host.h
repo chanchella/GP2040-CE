@@ -71,13 +71,7 @@ public:
         uint8_t report_id,
         uint8_t report_type,
         uint16_t len
-    ) override {
-        (void)dev_addr;
-        (void)instance;
-        (void)report_id;
-        (void)report_type;
-        (void)len;
-    }
+    ) override;
 
     void get_report_complete(
         uint8_t dev_addr,
@@ -168,6 +162,12 @@ private:
         uint8_t keyboardSlot = UNIVERSAL_HID_SLOT_INVALID;
         uint8_t mouseSlot = UNIVERSAL_HID_SLOT_INVALID;
 
+        // Standard keyboard lock LEDs. The transfer buffer must remain alive
+        // until TinyUSB's asynchronous SET_REPORT completion callback.
+        uint8_t ledReportValue = 0;
+        uint8_t appliedLedState = 0xFF;
+        bool ledTransferPending = false;
+
         KeyboardReportContribution
             keyboardReports[MAX_REPORT_CONTRIBUTIONS] {};
         MouseReportContribution
@@ -186,6 +186,7 @@ private:
     void resetInterface(InterfaceState& state);
     void parseDescriptor(InterfaceState& state);
     void processReport(InterfaceState& state);
+    void serviceKeyboardLeds();
 
     void ensureKeyboardSlot(InterfaceState& state);
     void ensureMouseSlot(InterfaceState& state);

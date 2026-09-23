@@ -404,7 +404,16 @@ void OAGMultiHIDDriver::set_report_with_itf(
     uint8_t const* buffer,
     uint16_t bufsize
 ) {
-    (void)report_id;
+    if (
+        itf == OAG_MULTI_HID_KEYBOARD_INTERFACE &&
+        report_type == HID_REPORT_TYPE_OUTPUT &&
+        report_id == OAG_HID_REPORT_ID_KEYBOARD &&
+        buffer != nullptr &&
+        bufsize >= 1
+    ) {
+        UHIDINPUT.publishKeyboardLedState(buffer[0]);
+        return;
+    }
 
     if (
         itf >= OAG_MULTI_HID_SLOT_COUNT ||

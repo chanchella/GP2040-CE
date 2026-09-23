@@ -143,6 +143,8 @@ void UniversalHIDHumanInterfaceHostAddon::preprocess() {
             processReport(state);
         }
     }
+
+    serviceKeyboardLeds();
 }
 
 void UniversalHIDHumanInterfaceHostAddon::resetInterface(
@@ -264,6 +266,73 @@ void UniversalHIDHumanInterfaceHostAddon::unmount(
             resetInterface(interfaces[i]);
         }
     }
+}
+
+void UniversalHIDHumanInterfaceHostAddon::serviceKeyboardLeds() {
+    uint8_t desired = 0;
+    uint32_t generation = 0;
+    UHIDINPUT.snapshotKeyboardLedState(desired, generation);
+    (void)generation;
+
+    // Start at most one control transfer per loop. This avoids overlapping
+    // SET_REPORT requests on composite devices that share endpoint zero.
+    for (uint8_t i = 0; i < MAX_INTERFACES; i++) {
+        InterfaceState& state = interfaces[i];
+
+        if (
+            !state.active ||
+            state.ledTransferPending ||
+            state.appliedLedState == desired ||
+            !(state.isKeyboard ||
+              state.protocol == HID_ITF_PROTOCOL_KEYBOARD)
+        ) {
+            continue;
+        }
+
+        state.ledReportValue = desired;
+
+        if (tuh_hid_set_report(
+                state.devAddr,
+                state.instance,
+                0,
+                HID_REPORT_TYPE_OUTPUT,
+                &state.ledReportValue,
+                1
+            )) {
+            state.ledTransferPending = true;
+        } else {
+            // One safe attempt per LED state. A non-standard gaming keyboard
+            // may use vendor reports for RGB/backlight; do not hammer EP0.
+            state.appliedLedState = desired;
+        }
+
+        break;
+    }
+}
+
+void UniversalHIDHumanInterfaceHostAddon::set_report_complete(
+    uint8_t dev_addr,
+    uint8_t instance,
+    uint8_t report_id,
+    uint8_t report_type,
+    uint16_t len
+) {
+    (void)report_id;
+    (void)len;
+
+    if (report_type != HID_REPORT_TYPE_OUTPUT) {
+        return;
+    }
+
+    InterfaceState* state = findInterface(dev_addr, instance);
+    if (state == nullptr || !state->ledTransferPending) {
+        return;
+    }
+
+    // Mark this state attempted whether the downstream keyboard accepted or
+    // stalled it. A later Caps/Num/Scroll change will trigger a new attempt.
+    state->appliedLedState = state->ledReportValue;
+    state->ledTransferPending = false;
 }
 
 void UniversalHIDHumanInterfaceHostAddon::report_received(
