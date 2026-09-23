@@ -75,6 +75,8 @@ bool UniversalInputManager::connectClassified(
         target.driverFamily == match.driverFamily &&
         target.profile == match.profile &&
         target.quirks == match.quirks &&
+        target.capabilities == match.capabilities &&
+        target.verifiedCapabilities == match.verifiedCapabilities &&
         target.vid == match.vid &&
         target.pid == match.pid &&
         target.devAddr == devAddr &&
@@ -93,6 +95,8 @@ bool UniversalInputManager::connectClassified(
         target.driverFamily = match.driverFamily;
         target.profile = match.profile;
         target.quirks = match.quirks;
+        target.capabilities = match.capabilities;
+        target.verifiedCapabilities = match.verifiedCapabilities;
         target.vid = match.vid;
         target.pid = match.pid;
         target.devAddr = devAddr;
@@ -159,6 +163,8 @@ uint8_t UniversalInputManager::claimUsbSlot(
         target.driverFamily = match.driverFamily;
         target.profile = match.profile;
         target.quirks = match.quirks;
+        target.capabilities = match.capabilities;
+        target.verifiedCapabilities = match.verifiedCapabilities;
         target.vid = match.vid;
         target.pid = match.pid;
         target.devAddr = devAddr;
@@ -256,6 +262,8 @@ bool UniversalInputManager::snapshot(
     out.driverFamily = source.driverFamily;
     out.profile = source.profile;
     out.quirks = source.quirks;
+    out.capabilities = source.capabilities;
+    out.verifiedCapabilities = source.verifiedCapabilities;
     out.vid = source.vid;
     out.pid = source.pid;
     out.devAddr = source.devAddr;

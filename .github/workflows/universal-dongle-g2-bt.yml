@@ -157,6 +157,10 @@ jobs:
           grep -q 'hid_host_init' src/addons/universal_bluetooth_host.cpp
           grep -q 'hids_host_init' src/addons/universal_bluetooth_host.cpp
           grep -q 'btstack_run_loop_embedded_execute_once' src/addons/universal_bluetooth_host.cpp
+          grep -q 'verifiedCapabilities' headers/input/universal_input_manager.h
+          grep -q 'verifiedCapabilities' headers/output/universal_output_manager.h
+          grep -q 'target.verifiedCapabilities = match.verifiedCapabilities' src/input/universal_input_manager.cpp
+          grep -q 'target.verifiedCapabilities = input.verifiedCapabilities' src/output/universal_output_manager.cpp
           echo "G2C2_BTSTACK_G2C1_VERIFY=PASS"
 
       - name: Configure Pico2W

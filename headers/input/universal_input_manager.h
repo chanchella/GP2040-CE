@@ -42,6 +42,8 @@ struct UniversalInputSlotSnapshot {
     UniversalDriverFamily driverFamily = UniversalDriverFamily::NONE;
     UniversalDeviceProfileId profile = UniversalDeviceProfileId::NONE;
     uint32_t quirks = UNIVERSAL_QUIRK_NONE;
+    uint32_t capabilities = UNIVERSAL_CAP_NONE;
+    uint32_t verifiedCapabilities = UNIVERSAL_CAP_NONE;
 
     uint16_t vid = 0;
     uint16_t pid = 0;
@@ -121,6 +123,8 @@ private:
         UniversalDriverFamily driverFamily = UniversalDriverFamily::NONE;
         UniversalDeviceProfileId profile = UniversalDeviceProfileId::NONE;
         uint32_t quirks = UNIVERSAL_QUIRK_NONE;
+        uint32_t capabilities = UNIVERSAL_CAP_NONE;
+        uint32_t verifiedCapabilities = UNIVERSAL_CAP_NONE;
 
         uint16_t vid = 0;
         uint16_t pid = 0;

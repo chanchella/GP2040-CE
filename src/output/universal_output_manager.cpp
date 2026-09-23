@@ -49,6 +49,8 @@ void UniversalOutputManager::publishFromInputUnlocked(
         target.driverFamily != input.driverFamily ||
         target.profile != input.profile ||
         target.quirks != input.quirks ||
+        target.capabilities != input.capabilities ||
+        target.verifiedCapabilities != input.verifiedCapabilities ||
         target.vid != input.vid ||
         target.pid != input.pid ||
         target.inputGeneration != input.generation;
@@ -71,6 +73,8 @@ void UniversalOutputManager::publishFromInputUnlocked(
     target.driverFamily = input.driverFamily;
     target.profile = input.profile;
     target.quirks = input.quirks;
+    target.capabilities = input.capabilities;
+    target.verifiedCapabilities = input.verifiedCapabilities;
     target.vid = input.vid;
     target.pid = input.pid;
     target.inputGeneration = input.generation;
@@ -124,6 +128,8 @@ bool UniversalOutputManager::snapshot(
     out.driverFamily = source.driverFamily;
     out.profile = source.profile;
     out.quirks = source.quirks;
+    out.capabilities = source.capabilities;
+    out.verifiedCapabilities = source.verifiedCapabilities;
     out.vid = source.vid;
     out.pid = source.pid;
     out.generation = source.generation;
