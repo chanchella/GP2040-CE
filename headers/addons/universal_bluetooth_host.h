@@ -7,6 +7,10 @@
 #define OAG_BLUETOOTH_HOST_ENABLED 0
 #endif
 
+#ifndef OAG_BLUETOOTH_PLATFORM_SUPPORTED
+#define OAG_BLUETOOTH_PLATFORM_SUPPORTED 0
+#endif
+
 class UniversalBluetoothHostAddon : public GPAddon {
 public:
     bool available() override;
