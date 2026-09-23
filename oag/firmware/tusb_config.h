@@ -29,7 +29,11 @@ extern "C" {
 #define CFG_TUH_RPI_PIO_USB 1
 #define CFG_TUH_HUB 0
 #define CFG_TUH_DEVICE_MAX 4
-#define CFG_TUH_HID 0
+
+// TinyUSB 0.17-era usbh.c rejects a zero-length built-in driver table.
+// Keep one HID host slot as the smallest compile anchor. U1 does not route
+// HID devices into OAG and does not claim Generic HID hardware support yet.
+#define CFG_TUH_HID 1
 
 #define CFG_TUH_XINPUT 4
 #define CFG_TUH_XINPUT_EPIN_BUFSIZE 64
