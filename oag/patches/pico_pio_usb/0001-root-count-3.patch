@@ -1,0 +1,5 @@
+--- a/src/pio_usb_configuration.h
++++ b/src/pio_usb_configuration.h
+@@
+-#define PIO_USB_ROOT_PORT_CNT 2
++#define PIO_USB_ROOT_PORT_CNT 3 // OAG three-root hardware

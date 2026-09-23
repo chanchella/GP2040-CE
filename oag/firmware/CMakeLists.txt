@@ -28,7 +28,6 @@ add_executable(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W
     src/xinput_host.cpp
     src/pc_hid_output.cpp
     src/usb_descriptors.cpp
-    src/interval_override.c
 
     ../src/device/device_registry.cpp
     ../src/protocol/xusb/xusb_input_driver.cpp
@@ -68,7 +67,6 @@ pico_set_program_name(
     "OAG Abo Gemi Ultra Gaming"
 )
 pico_set_program_version(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W "U1")
-
 
 target_link_options(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W PRIVATE
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W.map"
