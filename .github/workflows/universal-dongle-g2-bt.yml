@@ -155,7 +155,7 @@ jobs:
           grep -q 'pico_btstack_classic' CMakeLists.txt
           grep -q 'pico_btstack_ble' CMakeLists.txt
           grep -q 'hid_host_init' src/addons/universal_bluetooth_host.cpp
-          grep -q 'hids_host_init' src/addons/universal_bluetooth_host.cpp
+          grep -q 'hids_client_init' src/addons/universal_bluetooth_host.cpp
           ! grep -q 'btstack_run_loop_embedded_execute_once' src/addons/universal_bluetooth_host.cpp
           grep -q 'verifiedCapabilities' headers/input/universal_input_manager.h
           grep -q 'verifiedCapabilities' headers/output/universal_output_manager.h
