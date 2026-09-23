@@ -1726,17 +1726,37 @@ bool UniversalBluetoothHostAddon::available() {
 
 void UniversalBluetoothHostAddon::setup() {
 #if OAG_BLUETOOTH_HOST_ENABLED && OAG_BLUETOOTH_PLATFORM_SUPPORTED
-    // Deliberately defer CYW43/BTstack initialization until preprocess().
-    // GP2040::run() starts TinyUSB/PIO USB Host before the first preprocess()
-    // call, matching the proven hardware-safe ordering from the legacy build:
-    // USB Host first, Bluetooth second.
+    // Defer CYW43/BTstack until the main run loop, after USB Host is started.
     initialized = false;
     bleState = BleHostState::WAITING_HCI;
+#endif
+}
 
-        // This now runs only after USBHostManager::start() has completed.
-        if (cyw43_arch_init() != PICO_OK) {
+void UniversalBluetoothHostAddon::preprocess() {
+#if OAG_BLUETOOTH_HOST_ENABLED && OAG_BLUETOOTH_PLATFORM_SUPPORTED
+    static uint64_t initNotBeforeUs = 0;
+
+    if (!initialized) {
+        const uint64_t nowUs = time_us_64();
+
+        // Match the hardware-proven legacy firmware:
+        // USB Host first, then a 100 ms settling period, then CYW43/BTstack.
+        if (initNotBeforeUs == 0) {
+            initNotBeforeUs = nowUs + 100000;
             return;
         }
+
+        if (nowUs < initNotBeforeUs) {
+            return;
+        }
+
+        if (cyw43_arch_init() != PICO_OK) {
+            // Retry slowly instead of hammering the CYW43 init path.
+            initNotBeforeUs = nowUs + 1000000;
+            return;
+        }
+
+        initNotBeforeUs = 0;
 
         resetBluetoothGamepadState();
         resetServiceCaches();
@@ -1802,14 +1822,10 @@ void UniversalBluetoothHostAddon::setup() {
         gap_connectable_control(0);
         gap_discoverable_control(0);
 
-        // pico_cyw43_arch_none uses the SDK's threadsafe-background async
-        // context. Do not drive btstack_run_loop_embedded manually here.
         loadStoredClassicRemote();
         const bool haveBleRemote = loadStoredRemote();
 
         if (!haveBleRemote && !classicRemoteKnown) {
-            // First-pair cleanup is done from normal Core 0 context, not from
-            // a BTstack callback/IRQ context.
             gap_delete_all_link_keys();
             clearBleBondDatabase();
         }
@@ -1825,8 +1841,7 @@ void UniversalBluetoothHostAddon::setup() {
         return;
     }
 
-    // BTstack work is serviced by pico_cyw43_arch_none's background async
-    // context. The main loop only handles diagnostics and OAG state.
+    // pico_btstack_cyw43 is serviced by the SDK async-context run loop.
     serviceBluetoothDiagnosticLed();
 #endif
 }
