@@ -1,12 +1,15 @@
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 
 #include "oag/core/product_identity.h"
 #include "oag/device/device_registry.h"
 #include "oag/input/gamepad_state.h"
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/pass_through_mapping.h"
+#include "oag/protocol/xusb/xusb_input_driver.h"
 
 using namespace oag;
 
@@ -57,19 +60,38 @@ int main() {
     const auto rebound = slots.bindFirstFree(*second);
     assert(rebound.has_value() && *rebound == 0);
 
+    const std::uint8_t xusbReport[20] = {
+        0x00, 0x14,
+        0x11, 0x14, // Up + Start + Guide + South(A)
+        0xFF, 0x80, // LT max, RT mid
+        0x00, 0x80, // LX = -32768
+        0xFF, 0x7F, // LY = +32767
+        0x00, 0x00, // RX = 0
+        0x01, 0x00, // RY = +1
+        0, 0, 0, 0, 0, 0
+    };
+
     UniversalGamepadState input {};
-    input.source = *second;
-    input.connected = true;
-    input.buttons = ButtonSouth | ButtonGuide;
-    input.dpad = static_cast<std::uint8_t>(DpadBits::Up);
-    input.lx = -123456;
-    input.ly = 654321;
-    input.rx = -777;
-    input.ry = 888;
-    input.leftTrigger = 0x12345678u;
-    input.rightTrigger = 0x87654321u;
-    input.generation = 42;
-    input.timestampUs = 1000000;
+    const XusbInputDriver xusb;
+    assert(xusb.parse(*second, xusbReport, sizeof(xusbReport), 1000000, input));
+
+    assert(input.connected);
+    assert(input.source == *second);
+    assert(input.dpad & static_cast<std::uint8_t>(DpadBits::Up));
+    assert(input.buttons & ButtonStart);
+    assert(input.buttons & ButtonGuide);
+    assert(input.buttons & ButtonSouth);
+    assert(input.leftTrigger == std::numeric_limits<std::uint32_t>::max());
+    assert(input.rightTrigger == 0x80808080u);
+    assert(input.lx == std::numeric_limits<std::int32_t>::min());
+    assert(input.ly == std::numeric_limits<std::int32_t>::max());
+    assert(input.rx == 0);
+    assert(input.ry > 0);
+
+    UniversalGamepadState rejected {};
+    std::uint8_t invalidReport[20] = {};
+    invalidReport[1] = 0x13;
+    assert(!xusb.parse(*second, invalidReport, sizeof(invalidReport), 0, rejected));
 
     const PassThroughMapping mapping;
     const LogicalGamepadState output = mapping.process(input);

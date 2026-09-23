@@ -6,6 +6,7 @@ option(OAG_BUILD_HOST_TESTS "Build host-side OAG core tests" ON)
 
 add_library(oag_core STATIC
     src/device/device_registry.cpp
+    src/protocol/xusb/xusb_input_driver.cpp
     src/mapping/logical_slot_manager.cpp
     src/mapping/pass_through_mapping.cpp
 )
