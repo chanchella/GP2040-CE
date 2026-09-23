@@ -10,6 +10,7 @@
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/pass_through_mapping.h"
 #include "oag/protocol/xusb/xusb_input_driver.h"
+#include "oag/transport/host_root_reconciler.h"
 
 using namespace oag;
 

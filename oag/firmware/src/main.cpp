@@ -5,6 +5,7 @@
 #include "pico/stdlib.h"
 #include "pico/time.h"
 #include "tusb.h"
+#include "host/usbh_pvt.h"
 
 #include "oag/device/device_registry.h"
 #include "oag/firmware/pc_hid_output.h"
@@ -14,6 +15,7 @@
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/pass_through_mapping.h"
 #include "oag/protocol/xusb/xusb_input_driver.h"
+#include "oag/transport/host_root_reconciler.h"
 
 namespace {
 
@@ -26,18 +28,26 @@ public:
 
         // U1 has Bluetooth disabled. The product invariant remains:
         // PIO USB Host must be initialized before any future CYW43/BT start.
-        return usbHost_.start();
+        if (!usbHost_.start()) {
+            return false;
+        }
+
+        nextHostHealthCheckUs_ = time_us_64() + kHostHealthPeriodUs;
+        return true;
     }
 
     void task() {
         tud_task();
         usbHost_.task();
+        serviceHostHealthWatchdog();
     }
 
     void onXusbMounted(
         std::uint8_t devAddr,
         std::uint8_t instance
     ) {
+        rememberMountedRoot(devAddr);
+
         std::uint16_t vid = 0;
         std::uint16_t pid = 0;
 
@@ -76,6 +86,8 @@ public:
         std::uint8_t devAddr,
         std::uint8_t instance
     ) {
+        forgetMountedRoot(devAddr);
+
         const oag::UsbTransportHandle handle {
             devAddr,
             instance,
@@ -102,6 +114,8 @@ public:
     }
 
     void onUsbDeviceUnmounted(std::uint8_t devAddr) {
+        forgetMountedRoot(devAddr);
+
         // TinyUSB calls the generic device-unmount callback before closing
         // class drivers. Clean every possible U1 XUSB interface here as a
         // transport-level safety net; the later class callback is idempotent.
@@ -141,9 +155,6 @@ public:
             return;
         }
 
-        // U1-HW1 exposes one PC HID gamepad while retaining four independent
-        // internal slots. The primary output is deterministic: the lowest
-        // currently bound slot, never whichever controller was active last.
         const auto primary = primaryPcSlot();
         if (primary && *slot == *primary) {
             pcOutput_.send(mapping_.process(states_[*slot]));
@@ -151,6 +162,68 @@ public:
     }
 
 private:
+    static constexpr std::uint64_t kHostHealthPeriodUs = 2000000;
+    static constexpr std::uint8_t kRootCount = 3;
+
+    void rememberMountedRoot(std::uint8_t devAddr) {
+        if (devAddr >= rootByDevice_.size()) {
+            return;
+        }
+
+        const std::uint8_t rhport = usbh_get_rhport(devAddr);
+        if (rhport < 1 || rhport > kRootCount) {
+            return;
+        }
+
+        rootByDevice_[devAddr] = rhport;
+        rebuildMountedRootMask();
+    }
+
+    void forgetMountedRoot(std::uint8_t devAddr) {
+        if (devAddr >= rootByDevice_.size()) {
+            return;
+        }
+
+        rootByDevice_[devAddr] = 0;
+        rebuildMountedRootMask();
+    }
+
+    void rebuildMountedRootMask() {
+        std::uint8_t mask = 0;
+
+        for (const std::uint8_t rhport : rootByDevice_) {
+            if (rhport >= 1 && rhport <= kRootCount) {
+                mask |= static_cast<std::uint8_t>(
+                    1u << static_cast<std::uint8_t>(rhport - 1u)
+                );
+            }
+        }
+
+        mountedRootMask_ = mask;
+    }
+
+    void serviceHostHealthWatchdog() {
+        const std::uint64_t now = time_us_64();
+        if (now < nextHostHealthCheckUs_) {
+            return;
+        }
+
+        nextHostHealthCheckUs_ = now + kHostHealthPeriodUs;
+
+        const std::uint8_t physicalMask = usbHost_.physicalRootMask();
+        const auto plan = oag::planHostRootReconcile(
+            physicalMask,
+            mountedRootMask_
+        );
+
+        if (!plan.healthy()) {
+            usbHost_.reconcileRootEvents(
+                plan.removeMask,
+                plan.attachMask
+            );
+        }
+    }
+
     std::optional<oag::LogicalSlotId> primaryPcSlot() const {
         for (std::size_t i = 0; i < oag::LogicalSlotManager::kGamepadSlots; ++i) {
             const auto slot = static_cast<oag::LogicalSlotId>(i);
@@ -181,10 +254,19 @@ private:
     oag::XusbInputDriver xusb_;
     oag::PassThroughMapping mapping_;
     oag::firmware::PcHidOutput pcOutput_;
+
     std::array<
         oag::UniversalGamepadState,
         oag::LogicalSlotManager::kGamepadSlots
     > states_ {};
+
+    std::array<
+        std::uint8_t,
+        CFG_TUH_DEVICE_MAX + 1
+    > rootByDevice_ {};
+
+    std::uint8_t mountedRootMask_ = 0;
+    std::uint64_t nextHostHealthCheckUs_ = 0;
 };
 
 FirmwareCore gCore;

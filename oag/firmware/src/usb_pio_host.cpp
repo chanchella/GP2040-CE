@@ -5,9 +5,11 @@
 #include "pico/time.h"
 #include "pio_usb.h"
 #include "tusb.h"
+#include "host/hcd.h"
 #include "host/usbh.h"
 #include "host/usbh_pvt.h"
 
+#include "oag/firmware/usb_pio_probe.h"
 #include "oag/firmware/xinput_host.h"
 
 namespace oag::firmware {
@@ -17,6 +19,7 @@ constexpr std::uint8_t kHostRhPort = 1;
 constexpr std::uint8_t kPort1Dp = 2;
 constexpr std::uint8_t kPort2Dp = 4;
 constexpr std::uint8_t kPort3Dp = 6;
+constexpr std::uint8_t kRootCount = 3;
 
 } // namespace
 
@@ -69,6 +72,57 @@ void UsbPioHost::stop() {
     ready_ = false;
 }
 
+std::uint8_t UsbPioHost::physicalRootMask() const {
+    return ready_ ? oag_pio_physical_root_mask() : 0;
+}
+
+void UsbPioHost::reconcileRootEvents(
+    std::uint8_t removeMask,
+    std::uint8_t attachMask
+) {
+    if (!ready_) {
+        return;
+    }
+
+    constexpr std::uint8_t validMask =
+        static_cast<std::uint8_t>((1u << kRootCount) - 1u);
+
+    removeMask &= validMask;
+    attachMask &= validMask;
+
+    // Remove stale logical devices first. TinyUSB then closes the class
+    // drivers/endpoints through its normal path.
+    for (std::uint8_t rootIndex = 0;
+         rootIndex < kRootCount;
+         ++rootIndex) {
+        const std::uint8_t bit =
+            static_cast<std::uint8_t>(1u << rootIndex);
+
+        if ((removeMask & bit) != 0) {
+            hcd_event_device_remove(
+                static_cast<std::uint8_t>(rootIndex + 1u),
+                false
+            );
+        }
+    }
+
+    // Queue ordinary attach events for physically present roots that TinyUSB
+    // has not mounted. No PIO/root/endpoint internals are mutated here.
+    for (std::uint8_t rootIndex = 0;
+         rootIndex < kRootCount;
+         ++rootIndex) {
+        const std::uint8_t bit =
+            static_cast<std::uint8_t>(1u << rootIndex);
+
+        if ((attachMask & bit) != 0) {
+            hcd_event_device_attach(
+                static_cast<std::uint8_t>(rootIndex + 1u),
+                false
+            );
+        }
+    }
+}
+
 } // namespace oag::firmware
 
 extern "C" usbh_class_driver_t const* usbh_app_driver_get_cb(
@@ -91,15 +145,12 @@ extern "C" usbh_class_driver_t const* usbh_app_driver_get_cb(
     return drivers;
 }
 
-
 extern "C" void tuh_hid_report_received_cb(
     std::uint8_t dev_addr,
     std::uint8_t instance,
     std::uint8_t const* report,
     std::uint16_t len
 ) {
-    // TinyUSB HID host is enabled only as a compile anchor in U1.
-    // Generic HID input routing starts in U2; intentionally discard here.
     (void)dev_addr;
     (void)instance;
     (void)report;

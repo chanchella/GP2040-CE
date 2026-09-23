@@ -25,6 +25,7 @@ pico_sdk_init()
 add_executable(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W
     src/main.cpp
     src/usb_pio_host.cpp
+    src/usb_pio_probe.c
     src/xinput_host.cpp
     src/pc_hid_output.cpp
     src/usb_descriptors.cpp
