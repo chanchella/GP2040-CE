@@ -15,9 +15,6 @@ static btstack_packet_callback_registration_t hciEventCallback {};
 static uint8_t classicDescriptorStorage[1024] {};
 static uint8_t leDescriptorStorage[1024] {};
 
-static bool classicInquiryStarted = false;
-static bool leScanStarted = false;
-
 static void btPacketHandler(
     uint8_t packetType,
     uint16_t channel,
@@ -38,18 +35,10 @@ static void btPacketHandler(
             return;
         }
 
-        // Foundation phase: discovery only. Pair/connect policy and Slot 0
-        // publication are added only after USB + BT coexistence is proven.
-        if (!classicInquiryStarted) {
-            classicInquiryStarted =
-                gap_inquiry_start(5) == ERROR_CODE_SUCCESS;
-        }
-
-        if (!leScanStarted) {
-            gap_set_scan_parameters(0, 0x0030, 0x0030);
-            gap_start_scan();
-            leScanStarted = true;
-        }
+        // Coexistence gate: keep the Bluetooth controller powered but idle.
+        // Discovery is intentionally started only by an explicit Pair action
+        // in the next phase. Continuous Classic + BLE scanning here adds
+        // avoidable radio/event-loop load while USB device reports are active.
         return;
     }
 
@@ -120,8 +109,9 @@ void UniversalBluetoothHostAddon::setup() {
     hciEventCallback.callback = &btPacketHandler;
     hci_add_event_handler(&hciEventCallback);
 
-    gap_connectable_control(1);
-    gap_discoverable_control(1);
+    // Host-only foundation: do not advertise or become discoverable.
+    gap_connectable_control(0);
+    gap_discoverable_control(0);
 
     hci_power_control(HCI_POWER_ON);
     initialized = true;
