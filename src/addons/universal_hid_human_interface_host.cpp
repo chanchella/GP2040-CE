@@ -1432,7 +1432,12 @@ processReport(
 
     if (
         keyboard != nullptr &&
-        (sawKeyboard || sawConsumer)
+        (
+            reportHasKeyboardFields ||
+            reportHasConsumerFields ||
+            sawKeyboard ||
+            sawConsumer
+        )
     ) {
         ensureKeyboardSlot(state);
 

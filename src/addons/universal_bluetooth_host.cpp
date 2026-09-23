@@ -699,6 +699,291 @@ static void connectHids() {
     gap_disconnect(connectionHandle);
 }
 
+static void populateHidCache(
+    HidServiceCache& cache,
+    uint8_t const* descriptor,
+    uint16_t descriptorLength
+);
+
+static HidServiceCache* ensureServiceCache(uint8_t serviceIndex) {
+    if (serviceIndex >= MAX_HID_SERVICES) {
+        return nullptr;
+    }
+
+    HidServiceCache& cache = serviceCaches[serviceIndex];
+
+    if (cache.parsed) {
+        return &cache;
+    }
+
+    cache = HidServiceCache {};
+    cache.parsed = true;
+
+    const uint8_t* descriptor =
+        hids_client_descriptor_storage_get_descriptor_data(
+            hidsCid,
+            serviceIndex
+        );
+
+    const uint16_t descriptorLength =
+        hids_client_descriptor_storage_get_descriptor_len(
+            hidsCid,
+            serviceIndex
+        );
+
+    populateHidCache(
+        cache,
+        descriptor,
+        descriptorLength
+    );
+
+    return &cache;
+}
+
+static bool findFieldRange(
+    HidServiceCache const& cache,
+    uint16_t reportId,
+    uint16_t usagePage,
+    uint16_t usage,
+    int32_t& logicalMin,
+    int32_t& logicalMax
+) {
+    for (uint8_t i = 0; i < cache.fieldCount; i++) {
+        HidFieldRange const& field = cache.fields[i];
+
+        if (
+            field.usagePage == usagePage &&
+            field.usage == usage &&
+            (
+                field.reportId == reportId ||
+                field.reportId == HID_REPORT_ID_UNDEFINED
+            )
+        ) {
+            logicalMin = field.logicalMin;
+            logicalMax = field.logicalMax;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static uint16_t scaleAxis(
+    int32_t value,
+    int32_t logicalMin,
+    int32_t logicalMax
+) {
+    if (logicalMax <= logicalMin) {
+        if (value < 0) {
+            const int32_t shifted = value + 32768;
+            return static_cast<uint16_t>(
+                shifted < 0
+                    ? 0
+                    : shifted > 65535
+                        ? 65535
+                        : shifted
+            );
+        }
+
+        return static_cast<uint16_t>(
+            value > 65535 ? 65535 : value
+        );
+    }
+
+    if (value < logicalMin) value = logicalMin;
+    if (value > logicalMax) value = logicalMax;
+
+    const int64_t numerator =
+        static_cast<int64_t>(value - logicalMin) *
+        GAMEPAD_JOYSTICK_MAX;
+
+    return static_cast<uint16_t>(
+        numerator / (logicalMax - logicalMin)
+    );
+}
+
+static uint8_t scaleTrigger(
+    int32_t value,
+    int32_t logicalMin,
+    int32_t logicalMax
+) {
+    if (logicalMax <= logicalMin) {
+        if (value <= 0) return 0;
+        if (value >= 255) return 255;
+        return static_cast<uint8_t>(value);
+    }
+
+    if (value < logicalMin) value = logicalMin;
+    if (value > logicalMax) value = logicalMax;
+
+    const int64_t numerator =
+        static_cast<int64_t>(value - logicalMin) * 255;
+
+    return static_cast<uint8_t>(
+        numerator / (logicalMax - logicalMin)
+    );
+}
+
+static uint32_t buttonMaskForUsage(
+    uint16_t usage,
+    BluetoothGamepadProfile profile
+) {
+    if (profile == BluetoothGamepadProfile::XBOX_BLE) {
+        switch (usage) {
+            case 1:  return GAMEPAD_MASK_B1;
+            case 2:  return GAMEPAD_MASK_B2;
+            case 4:  return GAMEPAD_MASK_B3;
+            case 5:  return GAMEPAD_MASK_B4;
+            case 7:  return GAMEPAD_MASK_L1;
+            case 8:  return GAMEPAD_MASK_R1;
+            case 11: return GAMEPAD_MASK_S1;
+            case 12: return GAMEPAD_MASK_S2;
+            case 13: return GAMEPAD_MASK_A1;
+            case 14: return GAMEPAD_MASK_L3;
+            case 15: return GAMEPAD_MASK_R3;
+            default: return 0;
+        }
+    }
+
+    if (
+        profile == BluetoothGamepadProfile::SONY_DS4_CLASSIC ||
+        profile == BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC
+    ) {
+        switch (usage) {
+            case 1:  return GAMEPAD_MASK_B3;
+            case 2:  return GAMEPAD_MASK_B1;
+            case 3:  return GAMEPAD_MASK_B2;
+            case 4:  return GAMEPAD_MASK_B4;
+            case 5:  return GAMEPAD_MASK_L1;
+            case 6:  return GAMEPAD_MASK_R1;
+            case 7:  return GAMEPAD_MASK_L2;
+            case 8:  return GAMEPAD_MASK_R2;
+            case 9:  return GAMEPAD_MASK_S1;
+            case 10: return GAMEPAD_MASK_S2;
+            case 11: return GAMEPAD_MASK_L3;
+            case 12: return GAMEPAD_MASK_R3;
+            case 13: return GAMEPAD_MASK_A1;
+            case 14: return GAMEPAD_MASK_A2;
+            default: return 0;
+        }
+    }
+
+    switch (usage) {
+        case 1:  return GAMEPAD_MASK_B1;
+        case 2:  return GAMEPAD_MASK_B2;
+        case 3:  return GAMEPAD_MASK_B3;
+        case 4:  return GAMEPAD_MASK_B4;
+        case 5:  return GAMEPAD_MASK_L1;
+        case 6:  return GAMEPAD_MASK_R1;
+        case 7:  return GAMEPAD_MASK_L2;
+        case 8:  return GAMEPAD_MASK_R2;
+        case 9:  return GAMEPAD_MASK_S1;
+        case 10: return GAMEPAD_MASK_S2;
+        case 11: return GAMEPAD_MASK_L3;
+        case 12: return GAMEPAD_MASK_R3;
+        case 13: return GAMEPAD_MASK_A1;
+        case 14: return GAMEPAD_MASK_A2;
+        default: return 0;
+    }
+}
+
+static uint8_t hatToDpad(
+    int32_t value,
+    int32_t logicalMin,
+    int32_t logicalMax
+) {
+    int32_t index = -1;
+
+    if (
+        logicalMin == 0 &&
+        logicalMax >= 7 &&
+        value >= 0 &&
+        value <= 7
+    ) {
+        index = value;
+    } else if (
+        logicalMin == 1 &&
+        logicalMax >= 8 &&
+        value >= 1 &&
+        value <= 8
+    ) {
+        index = value - 1;
+    }
+
+    switch (index) {
+        case 0: return GAMEPAD_MASK_UP;
+        case 1: return GAMEPAD_MASK_UP | GAMEPAD_MASK_RIGHT;
+        case 2: return GAMEPAD_MASK_RIGHT;
+        case 3: return GAMEPAD_MASK_DOWN | GAMEPAD_MASK_RIGHT;
+        case 4: return GAMEPAD_MASK_DOWN;
+        case 5: return GAMEPAD_MASK_DOWN | GAMEPAD_MASK_LEFT;
+        case 6: return GAMEPAD_MASK_LEFT;
+        case 7: return GAMEPAD_MASK_UP | GAMEPAD_MASK_LEFT;
+        default: return 0;
+    }
+}
+
+static void ensureBluetoothSlotConnected(
+    UniversalTransport transport,
+    BluetoothGamepadProfile profile
+) {
+    if (
+        bluetoothSlotConnected &&
+        activeBluetoothProfile == profile
+    ) {
+        return;
+    }
+
+    const bool profileChanged =
+        bluetoothSlotConnected &&
+        activeBluetoothProfile != profile;
+
+    UniversalDeviceMatch match {};
+    match.recognized = true;
+    match.transport = transport;
+    match.deviceClass = UniversalDeviceClass::GAMEPAD;
+    match.protocol = UniversalProtocol::HID_GAMEPAD;
+    match.driverFamily = UniversalDriverFamily::HID;
+    match.profile = UniversalDeviceProfileId::GENERIC_HID_GAMEPAD;
+    match.capabilities = UNIVERSAL_CAP_WIRELESS_PAIRING;
+
+    switch (profile) {
+        case BluetoothGamepadProfile::XBOX_BLE:
+            match.capabilities |=
+                UNIVERSAL_CAP_RUMBLE |
+                UNIVERSAL_CAP_TRIGGER_RUMBLE;
+            break;
+
+        case BluetoothGamepadProfile::SONY_DS4_CLASSIC:
+        case BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC:
+        case BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC:
+            match.capabilities |= UNIVERSAL_CAP_RUMBLE;
+            break;
+
+        case BluetoothGamepadProfile::GENERIC_HID:
+        default:
+            break;
+    }
+
+    activeBluetoothProfile = profile;
+
+    if (profileChanged) {
+        lastBluetoothFeedbackGeneration = 0;
+    }
+
+    if (
+        UINPUT.connectClassified(
+            UNIVERSAL_INPUT_SLOT_BLUETOOTH,
+            UniversalInputSource::BLUETOOTH_GAMEPAD,
+            match,
+            0,
+            0
+        )
+    ) {
+        bluetoothSlotConnected = true;
+    }
+}
+
 static HidReportMeta* ensureReportMeta(
     HidServiceCache& cache,
     uint16_t reportId
