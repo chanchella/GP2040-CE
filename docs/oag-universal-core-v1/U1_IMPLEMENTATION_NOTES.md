@@ -1,6 +1,6 @@
 # OAG Universal Core V1 — U1 Implementation Notes
 
-Status: U1 STARTED
+Status: U1 IMPLEMENTATION IN PROGRESS
 
 Product identity for the new firmware:
 
@@ -23,9 +23,9 @@ The following remain read-only and are not development inputs:
 
 No Antigravity commit is merged, cherry-picked, copied, or used as a working baseline.
 
-## U1-A scope
+## U1-A foundation
 
-This first implementation slice establishes the transport-independent core before the hardware transport is attached:
+The transport-independent core contains:
 
 - generation-safe DeviceId
 - fixed-capacity DeviceRegistry
@@ -40,21 +40,36 @@ This first implementation slice establishes the transport-independent core befor
 - host-native tests
 - architecture dependency guard
 - dedicated GitHub Actions workflow
+- independent XUSB parser writing directly into UniversalGamepadState
+
+## U1-B firmware slice
+
+The U1-HW1 firmware source adds:
+
+- Pico 2 W-only firmware target
+- deterministic verification of the exact Golden TinyUSB and Pico-PIO-USB SHAs
+- explicit build-time patch from two to three Pico-PIO-USB root ports
+- P1 D+ GPIO2 / D- GPIO3
+- P2 D+ GPIO4 / D- GPIO5
+- P3 D+ GPIO6 / D- GPIO7
+- standalone XUSB host class adapter
+- G2E3/T29 045E:028E fallback behavior
+- G2E3/T29 Player-1 startup OUT packet
+- DeviceRegistry -> LogicalSlotManager -> UniversalGamepadState
+- PassThroughMapping
+- one PC Generic HID development output
+- build manifest, size report, UF2, ELF and MAP artifacts
+
+Bluetooth is intentionally disabled in U1-HW1. Therefore USB Host starts before any future CYW43/Bluetooth initialization by construction.
+
+The PC development descriptor currently retains legacy G2E3 VID 10C4 / PID 82C0 for continuity only. It is not treated as a console authentication identity or evidence of official platform authorization.
 
 ## Verification language
 
-U1-A is not a hardware milestone.
+Source being present is SOURCE EXISTS.
 
-Passing host tests means SOFTWARE VERIFIED for the core scope only.
+Passing host tests and compiling the firmware is SOFTWARE VERIFIED for that scope.
 
-The later U1-B firmware slice must add:
+Passing the dedicated workflow on the exact commit is CI VERIFIED.
 
-- Pico 2 W firmware target
-- deterministic Pico-PIO-USB three-root dependency preparation
-- TinyUSB device output
-- XUSB/T29 input adapter
-- PC Generic HID output driver
-- UF2/ELF/MAP artifact manifest
-- physical P1/P2/P3 test instructions
-
-Nothing becomes HARDWARE VERIFIED until the user reports a successful physical test.
+Nothing becomes HARDWARE VERIFIED until the user physically flashes the exact UF2 and confirms the requested P1/P2/P3 tests.
