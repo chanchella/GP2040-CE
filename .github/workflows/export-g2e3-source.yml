@@ -1,0 +1,85 @@
+name: Export exact G2E3 source
+
+on:
+  push:
+    branches:
+      - export-g2e3-exact-source
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout exact G2E3 with submodules
+        uses: actions/checkout@v4
+        with:
+          ref: fd21b6b2dd82dd0b35829d17ab21840bb8e5b37b
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Apply exact G2E3 CI source patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          CFG="lib/pico_pio_usb/src/pio_usb_configuration.h"
+          test -f "$CFG"
+          grep -q '^#define PIO_USB_ROOT_PORT_CNT 2$' "$CFG"
+          sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
+          python3 .github/scripts/patch_oag_tinyusb_hid_host.py
+          grep -q '^#define PIO_USB_ROOT_PORT_CNT 3' "$CFG"
+          grep -q 'skip_set_idle' lib/tinyusb/src/class/hid/hid_host.c
+
+      - name: Write source manifest
+        shell: bash
+        run: |
+          cat > OAG_G2E3_SOURCE_MANIFEST.txt <<'EOF'
+          OAG Vortex Ultra Gaming - G2E3 exact source package
+
+          Firmware file:
+          OAG_Vortex_Ultra_Gaming_G2E3_Home_KM_LED_Pico2W.uf2
+
+          Golden source commit:
+          fd21b6b2dd82dd0b35829d17ab21840bb8e5b37b
+
+          Golden branch:
+          golden/oag-g2e3-home-km-led
+
+          Physical USB identity:
+          Product: OAG Vortex Ultra Gaming
+          VID: 10C4
+          PID: 82C0
+
+          Hardware wiring:
+          P1 D+ GPIO2 / D- GPIO3
+          P2 D+ GPIO4 / D- GPIO5
+          P3 D+ GPIO6 / D- GPIO7
+
+          This package contains the repository at the exact G2E3 commit,
+          all recursive git submodules checked out, plus the two build-time
+          source patches used by the G2E3 GitHub Actions build:
+          1) Pico-PIO-USB root port count patched from 2 to 3.
+          2) TinyUSB HID host quirks applied by
+             .github/scripts/patch_oag_tinyusb_hid_host.py
+
+          No G2E4, G2F0, Windows Bridge, or later source changes are included.
+          EOF
+
+      - name: Strip Git metadata only
+        shell: bash
+        run: |
+          find . -name .git -type f -delete
+          find . -name .git -type d -prune -exec rm -rf {} +
+
+      - name: Create source ZIP
+        shell: bash
+        run: |
+          cd ..
+          zip -qr OAG_Vortex_Ultra_Gaming_G2E3_EXACT_SOURCE.zip GP2040-CE             -x 'GP2040-CE/build/*'
+          mv OAG_Vortex_Ultra_Gaming_G2E3_EXACT_SOURCE.zip GP2040-CE/
+
+      - name: Upload exact source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: OAG-Vortex-G2E3-EXACT-SOURCE
+          path: OAG_Vortex_Ultra_Gaming_G2E3_EXACT_SOURCE.zip
+          if-no-files-found: error
+          retention-days: 90
