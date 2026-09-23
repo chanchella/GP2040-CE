@@ -15,7 +15,7 @@
 
 static constexpr uint8_t OAG_MULTI_HID_SLOT_COUNT = 4;
 static constexpr uint8_t OAG_MULTI_HID_ENDPOINT_SIZE = 64;
-static constexpr uint16_t OAG_MULTI_HID_REPORT_DESC_SIZE = 89;
+static constexpr uint16_t OAG_MULTI_HID_REPORT_DESC_SIZE = 79;
 static constexpr uint16_t OAG_MULTI_HID_CONFIG_SIZE =
     9 + (OAG_MULTI_HID_SLOT_COUNT * (9 + 9 + 7));
 
@@ -40,6 +40,8 @@ struct __attribute__((packed, aligned(1))) OAGMultiHIDFeedbackReport {
 static_assert(sizeof(OAGMultiHIDFeedbackReport) == 4, "OAG feedback report size changed");
 
 static const uint8_t oag_multi_hid_report_descriptor[] = {
+    // Input section intentionally mirrors GP2040-CE's proven Generic HID
+    // descriptor so Windows/Chromium see a conventional gamepad.
     0x05, 0x01,        // Usage Page (Generic Desktop)
     0x09, 0x05,        // Usage (Game Pad)
     0xA1, 0x01,        // Collection (Application)
@@ -54,38 +56,33 @@ static const uint8_t oag_multi_hid_report_descriptor[] = {
     0x75, 0x01,
     0x81, 0x02,
 
-    // Hat
+    // Hat switch
     0x05, 0x01,
     0x09, 0x39,
-    0x15, 0x00,
     0x25, 0x07,
-    0x35, 0x00,
-    0x46, 0x3B, 0x01,
-    0x65, 0x14,
-    0x75, 0x04,
     0x95, 0x01,
+    0x75, 0x04,
     0x81, 0x42,
 
     // Hat padding
-    0x65, 0x00,
-    0x75, 0x04,
     0x95, 0x01,
+    0x75, 0x04,
     0x81, 0x01,
 
-    // Four analog axes
+    // Four axes, matching GP2040 Generic HID:
+    // X/Y = left stick, Z/Rz = right stick.
     0x05, 0x01,
-    0x15, 0x00,
     0x26, 0xFF, 0x00,
+    0x46, 0xFF, 0x00,
     0x09, 0x30,        // X
     0x09, 0x31,        // Y
-    0x09, 0x32,        // Z  (right stick X - GP2040 Generic HID convention)
-    0x09, 0x35,        // Rz (right stick Y - GP2040 Generic HID convention)
+    0x09, 0x32,        // Z
+    0x09, 0x35,        // Rz
     0x75, 0x08,
     0x95, 0x04,
     0x81, 0x02,
 
-    // Per-slot PC -> OAG feedback. No Report ID: the four-byte output packet
-    // used by OAG_G2C1_PerSlot_Rumble_Test.ps1 remains unchanged.
+    // Keep the already hardware-proven OAG 4-byte feedback path.
     0x06, 0x00, 0xFF,
     0x09, 0x01,
     0x15, 0x00,
@@ -95,7 +92,7 @@ static const uint8_t oag_multi_hid_report_descriptor[] = {
     0x91, 0x02,
 
     0xC0
-};
+}
 
 static_assert(
     sizeof(oag_multi_hid_report_descriptor) == OAG_MULTI_HID_REPORT_DESC_SIZE,
