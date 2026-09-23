@@ -78,6 +78,23 @@ private:
     );
 
     static uint8_t dpadToHat(uint8_t dpad);
+
+    void processHumanInterfaces(bool& anySent);
+    OAGKeyboardReport buildKeyboardReport() const;
+    OAGConsumerReport buildConsumerReport() const;
+    OAGMouseReport buildMouseReport();
+
+    OAGKeyboardReport lastKeyboardReport {};
+    OAGConsumerReport lastConsumerReport {};
+    OAGMouseReport lastMouseReport {};
+    bool lastKeyboardReportValid = false;
+    bool lastConsumerReportValid = false;
+    bool lastMouseReportValid = false;
+    uint32_t lastMouseGeneration[4] {};
+    int32_t pendingMouseX = 0;
+    int32_t pendingMouseY = 0;
+    int32_t pendingMouseWheel = 0;
+    int32_t pendingMousePan = 0;
 };
 
 #endif

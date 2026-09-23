@@ -12,6 +12,7 @@
 #include "drivers/shared/driverhelper.h"
 #include "output/universal_output_manager.h"
 #include "output/universal_feedback_manager.h"
+#include "input/universal_human_interface_manager.h"
 #include "pico/unique_id.h"
 #include "pico/time.h"
 
@@ -70,6 +71,17 @@ void OAGMultiHIDDriver::initialize() {
     memset(lastReports, 0, sizeof(lastReports));
     memset(lastReportValid, 0, sizeof(lastReportValid));
     memset(lastReportSentUs, 0, sizeof(lastReportSentUs));
+    memset(lastMouseGeneration, 0, sizeof(lastMouseGeneration));
+    lastKeyboardReport = OAGKeyboardReport {};
+    lastConsumerReport = OAGConsumerReport {};
+    lastMouseReport = OAGMouseReport {};
+    lastKeyboardReportValid = false;
+    lastConsumerReportValid = false;
+    lastMouseReportValid = false;
+    pendingMouseX = 0;
+    pendingMouseY = 0;
+    pendingMouseWheel = 0;
+    pendingMousePan = 0;
 
     buildConfigurationDescriptor();
 
@@ -177,7 +189,212 @@ bool OAGMultiHIDDriver::process(Gamepad* gamepad) {
         }
     }
 
+    processHumanInterfaces(anySent);
     return anySent;
+}
+
+namespace {
+static int16_t clampI16(int32_t value) {
+    if (value < -32767) return -32767;
+    if (value > 32767) return 32767;
+    return static_cast<int16_t>(value);
+}
+
+static int8_t clampI8(int32_t value) {
+    if (value < -127) return -127;
+    if (value > 127) return 127;
+    return static_cast<int8_t>(value);
+}
+
+static int consumerUsageBit(uint16_t usage) {
+    switch (usage) {
+        case 0x00E2: return 0;  // Mute
+        case 0x00E9: return 1;  // Volume Up
+        case 0x00EA: return 2;  // Volume Down
+        case 0x00CD: return 3;  // Play/Pause
+        case 0x00B5: return 4;  // Next
+        case 0x00B6: return 5;  // Previous
+        case 0x00B7: return 6;  // Stop
+        case 0x00B8: return 7;  // Eject
+        case 0x0223: return 8;  // Home
+        case 0x0221: return 9;  // Search
+        case 0x0224: return 10; // Back
+        case 0x0225: return 11; // Forward
+        case 0x0227: return 12; // Refresh
+        case 0x022A: return 13; // Bookmarks
+        case 0x00B3: return 14; // Fast Forward
+        case 0x00B4: return 15; // Rewind
+        default: return -1;
+    }
+}
+} // namespace
+
+OAGKeyboardReport OAGMultiHIDDriver::buildKeyboardReport() const {
+    OAGKeyboardReport report {};
+
+    for (uint8_t slot = 0; slot < UNIVERSAL_HID_SLOT_COUNT; slot++) {
+        UniversalKeyboardSlotSnapshot snapshot {};
+        if (
+            !UHIDINPUT.snapshotKeyboard(slot, snapshot) ||
+            !snapshot.connected ||
+            !snapshot.hasReport
+        ) {
+            continue;
+        }
+
+        for (uint8_t word = 0; word < 8; word++) {
+            report.keys[word] |= snapshot.state.keys[word];
+        }
+
+        for (uint8_t bit = 0; bit < 8; bit++) {
+            if (snapshot.state.modifiers & (1u << bit)) {
+                const uint8_t usage = static_cast<uint8_t>(0xE0 + bit);
+                report.keys[usage >> 5] |=
+                    1u << static_cast<uint8_t>(usage & 31);
+            }
+        }
+    }
+
+    return report;
+}
+
+OAGConsumerReport OAGMultiHIDDriver::buildConsumerReport() const {
+    OAGConsumerReport report {};
+
+    for (uint8_t slot = 0; slot < UNIVERSAL_HID_SLOT_COUNT; slot++) {
+        UniversalKeyboardSlotSnapshot snapshot {};
+        if (
+            !UHIDINPUT.snapshotKeyboard(slot, snapshot) ||
+            !snapshot.connected ||
+            !snapshot.hasReport
+        ) {
+            continue;
+        }
+
+        for (
+            uint8_t i = 0;
+            i < snapshot.state.consumerUsageCount &&
+            i < UNIVERSAL_KEYBOARD_MAX_CONSUMER_USAGES;
+            i++
+        ) {
+            const int bit = consumerUsageBit(
+                snapshot.state.consumerUsages[i]
+            );
+            if (bit >= 0) {
+                report.usages |= static_cast<uint16_t>(1u << bit);
+            }
+        }
+    }
+
+    return report;
+}
+
+OAGMouseReport OAGMultiHIDDriver::buildMouseReport() {
+    OAGMouseReport report {};
+    uint8_t buttons = 0;
+
+    for (uint8_t slot = 0; slot < UNIVERSAL_HID_SLOT_COUNT; slot++) {
+        UniversalMouseSlotSnapshot snapshot {};
+        if (!UHIDINPUT.snapshotMouse(slot, snapshot)) {
+            continue;
+        }
+
+        if (!snapshot.connected) {
+            lastMouseGeneration[slot] = snapshot.generation;
+            continue;
+        }
+
+        if (snapshot.hasReport) {
+            buttons |= static_cast<uint8_t>(snapshot.state.buttons & 0xFFu);
+
+            if (snapshot.generation != lastMouseGeneration[slot]) {
+                pendingMouseX += snapshot.state.x;
+                pendingMouseY += snapshot.state.y;
+                pendingMouseWheel += snapshot.state.wheel;
+                pendingMousePan += snapshot.state.horizontalWheel;
+                lastMouseGeneration[slot] = snapshot.generation;
+            }
+        }
+    }
+
+    report.buttons = buttons;
+    report.x = clampI16(pendingMouseX);
+    report.y = clampI16(pendingMouseY);
+    report.wheel = clampI8(pendingMouseWheel);
+    report.pan = clampI8(pendingMousePan);
+    return report;
+}
+
+void OAGMultiHIDDriver::processHumanInterfaces(bool& anySent) {
+    if (!tud_ready()) {
+        return;
+    }
+
+    const OAGKeyboardReport keyboard = buildKeyboardReport();
+    if (
+        (!lastKeyboardReportValid ||
+         memcmp(&keyboard, &lastKeyboardReport, sizeof(keyboard)) != 0) &&
+        tud_hid_n_ready(OAG_MULTI_HID_KEYBOARD_INTERFACE) &&
+        tud_hid_n_report(
+            OAG_MULTI_HID_KEYBOARD_INTERFACE,
+            OAG_HID_REPORT_ID_KEYBOARD,
+            &keyboard,
+            sizeof(keyboard)
+        )
+    ) {
+        lastKeyboardReport = keyboard;
+        lastKeyboardReportValid = true;
+        anySent = true;
+    }
+
+    const OAGConsumerReport consumer = buildConsumerReport();
+    if (
+        (!lastConsumerReportValid ||
+         memcmp(&consumer, &lastConsumerReport, sizeof(consumer)) != 0) &&
+        tud_hid_n_ready(OAG_MULTI_HID_KEYBOARD_INTERFACE) &&
+        tud_hid_n_report(
+            OAG_MULTI_HID_KEYBOARD_INTERFACE,
+            OAG_HID_REPORT_ID_CONSUMER,
+            &consumer,
+            sizeof(consumer)
+        )
+    ) {
+        lastConsumerReport = consumer;
+        lastConsumerReportValid = true;
+        anySent = true;
+    }
+
+    const OAGMouseReport mouse = buildMouseReport();
+    const bool mouseChanged =
+        !lastMouseReportValid ||
+        mouse.buttons != lastMouseReport.buttons ||
+        mouse.x != 0 ||
+        mouse.y != 0 ||
+        mouse.wheel != 0 ||
+        mouse.pan != 0;
+
+    if (
+        mouseChanged &&
+        tud_hid_n_ready(OAG_MULTI_HID_MOUSE_INTERFACE) &&
+        tud_hid_n_report(
+            OAG_MULTI_HID_MOUSE_INTERFACE,
+            OAG_HID_REPORT_ID_MOUSE,
+            &mouse,
+            sizeof(mouse)
+        )
+    ) {
+        pendingMouseX -= mouse.x;
+        pendingMouseY -= mouse.y;
+        pendingMouseWheel -= mouse.wheel;
+        pendingMousePan -= mouse.pan;
+        lastMouseReport = mouse;
+        lastMouseReport.x = 0;
+        lastMouseReport.y = 0;
+        lastMouseReport.wheel = 0;
+        lastMouseReport.pan = 0;
+        lastMouseReportValid = true;
+        anySent = true;
+    }
 }
 
 void OAGMultiHIDDriver::set_report_with_itf(
@@ -233,7 +450,6 @@ uint16_t OAGMultiHIDDriver::get_report_with_itf(
     (void)report_id;
 
     if (
-        itf >= OAG_MULTI_HID_SLOT_COUNT ||
         report_type != HID_REPORT_TYPE_INPUT ||
         buffer == nullptr ||
         reqlen == 0
@@ -241,24 +457,64 @@ uint16_t OAGMultiHIDDriver::get_report_with_itf(
         return 0;
     }
 
-    UniversalOutputSlotSnapshot output {};
-    const bool hasOutput =
-        UOUTPUT.snapshot(itf, output) &&
-        output.connected &&
-        output.hasReport;
+    if (itf < OAG_MULTI_HID_SLOT_COUNT) {
+        UniversalOutputSlotSnapshot output {};
+        const bool hasOutput =
+            UOUTPUT.snapshot(itf, output) &&
+            output.connected &&
+            output.hasReport;
 
-    GamepadState neutral {};
-    reports[itf] = buildReport(
-        hasOutput ? output.state : neutral
-    );
+        GamepadState neutral {};
+        reports[itf] = buildReport(
+            hasOutput ? output.state : neutral
+        );
 
-    const uint16_t reportSize =
-        static_cast<uint16_t>(sizeof(OAGMultiHIDReport));
-    const uint16_t copyLength =
-        reqlen < reportSize ? reqlen : reportSize;
+        const uint16_t reportSize =
+            static_cast<uint16_t>(sizeof(OAGMultiHIDReport));
+        const uint16_t copyLength =
+            reqlen < reportSize ? reqlen : reportSize;
 
-    memcpy(buffer, &reports[itf], copyLength);
-    return copyLength;
+        memcpy(buffer, &reports[itf], copyLength);
+        return copyLength;
+    }
+
+    if (itf == OAG_MULTI_HID_KEYBOARD_INTERFACE) {
+        if (report_id == OAG_HID_REPORT_ID_KEYBOARD) {
+            const OAGKeyboardReport report = buildKeyboardReport();
+            const uint16_t n = reqlen < sizeof(report)
+                ? reqlen
+                : static_cast<uint16_t>(sizeof(report));
+            memcpy(buffer, &report, n);
+            return n;
+        }
+
+        if (report_id == OAG_HID_REPORT_ID_CONSUMER) {
+            const OAGConsumerReport report = buildConsumerReport();
+            const uint16_t n = reqlen < sizeof(report)
+                ? reqlen
+                : static_cast<uint16_t>(sizeof(report));
+            memcpy(buffer, &report, n);
+            return n;
+        }
+    }
+
+    if (
+        itf == OAG_MULTI_HID_MOUSE_INTERFACE &&
+        report_id == OAG_HID_REPORT_ID_MOUSE
+    ) {
+        OAGMouseReport report = lastMouseReport;
+        report.x = 0;
+        report.y = 0;
+        report.wheel = 0;
+        report.pan = 0;
+        const uint16_t n = reqlen < sizeof(report)
+            ? reqlen
+            : static_cast<uint16_t>(sizeof(report));
+        memcpy(buffer, &report, n);
+        return n;
+    }
+
+    return 0;
 }
 
 bool OAGMultiHIDDriver::vendor_control_xfer_cb(
@@ -319,11 +575,19 @@ const uint8_t* OAGMultiHIDDriver::get_descriptor_device_cb() {
 const uint8_t* OAGMultiHIDDriver::get_hid_descriptor_report_cb(
     uint8_t itf
 ) {
-    if (itf >= OAG_MULTI_HID_SLOT_COUNT) {
-        return nullptr;
+    if (itf < OAG_MULTI_HID_SLOT_COUNT) {
+        return oag_multi_hid_report_descriptor;
     }
 
-    return oag_multi_hid_report_descriptor;
+    if (itf == OAG_MULTI_HID_KEYBOARD_INTERFACE) {
+        return oag_keyboard_report_descriptor;
+    }
+
+    if (itf == OAG_MULTI_HID_MOUSE_INTERFACE) {
+        return oag_mouse_report_descriptor;
+    }
+
+    return nullptr;
 }
 
 const uint8_t* OAGMultiHIDDriver::get_descriptor_configuration_cb(
@@ -351,7 +615,7 @@ void OAGMultiHIDDriver::buildConfigurationDescriptor() {
         0x02,
         static_cast<uint8_t>(totalLength & 0xFF),
         static_cast<uint8_t>((totalLength >> 8) & 0xFF),
-        OAG_MULTI_HID_SLOT_COUNT,
+        OAG_MULTI_HID_INTERFACE_COUNT,
         0x01,
         0x00,
         0x80,
@@ -361,14 +625,30 @@ void OAGMultiHIDDriver::buildConfigurationDescriptor() {
     memcpy(out, configHeader, sizeof(configHeader));
     out += sizeof(configHeader);
 
-    for (uint8_t slot = 0; slot < OAG_MULTI_HID_SLOT_COUNT; slot++) {
+    for (
+        uint8_t itf = 0;
+        itf < OAG_MULTI_HID_INTERFACE_COUNT;
+        itf++
+    ) {
         const uint8_t epIn =
-            static_cast<uint8_t>(0x80 | (slot + 1));
+            static_cast<uint8_t>(0x80 | (itf + 1));
+
+        uint16_t reportDescriptorLength = 0;
+        if (itf < OAG_MULTI_HID_SLOT_COUNT) {
+            reportDescriptorLength =
+                sizeof(oag_multi_hid_report_descriptor);
+        } else if (itf == OAG_MULTI_HID_KEYBOARD_INTERFACE) {
+            reportDescriptorLength =
+                sizeof(oag_keyboard_report_descriptor);
+        } else if (itf == OAG_MULTI_HID_MOUSE_INTERFACE) {
+            reportDescriptorLength =
+                sizeof(oag_mouse_report_descriptor);
+        }
 
         const uint8_t interfaceBlock[] = {
             // Interface
             0x09, 0x04,
-            slot,
+            itf,
             0x00,
             0x01,
             0x03,
@@ -382,14 +662,12 @@ void OAGMultiHIDDriver::buildConfigurationDescriptor() {
             0x00,
             0x01,
             0x22,
+            static_cast<uint8_t>(reportDescriptorLength & 0xFF),
             static_cast<uint8_t>(
-                sizeof(oag_multi_hid_report_descriptor) & 0xFF
-            ),
-            static_cast<uint8_t>(
-                (sizeof(oag_multi_hid_report_descriptor) >> 8) & 0xFF
+                (reportDescriptorLength >> 8) & 0xFF
             ),
 
-            // Interrupt IN endpoint
+            // Interrupt IN endpoint, 1 ms polling.
             0x07, 0x05,
             epIn,
             0x03,
