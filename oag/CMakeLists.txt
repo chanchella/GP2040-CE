@@ -9,6 +9,8 @@ add_library(oag_core STATIC
     src/protocol/xusb/xusb_input_driver.cpp
     src/mapping/logical_slot_manager.cpp
     src/mapping/pass_through_mapping.cpp
+    src/output/xinput/xinput_report_encoder.cpp
+    src/output/xinput/xinput_feedback_decoder.cpp
 )
 
 target_include_directories(oag_core

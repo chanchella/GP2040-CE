@@ -9,6 +9,8 @@
 #include "oag/input/gamepad_state.h"
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/pass_through_mapping.h"
+#include "oag/output/xinput/xinput_feedback_decoder.h"
+#include "oag/output/xinput/xinput_report_encoder.h"
 #include "oag/protocol/xusb/xusb_input_driver.h"
 #include "oag/transport/host_root_reconciler.h"
 
@@ -124,6 +126,85 @@ int main() {
     assert(output.generation == input.generation);
     assert(output.timestampUs == input.timestampUs);
 
-    std::cout << "OAG_U1A_CORE_TESTS=PASS\n";
+    // XUSB -> Universal -> Mapping -> XInput must preserve the T29 gameplay
+    // packet semantics, including the canonical OAG Y-axis inversion.
+    const XinputReportEncoder encoder;
+    const XinputReport encoded = encoder.encode(output);
+
+    assert(encoded.reportId == 0x00);
+    assert(encoded.reportSize == 0x14);
+    assert(encoded.buttons1 == 0x11);
+    assert(encoded.buttons2 == 0x14);
+    assert(encoded.leftTrigger == 0xFF);
+    assert(encoded.rightTrigger == 0x80);
+    assert(encoded.lx == std::numeric_limits<std::int16_t>::min());
+    assert(encoded.ly == std::numeric_limits<std::int16_t>::max());
+    assert(encoded.rx == 0);
+    assert(encoded.ry == 1);
+
+    LogicalGamepadState yDownLogical {};
+    yDownLogical.connected = true;
+    yDownLogical.ly = yDown.ly;
+    yDownLogical.ry = yDown.ry;
+    const XinputReport yDownEncoded = encoder.encode(yDownLogical);
+    assert(yDownEncoded.ly == std::numeric_limits<std::int16_t>::min());
+    assert(yDownEncoded.ry == std::numeric_limits<std::int16_t>::min());
+
+    // Standard Xbox 360/XInput reverse-feedback packet used by the Golden
+    // output path: 00 08 00 LL RR ...
+    const XinputFeedbackDecoder feedbackDecoder;
+    RumbleCommand rumble {};
+    const std::uint8_t rumbleReport[8] = {
+        0x00, 0x08, 0x00, 0xFF, 0xB4, 0x00, 0x00, 0x00
+    };
+    assert(feedbackDecoder.decodeRumble(
+        rumbleReport,
+        sizeof(rumbleReport),
+        rumble
+    ));
+    assert(rumble.leftMotor == 0xFF);
+    assert(rumble.rightMotor == 0xB4);
+    assert(rumble.generation == 1);
+    assert(rumble.active());
+
+    const std::uint8_t stopRumble[8] = {
+        0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    assert(feedbackDecoder.decodeRumble(
+        stopRumble,
+        sizeof(stopRumble),
+        rumble
+    ));
+    assert(rumble.leftMotor == 0);
+    assert(rumble.rightMotor == 0);
+    assert(rumble.generation == 2);
+    assert(!rumble.active());
+
+    const std::uint8_t playerLedCommand[3] = {
+        0x01, 0x03, 0x06
+    };
+    assert(!feedbackDecoder.decodeRumble(
+        playerLedCommand,
+        sizeof(playerLedCommand),
+        rumble
+    ));
+    assert(rumble.generation == 2);
+
+    // Two-second host health reconciliation is pure and independently tested.
+    constexpr auto healthy = planHostRootReconcile(0x01, 0x01);
+    static_assert(healthy.removeMask == 0x00);
+    static_assert(healthy.attachMask == 0x00);
+    static_assert(healthy.healthy());
+
+    constexpr auto p1ToP2 = planHostRootReconcile(0x02, 0x01);
+    static_assert(p1ToP2.removeMask == 0x01);
+    static_assert(p1ToP2.attachMask == 0x02);
+    static_assert(!p1ToP2.healthy());
+
+    constexpr auto p2ToP3 = planHostRootReconcile(0x04, 0x02);
+    static_assert(p2ToP3.removeMask == 0x02);
+    static_assert(p2ToP3.attachMask == 0x04);
+
+    std::cout << "OAG_CORE_FOUNDATION_TESTS=PASS\n";
     return 0;
 }
