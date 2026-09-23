@@ -139,6 +139,7 @@ static BluetoothGamepadProfile activeBluetoothProfile =
 
 static uint32_t lastBluetoothFeedbackGeneration = 0;
 static uint64_t lastBluetoothFeedbackAttemptUs = 0;
+static uint8_t dualsenseOutputSequence = 0;
 
 static uint64_t diagnosticLastToggleUs = 0;
 static bool diagnosticLedState = false;
@@ -293,6 +294,7 @@ static void resetBluetoothGamepadState() {
     activeBluetoothProfile = BluetoothGamepadProfile::GENERIC_HID;
     lastBluetoothFeedbackGeneration = 0;
     lastBluetoothFeedbackAttemptUs = 0;
+    dualsenseOutputSequence = 0;
 
     if (bluetoothSlotConnected) {
         UINPUT.disconnect(UNIVERSAL_INPUT_SLOT_BLUETOOTH);
@@ -1541,6 +1543,76 @@ static void serviceDs4ClassicFeedback(
     }
 }
 
+static void serviceDualSenseClassicFeedback(
+    UniversalFeedbackSlotSnapshot const& feedback
+) {
+    if (
+        classicHidCid == 0 ||
+        !classicDescriptorAvailable ||
+        activeBluetoothProfile !=
+            BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC
+    ) {
+        return;
+    }
+
+    // DualSense Bluetooth output report:
+    // report ID 0x31, seq/tag, 47-byte common block, 24 reserved, CRC32.
+    uint8_t report[78] {};
+
+    report[0] = 0x31;
+    report[1] =
+        static_cast<uint8_t>(
+            (dualsenseOutputSequence & 0x0F) << 4
+        );
+    report[2] = 0x10;
+
+    dualsenseOutputSequence =
+        static_cast<uint8_t>(
+            (dualsenseOutputSequence + 1) & 0x0F
+        );
+
+    uint8_t* common = &report[3];
+
+    // Compatible vibration + select classic motor haptics.
+    common[0] = 0x03;
+    common[2] = feedback.rightMotor; // weak / small motor
+    common[3] = feedback.leftMotor;  // strong / large motor
+
+    const uint8_t seed = 0xA2;
+    uint32_t crc =
+        crc32Le(
+            0xFFFFFFFFU,
+            &seed,
+            1
+        );
+
+    crc =
+        ~crc32Le(
+            crc,
+            report,
+            sizeof(report) - 4
+        );
+
+    const size_t crcOffset = sizeof(report) - 4;
+    report[crcOffset + 0] = static_cast<uint8_t>(crc >> 0);
+    report[crcOffset + 1] = static_cast<uint8_t>(crc >> 8);
+    report[crcOffset + 2] = static_cast<uint8_t>(crc >> 16);
+    report[crcOffset + 3] = static_cast<uint8_t>(crc >> 24);
+
+    const uint8_t status =
+        hid_host_send_report(
+            classicHidCid,
+            0x31,
+            &report[1],
+            sizeof(report) - 1
+        );
+
+    if (status == ERROR_CODE_SUCCESS) {
+        lastBluetoothFeedbackGeneration =
+            feedback.generation;
+    }
+}
+
 static void serviceBluetoothFeedback() {
     const uint64_t nowUs = time_us_64();
 
@@ -1582,6 +1654,9 @@ static void serviceBluetoothFeedback() {
             break;
 
         case BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC:
+            serviceDualSenseClassicFeedback(feedback);
+            break;
+
         case BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC:
         case BluetoothGamepadProfile::GENERIC_HID:
         default:
