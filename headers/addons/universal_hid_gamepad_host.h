@@ -25,7 +25,7 @@ public:
     void unmount(uint8_t dev_addr) override;
     void report_received(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) override;
     void report_sent(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) override {}
-    void set_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override {}
+    void set_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override;
     void get_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) override {}
 
 private:
@@ -45,6 +45,14 @@ private:
         uint16_t usage = 0;
         int32_t logicalMin = 0;
         int32_t logicalMax = 0;
+    };
+
+    enum class FeedbackTxPhase : uint8_t {
+        IDLE = 0,
+        SIMPLE_IN_FLIGHT,
+        DRAGONRISE_START_IN_FLIGHT,
+        DRAGONRISE_COMMIT_READY,
+        DRAGONRISE_COMMIT_IN_FLIGHT,
     };
 
     struct InterfaceState {
@@ -75,6 +83,12 @@ private:
         UniversalDeviceMatch device {};
         GamepadState lastState {};
         bool lastStateValid = false;
+
+        FeedbackTxPhase feedbackTxPhase = FeedbackTxPhase::IDLE;
+        uint32_t pendingFeedbackGeneration = 0;
+        uint32_t appliedFeedbackGeneration = 0;
+        uint32_t failedFeedbackGeneration = 0;
+        uint8_t feedbackReport[8] {};
     };
 
     InterfaceState interfaces[MAX_INTERFACES] {};
@@ -85,6 +99,7 @@ private:
     void resetInterface(InterfaceState& state);
     void parseDescriptor(InterfaceState& state);
     void processReport(InterfaceState& state);
+    void serviceFeedback(InterfaceState& state);
 
     static uint32_t extractBits(
         uint8_t const* data,

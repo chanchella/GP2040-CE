@@ -139,6 +139,14 @@ jobs:
           grep -q 'USAGE_PAGE_SIMULATION' src/addons/universal_hid_gamepad_host.cpp
           grep -q 'knownZrRightStick' src/addons/universal_hid_gamepad_host.cpp
           grep -q 'patch_oag_tinyusb_hid_host.py' .github/workflows/universal-dongle-g2.yml
+          grep -q 'class UniversalFeedbackManager' headers/output/universal_feedback_manager.h
+          grep -q 'src/output/universal_feedback_manager.cpp' CMakeLists.txt
+          grep -q 'set_report_with_itf' src/usbdriver.cpp
+          grep -q 'OAGMultiHIDFeedbackReport' headers/drivers/oag/OAGMultiHIDDescriptors.h
+          grep -q 'UFEEDBACK.publish' src/drivers/oag/OAGMultiHIDDriver.cpp
+          grep -q 'serviceFeedback' src/addons/universal_xinput_host.cpp
+          grep -q 'REDRAGON_G808_2563_0575' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'GIGAMAX_0079_0006' src/addons/universal_hid_gamepad_host.cpp
           echo "G2C1_UNIVERSAL_INPUT_BROWSER_OUTPUT_VERIFY=PASS"
 
       - name: Configure Pico2
@@ -169,7 +177,7 @@ jobs:
       - name: Upload G2C1 UF2
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Vortex-G2C1-Pico2-UF2
+          name: OAG-Vortex-G2C1-Rumble-Pico2-UF2
           path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
           if-no-files-found: error
 

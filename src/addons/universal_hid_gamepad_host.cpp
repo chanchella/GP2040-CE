@@ -6,6 +6,7 @@
 #include "host/usbh.h"
 #include "class/hid/hid_host.h"
 #include "peripheralmanager.h"
+#include "output/universal_feedback_manager.h"
 #include "tusb.h"
 
 namespace {
@@ -137,6 +138,8 @@ void UniversalHIDGamepadHostAddon::preprocess() {
             state.reportPending = false;
             processReport(state);
         }
+
+        serviceFeedback(state);
     }
 }
 
@@ -279,6 +282,146 @@ void UniversalHIDGamepadHostAddon::report_received(
     );
 
     state->reportPending = true;
+}
+
+void UniversalHIDGamepadHostAddon::set_report_complete(
+    uint8_t dev_addr,
+    uint8_t instance,
+    uint8_t report_id,
+    uint8_t report_type,
+    uint16_t len
+) {
+    (void)report_id;
+    (void)report_type;
+
+    InterfaceState* state = findInterface(dev_addr, instance);
+    if (state == nullptr || state->feedbackTxPhase == FeedbackTxPhase::IDLE) {
+        return;
+    }
+
+    if (len == 0) {
+        state->failedFeedbackGeneration = state->pendingFeedbackGeneration;
+        state->pendingFeedbackGeneration = 0;
+        state->feedbackTxPhase = FeedbackTxPhase::IDLE;
+        return;
+    }
+
+    switch (state->feedbackTxPhase) {
+        case FeedbackTxPhase::SIMPLE_IN_FLIGHT:
+            state->appliedFeedbackGeneration = state->pendingFeedbackGeneration;
+            state->pendingFeedbackGeneration = 0;
+            state->feedbackTxPhase = FeedbackTxPhase::IDLE;
+            break;
+
+        case FeedbackTxPhase::DRAGONRISE_START_IN_FLIGHT:
+            state->feedbackTxPhase = FeedbackTxPhase::DRAGONRISE_COMMIT_READY;
+            break;
+
+        case FeedbackTxPhase::DRAGONRISE_COMMIT_IN_FLIGHT:
+            state->appliedFeedbackGeneration = state->pendingFeedbackGeneration;
+            state->pendingFeedbackGeneration = 0;
+            state->feedbackTxPhase = FeedbackTxPhase::IDLE;
+            break;
+
+        default:
+            break;
+    }
+}
+
+void UniversalHIDGamepadHostAddon::serviceFeedback(InterfaceState& state) {
+    if (!state.active || state.globalSlot == UNIVERSAL_INPUT_SLOT_INVALID) {
+        return;
+    }
+
+    if (state.feedbackTxPhase == FeedbackTxPhase::DRAGONRISE_COMMIT_READY) {
+        memset(state.feedbackReport, 0, sizeof(state.feedbackReport));
+        state.feedbackReport[0] = 0xFA;
+        state.feedbackReport[1] = 0xFE;
+
+        if (tuh_hid_set_report(
+                state.devAddr,
+                state.instance,
+                0,
+                HID_REPORT_TYPE_OUTPUT,
+                state.feedbackReport,
+                7
+            )) {
+            state.feedbackTxPhase = FeedbackTxPhase::DRAGONRISE_COMMIT_IN_FLIGHT;
+        }
+        return;
+    }
+
+    if (state.feedbackTxPhase != FeedbackTxPhase::IDLE) {
+        return;
+    }
+
+    UniversalFeedbackSlotSnapshot feedback {};
+    if (
+        !UFEEDBACK.snapshot(state.globalSlot, feedback) ||
+        !feedback.valid ||
+        feedback.generation == state.appliedFeedbackGeneration ||
+        feedback.generation == state.failedFeedbackGeneration
+    ) {
+        return;
+    }
+
+    memset(state.feedbackReport, 0, sizeof(state.feedbackReport));
+
+    if (state.device.profile == UniversalDeviceProfileId::REDRAGON_G808_2563_0575) {
+        // Exact Shanwan 2563:0575 Rich Mode 8-byte rumble output.
+        state.feedbackReport[0] = 0x02;
+        state.feedbackReport[1] = 0x08;
+        state.feedbackReport[2] = feedback.rightMotor;
+        state.feedbackReport[3] = feedback.leftMotor;
+        state.feedbackReport[4] =
+            (feedback.leftMotor || feedback.rightMotor) ? 0xFF : 0x00;
+
+        if (tuh_hid_set_report(
+                state.devAddr,
+                state.instance,
+                0,
+                HID_REPORT_TYPE_OUTPUT,
+                state.feedbackReport,
+                sizeof(state.feedbackReport)
+            )) {
+            state.pendingFeedbackGeneration = feedback.generation;
+            state.feedbackTxPhase = FeedbackTxPhase::SIMPLE_IN_FLIGHT;
+        }
+        return;
+    }
+
+    if (state.device.profile == UniversalDeviceProfileId::GIGAMAX_0079_0006) {
+        uint8_t weak = feedback.rightMotor;
+        if (weak == 0x0A) weak = 0x0B;
+
+        const bool active =
+            feedback.leftMotor != 0 || feedback.rightMotor != 0;
+
+        if (active) {
+            state.feedbackReport[0] = 0x51;
+            state.feedbackReport[1] = 0x00;
+            state.feedbackReport[2] = weak;
+            state.feedbackReport[4] = feedback.leftMotor;
+        } else {
+            state.feedbackReport[0] = 0xF3;
+            state.feedbackReport[1] = 0x00;
+        }
+
+        if (tuh_hid_set_report(
+                state.devAddr,
+                state.instance,
+                0,
+                HID_REPORT_TYPE_OUTPUT,
+                state.feedbackReport,
+                7
+            )) {
+            state.pendingFeedbackGeneration = feedback.generation;
+            state.feedbackTxPhase =
+                active
+                    ? FeedbackTxPhase::DRAGONRISE_START_IN_FLIGHT
+                    : FeedbackTxPhase::SIMPLE_IN_FLIGHT;
+        }
+    }
 }
 
 void UniversalHIDGamepadHostAddon::parseDescriptor(

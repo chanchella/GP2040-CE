@@ -164,8 +164,13 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
 
 // On IN/OUT/FEATURE set report callback
 void tuh_hid_set_report_complete_cb(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) {
-    if ( len != 0 )
-        USBHostManager::getInstance().hid_set_report_complete_cb(dev_addr, instance, report_id, report_type, len);
+    USBHostManager::getInstance().hid_set_report_complete_cb(
+        dev_addr,
+        instance,
+        report_id,
+        report_type,
+        len
+    );
 }
 
 
