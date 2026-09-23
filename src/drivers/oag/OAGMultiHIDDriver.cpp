@@ -21,6 +21,42 @@ static char serialString[17] = "0000000000000000";
 static uint64_t lastReportSentUs[OAG_MULTI_HID_SLOT_COUNT] {};
 static constexpr uint64_t OAG_HID_KEEPALIVE_US = 250000;
 
+static uint32_t standardButtonsForState(GamepadState const& state) {
+    uint32_t buttons = 0;
+
+    if (state.buttons & GAMEPAD_MASK_B1) buttons |= 1UL << 0;  // A / South
+    if (state.buttons & GAMEPAD_MASK_B2) buttons |= 1UL << 1;  // B / East
+    if (state.buttons & GAMEPAD_MASK_B3) buttons |= 1UL << 2;  // X / West
+    if (state.buttons & GAMEPAD_MASK_B4) buttons |= 1UL << 3;  // Y / North
+    if (state.buttons & GAMEPAD_MASK_L1) buttons |= 1UL << 4;
+    if (state.buttons & GAMEPAD_MASK_R1) buttons |= 1UL << 5;
+
+    if ((state.buttons & GAMEPAD_MASK_L2) || state.lt != 0) buttons |= 1UL << 6;
+    if ((state.buttons & GAMEPAD_MASK_R2) || state.rt != 0) buttons |= 1UL << 7;
+
+    if (state.buttons & GAMEPAD_MASK_S1) buttons |= 1UL << 8;  // Back / View
+    if (state.buttons & GAMEPAD_MASK_S2) buttons |= 1UL << 9;  // Start / Menu
+    if (state.buttons & GAMEPAD_MASK_L3) buttons |= 1UL << 10;
+    if (state.buttons & GAMEPAD_MASK_R3) buttons |= 1UL << 11;
+
+    // Standard Gamepad API D-pad button positions.
+    if (state.dpad & GAMEPAD_MASK_UP)    buttons |= 1UL << 12;
+    if (state.dpad & GAMEPAD_MASK_DOWN)  buttons |= 1UL << 13;
+    if (state.dpad & GAMEPAD_MASK_LEFT)  buttons |= 1UL << 14;
+    if (state.dpad & GAMEPAD_MASK_RIGHT) buttons |= 1UL << 15;
+
+    if (state.buttons & GAMEPAD_MASK_A1) buttons |= 1UL << 16; // Home / Guide
+    if (state.buttons & GAMEPAD_MASK_A2) buttons |= 1UL << 17; // Capture / Touchpad
+    if (state.buttons & GAMEPAD_MASK_A3) buttons |= 1UL << 18;
+    if (state.buttons & GAMEPAD_MASK_A4) buttons |= 1UL << 19;
+
+    // E1..E12 already occupy bits 20..31 and do not collide with the
+    // standard browser/gamepad positions above.
+    buttons |= state.buttons & 0xFFF00000UL;
+
+    return buttons;
+}
+
 static bool oagHidControlXfer(
     uint8_t rhport,
     uint8_t stage,
@@ -80,16 +116,16 @@ OAGMultiHIDReport OAGMultiHIDDriver::buildReport(
 ) {
     OAGMultiHIDReport report {};
 
-    // Preserve GP2040's normalized button namespace directly.
-    report.buttons = state.buttons;
+    // Project the internal canonical namespace to the standard browser /
+    // Windows button order. In particular, Home is Button 17 rather than
+    // Button 13 (which standard Gamepad APIs reserve for D-pad Up).
+    report.buttons = standardButtonsForState(state);
     report.hat = dpadToHat(state.dpad);
 
     report.lx = static_cast<uint8_t>(state.lx >> 8);
     report.ly = static_cast<uint8_t>(state.ly >> 8);
     report.rx = static_cast<uint8_t>(state.rx >> 8);
     report.ry = static_cast<uint8_t>(state.ry >> 8);
-    report.lt = state.lt;
-    report.rt = state.rt;
 
     return report;
 }

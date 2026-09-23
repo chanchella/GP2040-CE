@@ -15,7 +15,7 @@
 
 static constexpr uint8_t OAG_MULTI_HID_SLOT_COUNT = 4;
 static constexpr uint8_t OAG_MULTI_HID_ENDPOINT_SIZE = 64;
-static constexpr uint16_t OAG_MULTI_HID_REPORT_DESC_SIZE = 111;
+static constexpr uint16_t OAG_MULTI_HID_REPORT_DESC_SIZE = 89;
 static constexpr uint16_t OAG_MULTI_HID_CONFIG_SIZE =
     9 + (OAG_MULTI_HID_SLOT_COUNT * (9 + 9 + 7));
 
@@ -26,13 +26,9 @@ struct __attribute__((packed, aligned(1))) OAGMultiHIDReport {
     uint8_t ly;
     uint8_t rx;
     uint8_t ry;
-
-    // Analog triggers remain independent from the digital L2/R2 button bits.
-    uint8_t lt;
-    uint8_t rt;
 };
 
-static_assert(sizeof(OAGMultiHIDReport) == 11, "OAG HID input report size changed");
+static_assert(sizeof(OAGMultiHIDReport) == 9, "OAG HID input report size changed");
 
 struct __attribute__((packed, aligned(1))) OAGMultiHIDFeedbackReport {
     uint8_t leftMotor;
@@ -82,24 +78,10 @@ static const uint8_t oag_multi_hid_report_descriptor[] = {
     0x26, 0xFF, 0x00,
     0x09, 0x30,        // X
     0x09, 0x31,        // Y
-    0x09, 0x33,        // Rx
-    0x09, 0x34,        // Ry
+    0x09, 0x32,        // Z  (right stick X - GP2040 Generic HID convention)
+    0x09, 0x35,        // Rz (right stick Y - GP2040 Generic HID convention)
     0x75, 0x08,
     0x95, 0x04,
-    0x81, 0x02,
-
-    // Analog triggers. Simulation Brake = LT, Accelerator = RT.
-    // Keeping them as explicit analog usages improves generic Windows/browser
-    // gamepad exposure without changing OAG VID/PID or claiming Xbox identity.
-    0x05, 0x02,
-    0x15, 0x00,
-    0x26, 0xFF, 0x00,
-    0x35, 0x00,
-    0x46, 0xFF, 0x00,
-    0x09, 0xC5,
-    0x09, 0xC4,
-    0x75, 0x08,
-    0x95, 0x02,
     0x81, 0x02,
 
     // Per-slot PC -> OAG feedback. No Report ID: the four-byte output packet
@@ -134,7 +116,7 @@ static const uint8_t oag_multi_hid_device_descriptor[] = {
     0xC4, 0x10, // VID 10C4
     0xC0, 0x82, // PID 82C0
 
-    0x01, 0x02, // bcdDevice 2.01
+    0x02, 0x02, // bcdDevice 2.02
     0x01,       // manufacturer
     0x02,       // product
     0x03,       // serial
