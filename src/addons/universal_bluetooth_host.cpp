@@ -50,6 +50,14 @@ static constexpr uint16_t USAGE_DPAD_LEFT = 0x93;
 static constexpr uint16_t USAGE_SIM_ACCELERATOR = 0xC4;
 static constexpr uint16_t USAGE_SIM_BRAKE = 0xC5;
 
+enum class BluetoothGamepadProfile : uint8_t {
+    GENERIC_HID = 0,
+    XBOX_BLE,
+    SONY_DS4_CLASSIC,
+    SONY_DUALSENSE_CLASSIC,
+    NINTENDO_SWITCH_CLASSIC,
+};
+
 struct StoredBleRemote {
     bd_addr_t address {};
     uint8_t addressType = 0;
@@ -57,6 +65,9 @@ struct StoredBleRemote {
 
 struct StoredClassicRemote {
     bd_addr_t address {};
+    uint8_t profile = static_cast<uint8_t>(
+        BluetoothGamepadProfile::GENERIC_HID
+    );
 };
 
 struct HidFieldRange {
@@ -65,11 +76,6 @@ struct HidFieldRange {
     uint16_t usage = 0;
     int32_t logicalMin = 0;
     int32_t logicalMax = 0;
-};
-
-enum class BluetoothGamepadProfile : uint8_t {
-    GENERIC_HID = 0,
-    XBOX_BLE,
 };
 
 struct HidServiceCache {
@@ -132,6 +138,7 @@ static BluetoothGamepadProfile activeBluetoothProfile =
     BluetoothGamepadProfile::GENERIC_HID;
 
 static uint32_t lastBluetoothFeedbackGeneration = 0;
+static uint64_t lastBluetoothFeedbackAttemptUs = 0;
 
 static uint64_t diagnosticLastToggleUs = 0;
 static bool diagnosticLedState = false;
@@ -187,6 +194,86 @@ static void clearBleBondDatabase() {
     }
 }
 
+static bool asciiContains(
+    const uint8_t* data,
+    uint8_t length,
+    const char* needle
+) {
+    if (data == nullptr || needle == nullptr) return false;
+
+    const size_t needleLength = std::strlen(needle);
+    if (needleLength == 0 || needleLength > length) return false;
+
+    for (uint8_t i = 0; i + needleLength <= length; i++) {
+        bool match = true;
+
+        for (size_t j = 0; j < needleLength; j++) {
+            char a = static_cast<char>(data[i + j]);
+            char b = needle[j];
+
+            if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+            if (b >= 'A' && b <= 'Z') b = static_cast<char>(b - 'A' + 'a');
+
+            if (a != b) {
+                match = false;
+                break;
+            }
+        }
+
+        if (match) return true;
+    }
+
+    return false;
+}
+
+static BluetoothGamepadProfile classifyClassicInquiry(
+    const uint8_t* packet
+) {
+    if (gap_event_inquiry_result_get_device_id_available(packet)) {
+        const uint16_t vid =
+            gap_event_inquiry_result_get_device_id_vendor_id(packet);
+        const uint16_t pid =
+            gap_event_inquiry_result_get_device_id_product_id(packet);
+
+        if (vid == 0x054C) {
+            if (pid == 0x05C4 || pid == 0x09CC) {
+                return BluetoothGamepadProfile::SONY_DS4_CLASSIC;
+            }
+
+            if (pid == 0x0CE6) {
+                return BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC;
+            }
+        }
+
+        if (vid == 0x057E && pid == 0x2009) {
+            return BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC;
+        }
+    }
+
+    if (gap_event_inquiry_result_get_name_available(packet)) {
+        const uint8_t nameLength =
+            gap_event_inquiry_result_get_name_len(packet);
+        const uint8_t* name =
+            gap_event_inquiry_result_get_name(packet);
+
+        if (
+            asciiContains(name, nameLength, "DualSense") ||
+            asciiContains(name, nameLength, "DualSense Wireless")
+        ) {
+            return BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC;
+        }
+
+        if (
+            asciiContains(name, nameLength, "Pro Controller") ||
+            asciiContains(name, nameLength, "Nintendo")
+        ) {
+            return BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC;
+        }
+    }
+
+    return BluetoothGamepadProfile::GENERIC_HID;
+}
+
 static void startBleScan();
 static void startClassicInquiry();
 static void connectStoredRemote();
@@ -205,6 +292,7 @@ static void resetBluetoothGamepadState() {
     bluetoothGamepadStateValid = false;
     activeBluetoothProfile = BluetoothGamepadProfile::GENERIC_HID;
     lastBluetoothFeedbackGeneration = 0;
+    lastBluetoothFeedbackAttemptUs = 0;
 
     if (bluetoothSlotConnected) {
         UINPUT.disconnect(UNIVERSAL_INPUT_SLOT_BLUETOOTH);
@@ -666,32 +754,52 @@ static uint8_t scaleTrigger(
 
 static uint32_t buttonMaskForUsage(
     uint16_t usage,
-    bool xboxBleLayout
+    BluetoothGamepadProfile profile
 ) {
-    if (xboxBleLayout) {
-        // Xbox One / Series Bluetooth HID layout verified against the
-        // user's previously working BluetoothHIDMaster -> XInput path.
-        //
-        // HID Button usages are intentionally sparse:
-        // 1=A, 2=B, 4=X, 5=Y, 7=LB, 8=RB,
-        // 11=View, 12=Menu, 13=Guide, 14=L3, 15=R3.
+    if (profile == BluetoothGamepadProfile::XBOX_BLE) {
         switch (usage) {
-            case 1:  return GAMEPAD_MASK_B1; // A
-            case 2:  return GAMEPAD_MASK_B2; // B
-            case 4:  return GAMEPAD_MASK_B3; // X
-            case 5:  return GAMEPAD_MASK_B4; // Y
-            case 7:  return GAMEPAD_MASK_L1; // LB
-            case 8:  return GAMEPAD_MASK_R1; // RB
-            case 11: return GAMEPAD_MASK_S1; // View / Back
-            case 12: return GAMEPAD_MASK_S2; // Menu / Start
-            case 13: return GAMEPAD_MASK_A1; // Guide / Home
+            case 1:  return GAMEPAD_MASK_B1; // A / South
+            case 2:  return GAMEPAD_MASK_B2; // B / East
+            case 4:  return GAMEPAD_MASK_B3; // X / West
+            case 5:  return GAMEPAD_MASK_B4; // Y / North
+            case 7:  return GAMEPAD_MASK_L1;
+            case 8:  return GAMEPAD_MASK_R1;
+            case 11: return GAMEPAD_MASK_S1; // View
+            case 12: return GAMEPAD_MASK_S2; // Menu
+            case 13: return GAMEPAD_MASK_A1; // Guide
             case 14: return GAMEPAD_MASK_L3;
             case 15: return GAMEPAD_MASK_R3;
             default: return 0;
         }
     }
 
-    // Generic HID fallback.
+    if (
+        profile == BluetoothGamepadProfile::SONY_DS4_CLASSIC ||
+        profile == BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC
+    ) {
+        // Canonical physical-position mapping:
+        // Cross=South(A), Circle=East(B), Square=West(X), Triangle=North(Y).
+        switch (usage) {
+            case 1:  return GAMEPAD_MASK_B3; // Square / West
+            case 2:  return GAMEPAD_MASK_B1; // Cross / South
+            case 3:  return GAMEPAD_MASK_B2; // Circle / East
+            case 4:  return GAMEPAD_MASK_B4; // Triangle / North
+            case 5:  return GAMEPAD_MASK_L1;
+            case 6:  return GAMEPAD_MASK_R1;
+            case 7:  return GAMEPAD_MASK_L2;
+            case 8:  return GAMEPAD_MASK_R2;
+            case 9:  return GAMEPAD_MASK_S1; // Share/Create
+            case 10: return GAMEPAD_MASK_S2; // Options
+            case 11: return GAMEPAD_MASK_L3;
+            case 12: return GAMEPAD_MASK_R3;
+            case 13: return GAMEPAD_MASK_A1; // PS
+            case 14: return GAMEPAD_MASK_A2; // Touchpad
+            default: return 0;
+        }
+    }
+
+    // Generic HID canonical fallback. Unknown devices still work immediately;
+    // a known profile can override this when its physical layout is identified.
     switch (usage) {
         case 1:  return GAMEPAD_MASK_B1;
         case 2:  return GAMEPAD_MASK_B2;
@@ -764,10 +872,22 @@ static void ensureBluetoothSlotConnected(
     match.profile = UniversalDeviceProfileId::GENERIC_HID_GAMEPAD;
     match.capabilities = UNIVERSAL_CAP_WIRELESS_PAIRING;
 
-    if (profile == BluetoothGamepadProfile::XBOX_BLE) {
-        match.capabilities |=
-            UNIVERSAL_CAP_RUMBLE |
-            UNIVERSAL_CAP_TRIGGER_RUMBLE;
+    switch (profile) {
+        case BluetoothGamepadProfile::XBOX_BLE:
+            match.capabilities |=
+                UNIVERSAL_CAP_RUMBLE |
+                UNIVERSAL_CAP_TRIGGER_RUMBLE;
+            break;
+
+        case BluetoothGamepadProfile::SONY_DS4_CLASSIC:
+        case BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC:
+        case BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC:
+            match.capabilities |= UNIVERSAL_CAP_RUMBLE;
+            break;
+
+        case BluetoothGamepadProfile::GENERIC_HID:
+        default:
+            break;
     }
 
     activeBluetoothProfile = profile;
@@ -1039,8 +1159,7 @@ static void handleGenericHidGamepadReport(
                 reportButtons |=
                     buttonMaskForUsage(
                         usage,
-                        transport == UniversalTransport::BLUETOOTH_LE &&
-                        cache.xboxBleButtonLayout
+                        cache.profile
                     );
             }
 
@@ -1350,7 +1469,88 @@ static void serviceXboxBleFeedback(
     }
 }
 
+static uint32_t crc32Le(
+    uint32_t seed,
+    const uint8_t* data,
+    size_t length
+) {
+    uint32_t crc = seed;
+
+    for (size_t i = 0; i < length; i++) {
+        crc ^= data[i];
+
+        for (uint8_t bit = 0; bit < 8; bit++) {
+            crc =
+                (crc >> 1) ^
+                ((crc & 1U) ? 0xEDB88320U : 0U);
+        }
+    }
+
+    return crc;
+}
+
+static void serviceDs4ClassicFeedback(
+    UniversalFeedbackSlotSnapshot const& feedback
+) {
+    if (
+        classicHidCid == 0 ||
+        !classicDescriptorAvailable ||
+        activeBluetoothProfile !=
+            BluetoothGamepadProfile::SONY_DS4_CLASSIC
+    ) {
+        return;
+    }
+
+    // BTstack adds the HIDP DATA/OUTPUT byte and report ID. Build the same
+    // bytes here only for CRC calculation, then send the payload after ID.
+    uint8_t packet[79] {};
+    packet[0] = 0xA2; // HIDP DATA | OUTPUT
+    packet[1] = 0x11; // DS4 Bluetooth output report ID
+
+    uint8_t* payload = &packet[2];
+
+    payload[0] = 0xC4;
+    payload[2] = 0x01; // enable rumble update
+    payload[5] = feedback.rightMotor; // weak / small motor
+    payload[6] = feedback.leftMotor;  // strong / large motor
+
+    const uint32_t crc =
+        ~crc32Le(
+            0xFFFFFFFFU,
+            packet,
+            sizeof(packet) - 4
+        );
+
+    const size_t crcOffset = sizeof(packet) - 4;
+    packet[crcOffset + 0] = static_cast<uint8_t>(crc >> 0);
+    packet[crcOffset + 1] = static_cast<uint8_t>(crc >> 8);
+    packet[crcOffset + 2] = static_cast<uint8_t>(crc >> 16);
+    packet[crcOffset + 3] = static_cast<uint8_t>(crc >> 24);
+
+    const uint8_t status =
+        hid_host_send_report(
+            classicHidCid,
+            0x11,
+            payload,
+            sizeof(packet) - 2
+        );
+
+    if (status == ERROR_CODE_SUCCESS) {
+        lastBluetoothFeedbackGeneration =
+            feedback.generation;
+    }
+}
+
 static void serviceBluetoothFeedback() {
+    const uint64_t nowUs = time_us_64();
+
+    if (
+        nowUs - lastBluetoothFeedbackAttemptUs <
+        50000
+    ) {
+        return;
+    }
+
     UniversalFeedbackSlotSnapshot feedback {};
 
     if (
@@ -1370,11 +1570,19 @@ static void serviceBluetoothFeedback() {
         return;
     }
 
+    lastBluetoothFeedbackAttemptUs = nowUs;
+
     switch (activeBluetoothProfile) {
         case BluetoothGamepadProfile::XBOX_BLE:
             serviceXboxBleFeedback(feedback);
             break;
 
+        case BluetoothGamepadProfile::SONY_DS4_CLASSIC:
+            serviceDs4ClassicFeedback(feedback);
+            break;
+
+        case BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC:
+        case BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC:
         case BluetoothGamepadProfile::GENERIC_HID:
         default:
             // Generic HID has no universal rumble report format. Input stays
@@ -1695,6 +1903,11 @@ static void btPacketHandler(
                 sizeof(classicRemote.address)
             );
 
+            classicRemote.profile =
+                static_cast<uint8_t>(
+                    classifyClassicInquiry(packet)
+                );
+
             classicRemoteKnown = true;
             classicRemotePersisted = false;
             classicConnecting = true;
@@ -1916,11 +2129,23 @@ static void btPacketHandler(
                             classicHidCid
                         );
 
+                    const BluetoothGamepadProfile detectedProfile =
+                        static_cast<BluetoothGamepadProfile>(
+                            classicRemote.profile
+                        );
+
                     populateHidCache(
                         classicCache,
                         descriptor,
                         descriptorLength
                     );
+
+                    if (
+                        detectedProfile !=
+                            BluetoothGamepadProfile::GENERIC_HID
+                    ) {
+                        classicCache.profile = detectedProfile;
+                    }
 
                     if (!classicCache.looksLikeGamepad) {
                         hid_host_disconnect(
