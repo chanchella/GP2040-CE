@@ -71,6 +71,7 @@ static uint8_t leDescriptorStorage[2048] {};
 static BleHostState bleState = BleHostState::WAITING_HCI;
 static StoredBleRemote remoteDevice {};
 static bool remoteKnown = false;
+static bool remotePersisted = false;
 
 static hci_con_handle_t connectionHandle = HCI_CON_HANDLE_INVALID;
 static uint16_t hidsCid = 0;
@@ -133,10 +134,15 @@ static bool loadStoredRemote() {
 
     remoteDevice = stored;
     remoteKnown = true;
+    remotePersisted = true;
     return true;
 }
 
 static void saveStoredRemote() {
+    if (remotePersisted) {
+        return;
+    }
+
     if (tlvImpl == nullptr) {
         btstack_tlv_get_instance(&tlvImpl, &tlvContext);
     }
@@ -145,12 +151,16 @@ static void saveStoredRemote() {
         return;
     }
 
-    tlvImpl->store_tag(
+    const int result = tlvImpl->store_tag(
         tlvContext,
         OAG_BLE_REMOTE_TLV_TAG,
         reinterpret_cast<uint8_t const*>(&remoteDevice),
         sizeof(remoteDevice)
     );
+
+    if (result == 0) {
+        remotePersisted = true;
+    }
 }
 
 static bool advertisementContainsHidService(uint8_t const* packet) {
@@ -1041,6 +1051,7 @@ static void btPacketHandler(
                 );
 
             remoteKnown = true;
+            remotePersisted = false;
             connectStoredRemote();
             break;
 
