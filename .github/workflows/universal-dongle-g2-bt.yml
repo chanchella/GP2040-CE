@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - universal-dongle/g2c2-btstack-foundation
+      - antigravity/g2e3-work
   workflow_dispatch:
 
 env:
