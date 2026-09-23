@@ -871,9 +871,20 @@ static void ensureBluetoothSlotConnected(
     UniversalTransport transport,
     BluetoothGamepadProfile profile
 ) {
-    if (bluetoothSlotConnected) {
+    // Slot 0 is allowed to refine its Bluetooth profile after connection.
+    // This matters for devices whose family cannot be known until the HID
+    // descriptor or first input report is available. Reclassifying Slot 0
+    // is intentionally isolated from USB Slots 1..3.
+    if (
+        bluetoothSlotConnected &&
+        activeBluetoothProfile == profile
+    ) {
         return;
     }
+
+    const bool profileChanged =
+        bluetoothSlotConnected &&
+        activeBluetoothProfile != profile;
 
     UniversalDeviceMatch match {};
     match.recognized = true;
@@ -903,6 +914,13 @@ static void ensureBluetoothSlotConnected(
     }
 
     activeBluetoothProfile = profile;
+
+    if (profileChanged) {
+        // If feedback was already consumed while the device was still
+        // classified as Generic HID, force the latest Slot 0 feedback state
+        // to be reconsidered by the newly selected family adapter.
+        lastBluetoothFeedbackGeneration = 0;
+    }
 
     if (
         UINPUT.connectClassified(
