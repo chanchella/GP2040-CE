@@ -4,7 +4,17 @@
 
 #include <cstring>
 
+#define HID_REPORT_TYPE_INPUT    BT_HID_REPORT_TYPE_INPUT
+#define HID_REPORT_TYPE_OUTPUT   BT_HID_REPORT_TYPE_OUTPUT
+#define HID_REPORT_TYPE_FEATURE  BT_HID_REPORT_TYPE_FEATURE
+#define hid_report_type_t        bt_hid_report_type_t
+
 #include "btstack.h"
+
+#undef HID_REPORT_TYPE_INPUT
+#undef HID_REPORT_TYPE_OUTPUT
+#undef HID_REPORT_TYPE_FEATURE
+#undef hid_report_type_t
 #include "btstack_tlv.h"
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
@@ -152,6 +162,14 @@ static void serviceBluetoothDiagnosticLed() {
 
 static const btstack_tlv_t* tlvImpl = nullptr;
 static void* tlvContext = nullptr;
+
+static void clearBleBondDatabase() {
+    const int maxEntries = le_device_db_max_count();
+
+    for (int i = 0; i < maxEntries; i++) {
+        le_device_db_remove(i);
+    }
+}
 
 static void startBleScan();
 static void startClassicInquiry();
@@ -488,7 +506,7 @@ static void connectHids() {
         return;
     }
 
-    const uint8_t status = hids_host_connect(
+    const uint8_t status = hids_client_connect(
         connectionHandle,
         handleGattClientEvent,
         HID_PROTOCOL_MODE_REPORT,
@@ -524,13 +542,13 @@ static HidServiceCache* ensureServiceCache(uint8_t serviceIndex) {
     cache.parsed = true;
 
     const uint8_t* descriptor =
-        hids_host_descriptor_storage_get_descriptor_data(
+        hids_client_descriptor_storage_get_descriptor_data(
             hidsCid,
             serviceIndex
         );
 
     const uint16_t descriptorLength =
-        hids_host_descriptor_storage_get_descriptor_len(
+        hids_client_descriptor_storage_get_descriptor_len(
             hidsCid,
             serviceIndex
         );
@@ -730,7 +748,7 @@ static void populateHidCache(
         &iterator,
         descriptor,
         descriptorLength,
-        HID_REPORT_TYPE_INPUT
+        BT_HID_REPORT_TYPE_INPUT
     );
 
     bool hasAxis = false;
@@ -833,7 +851,7 @@ static void handleGenericHidGamepadReport(
         &parser,
         descriptor,
         descriptorLength,
-        HID_REPORT_TYPE_INPUT,
+        BT_HID_REPORT_TYPE_INPUT,
         report,
         reportLength
     );
@@ -887,7 +905,7 @@ static void handleGenericHidGamepadReport(
         int32_t logicalMax = 0;
 
         findFieldRange(
-            *cache,
+            cache,
             reportId,
             usagePage,
             usage,
@@ -1136,13 +1154,13 @@ static void handleBleHidReport(
     }
 
     const uint8_t* descriptor =
-        hids_host_descriptor_storage_get_descriptor_data(
+        hids_client_descriptor_storage_get_descriptor_data(
             hidsCid,
             serviceIndex
         );
 
     const uint16_t descriptorLength =
-        hids_host_descriptor_storage_get_descriptor_len(
+        hids_client_descriptor_storage_get_descriptor_len(
             hidsCid,
             serviceIndex
         );
@@ -1581,19 +1599,12 @@ static void btPacketHandler(
 
             switch (subevent) {
                 case HID_SUBEVENT_INCOMING_CONNECTION:
-                    if (
-                        hid_subevent_incoming_connection_get_status(
+                    hid_host_accept_connection(
+                        hid_subevent_incoming_connection_get_hid_cid(
                             packet
-                        ) ==
-                            ERROR_CODE_SUCCESS
-                    ) {
-                        hid_host_accept_connection(
-                            hid_subevent_incoming_connection_get_hid_cid(
-                                packet
-                            ),
-                            HID_PROTOCOL_MODE_REPORT
-                        );
-                    }
+                        ),
+                        HID_PROTOCOL_MODE_REPORT
+                    );
                     break;
 
                 case HID_SUBEVENT_CONNECTION_OPENED:
@@ -1783,7 +1794,7 @@ void UniversalBluetoothHostAddon::preprocess() {
             btPacketHandler
         );
 
-        hids_host_init(
+        hids_client_init(
             leDescriptorStorage,
             sizeof(leDescriptorStorage)
         );
