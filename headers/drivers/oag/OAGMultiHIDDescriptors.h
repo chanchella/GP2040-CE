@@ -92,7 +92,7 @@ static const uint8_t oag_multi_hid_report_descriptor[] = {
     0x91, 0x02,
 
     0xC0
-}
+};
 
 static_assert(
     sizeof(oag_multi_hid_report_descriptor) == OAG_MULTI_HID_REPORT_DESC_SIZE,
