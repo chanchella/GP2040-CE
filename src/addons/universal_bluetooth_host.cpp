@@ -5,7 +5,6 @@
 #include <cstring>
 
 #include "btstack.h"
-#include "btstack_run_loop_embedded.h"
 #include "btstack_tlv.h"
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
@@ -130,6 +129,10 @@ static void serviceBluetoothDiagnosticLed() {
             diagnosticLedState = true;
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
             return;
+
+        case BleHostState::WAITING_HCI:
+            intervalUs = 250000;
+            break;
 
         default:
             diagnosticLedState = false;
@@ -1382,19 +1385,11 @@ static void btPacketHandler(
                 return;
             }
 
-            loadStoredClassicRemote();
-
-            if (loadStoredRemote()) {
+            if (remoteKnown) {
                 connectStoredRemote();
             } else if (classicRemoteKnown) {
                 connectStoredClassic();
             } else {
-                // Match the proven legacy BluetoothHIDMaster first-pair
-                // behavior: discard stale Classic/LE pairing material before
-                // discovering a new controller. This happens only when OAG
-                // has no stored remote of its own.
-                gap_delete_all_link_keys();
-                clearBleBondDatabase();
                 startBleScan();
             }
             break;
@@ -1734,95 +1729,112 @@ bool UniversalBluetoothHostAddon::available() {
 
 void UniversalBluetoothHostAddon::setup() {
 #if OAG_BLUETOOTH_HOST_ENABLED && defined(PICO_CYW43_SUPPORTED)
-    if (cyw43_arch_init() != PICO_OK) {
-        initialized = false;
-        return;
-    }
-
-    resetBluetoothGamepadState();
-    resetServiceCaches();
-
-    l2cap_init();
-
-    sm_init();
-
-    // Headless HID host pairing. Bonding keys are persisted by
-    // pico_btstack_cyw43's TLV flash backend.
-    sm_set_io_capabilities(
-        IO_CAPABILITY_NO_INPUT_NO_OUTPUT
-    );
-
-    sm_set_authentication_requirements(
-        SM_AUTHREQ_BONDING
-    );
-
-    gatt_client_init();
-
-    hid_host_init(
-        classicDescriptorStorage,
-        sizeof(classicDescriptorStorage)
-    );
-
-    hid_host_register_packet_handler(
-        btPacketHandler
-    );
-
-    hids_host_init(
-        leDescriptorStorage,
-        sizeof(leDescriptorStorage)
-    );
-
-    gap_set_local_name(
-        OAG_BLUETOOTH_DEVICE_NAME
-    );
-
-    gap_set_default_link_policy_settings(
-        LM_LINK_POLICY_ENABLE_SNIFF_MODE |
-        LM_LINK_POLICY_ENABLE_ROLE_SWITCH
-    );
-
-    hci_set_inquiry_mode(
-        INQUIRY_MODE_RSSI_AND_EIR
-    );
-
-    hci_set_master_slave_policy(
-        HCI_ROLE_MASTER
-    );
-
-    hciEventCallback.callback =
-        &btPacketHandler;
-
-    hci_add_event_handler(
-        &hciEventCallback
-    );
-
-    smEventCallback.callback =
-        &smPacketHandler;
-
-    sm_add_event_handler(
-        &smEventCallback
-    );
-
-    // The Pico acts as a Bluetooth HID host. It does not advertise itself as
-    // a peripheral in this phase.
-    gap_connectable_control(0);
-    gap_discoverable_control(0);
-
-    hci_power_control(
-        HCI_POWER_ON
-    );
-
-    initialized = true;
+    // Deliberately defer CYW43/BTstack initialization until preprocess().
+    // GP2040::run() starts TinyUSB/PIO USB Host before the first preprocess()
+    // call, matching the proven hardware-safe ordering from the legacy build:
+    // USB Host first, Bluetooth second.
+    initialized = false;
+    bleState = BleHostState::WAITING_HCI;
 #endif
 }
 
 void UniversalBluetoothHostAddon::preprocess() {
 #if OAG_BLUETOOTH_HOST_ENABLED && defined(PICO_CYW43_SUPPORTED)
     if (!initialized) {
+        // This now runs only after USBHostManager::start() has completed.
+        if (cyw43_arch_init() != PICO_OK) {
+            return;
+        }
+
+        resetBluetoothGamepadState();
+        resetServiceCaches();
+
+        l2cap_init();
+        sm_init();
+
+        sm_set_io_capabilities(
+            IO_CAPABILITY_NO_INPUT_NO_OUTPUT
+        );
+
+        sm_set_authentication_requirements(
+            SM_AUTHREQ_BONDING
+        );
+
+        gatt_client_init();
+
+        hid_host_init(
+            classicDescriptorStorage,
+            sizeof(classicDescriptorStorage)
+        );
+
+        hid_host_register_packet_handler(
+            btPacketHandler
+        );
+
+        hids_host_init(
+            leDescriptorStorage,
+            sizeof(leDescriptorStorage)
+        );
+
+        gap_set_local_name(
+            OAG_BLUETOOTH_DEVICE_NAME
+        );
+
+        gap_set_default_link_policy_settings(
+            LM_LINK_POLICY_ENABLE_SNIFF_MODE |
+            LM_LINK_POLICY_ENABLE_ROLE_SWITCH
+        );
+
+        hci_set_inquiry_mode(
+            INQUIRY_MODE_RSSI_AND_EIR
+        );
+
+        hci_set_master_slave_policy(
+            HCI_ROLE_MASTER
+        );
+
+        hciEventCallback.callback =
+            &btPacketHandler;
+
+        hci_add_event_handler(
+            &hciEventCallback
+        );
+
+        smEventCallback.callback =
+            &smPacketHandler;
+
+        sm_add_event_handler(
+            &smEventCallback
+        );
+
+        gap_connectable_control(0);
+        gap_discoverable_control(0);
+
+        // pico_cyw43_arch_none uses the SDK's threadsafe-background async
+        // context. Do not drive btstack_run_loop_embedded manually here.
+        loadStoredClassicRemote();
+        const bool haveBleRemote = loadStoredRemote();
+
+        if (!haveBleRemote && !classicRemoteKnown) {
+            // First-pair cleanup is done from normal Core 0 context, not from
+            // a BTstack callback/IRQ context.
+            gap_delete_all_link_keys();
+            clearBleBondDatabase();
+        }
+
+        bleState = BleHostState::WAITING_HCI;
+        initialized = true;
+
+        hci_power_control(
+            HCI_POWER_ON
+        );
+
+        serviceBluetoothDiagnosticLed();
         return;
     }
 
-    btstack_run_loop_embedded_execute_once();
+    // BTstack work is serviced by pico_cyw43_arch_none's background async
+    // context. The main loop only handles diagnostics and OAG state.
     serviceBluetoothDiagnosticLed();
 #endif
 }
