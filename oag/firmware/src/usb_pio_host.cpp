@@ -1,10 +1,14 @@
 #include "oag/firmware/usb_pio_host.h"
 
 #include <cstdint>
+#include <cstring>
 
+#include "hardware/sync.h"
 #include "pico/time.h"
 #include "pio_usb.h"
+#include "pio_usb_ll.h"
 #include "tusb.h"
+#include "host/hcd.h"
 #include "host/usbh.h"
 #include "host/usbh_pvt.h"
 
@@ -17,6 +21,16 @@ constexpr std::uint8_t kHostRhPort = 1;
 constexpr std::uint8_t kPort1Dp = 2;
 constexpr std::uint8_t kPort2Dp = 4;
 constexpr std::uint8_t kPort3Dp = 6;
+constexpr std::uint8_t kRootCount = 3;
+
+bool rootLinePresent(root_port_t* root) {
+    if (root == nullptr || !root->initialized) {
+        return false;
+    }
+
+    const port_pin_status_t state = pio_usb_bus_get_line_state(root);
+    return state == PORT_PIN_FS_IDLE || state == PORT_PIN_LS_IDLE;
+}
 
 } // namespace
 
@@ -69,6 +83,91 @@ void UsbPioHost::stop() {
     ready_ = false;
 }
 
+std::uint8_t UsbPioHost::physicalRootMask() const {
+    std::uint8_t mask = 0;
+
+    for (std::uint8_t rootIndex = 0; rootIndex < kRootCount; ++rootIndex) {
+        root_port_t* root = PIO_USB_ROOT_PORT(rootIndex);
+        if (rootLinePresent(root)) {
+            mask |= static_cast<std::uint8_t>(1u << rootIndex);
+        }
+    }
+
+    return mask;
+}
+
+void UsbPioHost::forceReenumerateConnectedRoots() {
+    if (!ready_) {
+        return;
+    }
+
+    const std::uint8_t presentMask = physicalRootMask();
+
+    // Freeze the PIO-USB SOF/timer ISR while resetting the shared root/endpoint
+    // runtime bookkeeping. This is intentionally a HOST-side recovery only;
+    // TinyUSB device mode (the OAG connection to Windows) is untouched.
+    const std::uint32_t irqState = save_and_disable_interrupts();
+
+    for (std::uint8_t rootIndex = 0; rootIndex < kRootCount; ++rootIndex) {
+        root_port_t* root = PIO_USB_ROOT_PORT(rootIndex);
+        if (root == nullptr || !root->initialized) {
+            continue;
+        }
+
+        for (std::uint8_t epIndex = 0; epIndex < PIO_USB_EP_POOL_CNT; ++epIndex) {
+            endpoint_t* ep = PIO_USB_ENDPOINT(epIndex);
+            if (ep->size != 0 && ep->root_idx == rootIndex) {
+                std::memset(ep, 0, sizeof(*ep));
+            }
+        }
+
+        root->addr0_exists = false;
+        root->root_device = nullptr;
+        root->ep_complete = 0;
+        root->ep_error = 0;
+        root->ep_stalled = 0;
+        root->ints = 0;
+        root->event = EVENT_NONE;
+
+        const bool present =
+            (presentMask & static_cast<std::uint8_t>(1u << rootIndex)) != 0;
+
+        root->connected = present;
+        root->suspended = present;
+        if (present) {
+            const port_pin_status_t state = pio_usb_bus_get_line_state(root);
+            root->is_fullspeed = state == PORT_PIN_FS_IDLE;
+        }
+    }
+
+    restore_interrupts(irqState);
+
+    // Queue REMOVE first for every root so TinyUSB releases any stale logical
+    // device/address state. Then re-issue ATTACH only for roots that physically
+    // contain a device. The queue preserves this order.
+    for (std::uint8_t rootIndex = 0; rootIndex < kRootCount; ++rootIndex) {
+        root_port_t* root = PIO_USB_ROOT_PORT(rootIndex);
+        if (root != nullptr && root->initialized) {
+            hcd_event_device_remove(
+                static_cast<std::uint8_t>(rootIndex + 1u),
+                false
+            );
+        }
+    }
+
+    for (std::uint8_t rootIndex = 0; rootIndex < kRootCount; ++rootIndex) {
+        const bool present =
+            (presentMask & static_cast<std::uint8_t>(1u << rootIndex)) != 0;
+
+        if (present) {
+            hcd_event_device_attach(
+                static_cast<std::uint8_t>(rootIndex + 1u),
+                false
+            );
+        }
+    }
+}
+
 } // namespace oag::firmware
 
 extern "C" usbh_class_driver_t const* usbh_app_driver_get_cb(
@@ -90,7 +189,6 @@ extern "C" usbh_class_driver_t const* usbh_app_driver_get_cb(
     *driver_count = 1;
     return drivers;
 }
-
 
 extern "C" void tuh_hid_report_received_cb(
     std::uint8_t dev_addr,
