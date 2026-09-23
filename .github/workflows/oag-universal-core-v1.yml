@@ -1,0 +1,49 @@
+name: OAG Universal Core V1
+
+on:
+  push:
+    branches:
+      - chatgpt/oag-universal-core-v1
+    paths:
+      - 'oag/**'
+      - 'docs/oag-universal-core-v1/**'
+      - '.github/workflows/oag-universal-core-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  core-policy-and-tests:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout ChatGPT OAG branch
+        uses: actions/checkout@v4.1.1
+
+      - name: Verify branch ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host             -DCMAKE_BUILD_TYPE=Release             -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/oag-host --parallel 2
+
+      - name: Run host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build/oag-host --output-on-failure
