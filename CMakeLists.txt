@@ -320,6 +320,9 @@ nanopb
 # non-wireless Pico2 build remains unchanged; the dedicated Bluetooth workflow
 # builds the same GP2040 BoardConfig against pico2_w.
 if(PICO_CYW43_SUPPORTED)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE
+    OAG_BLUETOOTH_PLATFORM_SUPPORTED=1
+  )
   target_link_libraries(${PROJECT_NAME}
     pico_cyw43_arch_none
     pico_btstack_cyw43
