@@ -184,8 +184,10 @@ static void startBleScan() {
 
     gap_connect_cancel();
 
+    // Active scan is required for HID devices that expose UUID 0x1812
+    // only in the scan response rather than the primary advertisement.
     gap_set_scan_parameters(
-        0,
+        1,
         0x0030,
         0x0030
     );
@@ -1026,6 +1028,11 @@ static void btPacketHandler(
             if (loadStoredRemote()) {
                 connectStoredRemote();
             } else {
+                // Match the proven legacy BluetoothHIDMaster first-pair
+                // behavior: discard stale Classic/LE pairing material before
+                // discovering a new controller. This happens only when OAG
+                // has no stored remote of its own.
+                gap_delete_all_link_keys();
                 startBleScan();
             }
             break;
