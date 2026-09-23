@@ -13,10 +13,13 @@
 #include "output/universal_output_manager.h"
 #include "output/universal_feedback_manager.h"
 #include "pico/unique_id.h"
+#include "pico/time.h"
 
 namespace {
 
 static char serialString[17] = "0000000000000000";
+static uint64_t lastReportSentUs[OAG_MULTI_HID_SLOT_COUNT] {};
+static constexpr uint64_t OAG_HID_KEEPALIVE_US = 250000;
 
 static bool oagHidControlXfer(
     uint8_t rhport,
@@ -32,6 +35,7 @@ void OAGMultiHIDDriver::initialize() {
     memset(reports, 0, sizeof(reports));
     memset(lastReports, 0, sizeof(lastReports));
     memset(lastReportValid, 0, sizeof(lastReportValid));
+    memset(lastReportSentUs, 0, sizeof(lastReportSentUs));
 
     buildConfigurationDescriptor();
 
@@ -84,6 +88,8 @@ OAGMultiHIDReport OAGMultiHIDDriver::buildReport(
     report.ly = static_cast<uint8_t>(state.ly >> 8);
     report.rx = static_cast<uint8_t>(state.rx >> 8);
     report.ry = static_cast<uint8_t>(state.ry >> 8);
+    report.lt = state.lt;
+    report.rt = state.rt;
 
     return report;
 }
@@ -92,6 +98,7 @@ bool OAGMultiHIDDriver::process(Gamepad* gamepad) {
     (void)gamepad;
 
     bool anySent = false;
+    const uint64_t nowUs = time_us_64();
 
     for (uint8_t slot = 0; slot < OAG_MULTI_HID_SLOT_COUNT; slot++) {
         UniversalOutputSlotSnapshot output {};
@@ -115,8 +122,12 @@ bool OAGMultiHIDDriver::process(Gamepad* gamepad) {
                 sizeof(OAGMultiHIDReport)
             ) != 0;
 
+        const bool keepaliveDue =
+            !lastReportValid[slot] ||
+            nowUs - lastReportSentUs[slot] >= OAG_HID_KEEPALIVE_US;
+
         if (
-            changed &&
+            (changed || keepaliveDue) &&
             tud_ready() &&
             tud_hid_n_ready(slot) &&
             tud_hid_n_report(
@@ -128,6 +139,7 @@ bool OAGMultiHIDDriver::process(Gamepad* gamepad) {
         ) {
             lastReports[slot] = reports[slot];
             lastReportValid[slot] = true;
+            lastReportSentUs[slot] = nowUs;
             anySent = true;
         }
     }
@@ -173,8 +185,47 @@ uint16_t OAGMultiHIDDriver::get_report(
     (void)buffer;
     (void)reqlen;
 
-    // Normal operation uses interrupt IN endpoints.
+    // Multi-interface callers must use get_report_with_itf() so the
+    // requested logical controller is unambiguous.
     return 0;
+}
+
+uint16_t OAGMultiHIDDriver::get_report_with_itf(
+    uint8_t itf,
+    uint8_t report_id,
+    hid_report_type_t report_type,
+    uint8_t* buffer,
+    uint16_t reqlen
+) {
+    (void)report_id;
+
+    if (
+        itf >= OAG_MULTI_HID_SLOT_COUNT ||
+        report_type != HID_REPORT_TYPE_INPUT ||
+        buffer == nullptr ||
+        reqlen == 0
+    ) {
+        return 0;
+    }
+
+    UniversalOutputSlotSnapshot output {};
+    const bool hasOutput =
+        UOUTPUT.snapshot(itf, output) &&
+        output.connected &&
+        output.hasReport;
+
+    GamepadState neutral {};
+    reports[itf] = buildReport(
+        hasOutput ? output.state : neutral
+    );
+
+    const uint16_t reportSize =
+        static_cast<uint16_t>(sizeof(OAGMultiHIDReport));
+    const uint16_t copyLength =
+        reqlen < reportSize ? reqlen : reportSize;
+
+    memcpy(buffer, &reports[itf], copyLength);
+    return copyLength;
 }
 
 bool OAGMultiHIDDriver::vendor_control_xfer_cb(

@@ -30,6 +30,16 @@ public:
     virtual bool process(Gamepad * gamepad) = 0;
     virtual void processAux() = 0;
     virtual uint16_t get_report(uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen) = 0;
+    virtual uint16_t get_report_with_itf(
+        uint8_t itf,
+        uint8_t report_id,
+        hid_report_type_t report_type,
+        uint8_t *buffer,
+        uint16_t reqlen
+    ) {
+        (void)itf;
+        return get_report(report_id, report_type, buffer, reqlen);
+    }
     virtual void set_report(uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize) = 0;
     virtual void set_report_with_itf(
         uint8_t itf,

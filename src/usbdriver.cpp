@@ -26,7 +26,7 @@ const usbd_class_driver_t *usbd_app_driver_get_cb(uint8_t *driver_count) {
 }
 
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen) {
-	return DriverManager::getInstance().getDriver()->get_report(report_id, report_type, buffer, reqlen);
+	return DriverManager::getInstance().getDriver()->get_report_with_itf(itf, report_id, report_type, buffer, reqlen);
 }
 
 // Invoked when received SET_REPORT control request or

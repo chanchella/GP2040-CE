@@ -23,6 +23,14 @@ public:
         uint16_t reqlen
     ) override;
 
+    uint16_t get_report_with_itf(
+        uint8_t itf,
+        uint8_t report_id,
+        hid_report_type_t report_type,
+        uint8_t* buffer,
+        uint16_t reqlen
+    ) override;
+
     void set_report(
         uint8_t report_id,
         hid_report_type_t report_type,
