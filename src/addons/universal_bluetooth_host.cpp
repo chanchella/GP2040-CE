@@ -1354,6 +1354,7 @@ static void btPacketHandler(
                 // discovering a new controller. This happens only when OAG
                 // has no stored remote of its own.
                 gap_delete_all_link_keys();
+                clearBleBondDatabase();
                 startBleScan();
             }
             break;
