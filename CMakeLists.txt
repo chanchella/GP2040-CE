@@ -275,6 +275,7 @@ src/addons/gamepad_usb_host.cpp
 src/addons/gamepad_usb_host_listener.cpp
 src/addons/universal_xinput_host.cpp
 src/addons/universal_hid_gamepad_host.cpp
+src/addons/universal_hid_human_interface_host.cpp
 src/addons/universal_output_router.cpp
 src/addons/universal_bluetooth_host.cpp
 src/addons/tg16_input.cpp

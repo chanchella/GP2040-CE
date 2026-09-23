@@ -31,6 +31,7 @@
 #include "addons/gamepad_usb_host.h"
 #include "addons/universal_xinput_host.h"
 #include "addons/universal_hid_gamepad_host.h"
+#include "addons/universal_hid_human_interface_host.h"
 #include "addons/universal_output_router.h"
 #include "addons/universal_bluetooth_host.h"
 #include "addons/he_trigger.h"
@@ -112,6 +113,7 @@ void GP2040::setup() {
 	addons.LoadUSBAddon(new GamepadUSBHostAddon());
 	addons.LoadUSBAddon(new UniversalXInputHostAddon());
 	addons.LoadUSBAddon(new UniversalHIDGamepadHostAddon());
+	addons.LoadUSBAddon(new UniversalHIDHumanInterfaceHostAddon());
 	addons.LoadAddon(new UniversalOutputRouterAddon());
 	addons.LoadAddon(new UniversalBluetoothHostAddon());
 	addons.LoadAddon(new AnalogInput());
