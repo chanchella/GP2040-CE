@@ -944,7 +944,7 @@ static void smPacketHandler(
 
         case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
             sm_numeric_comparison_confirm(
-                sm_event_passkey_display_number_get_handle(
+                sm_event_numeric_comparison_request_get_handle(
                     packet
                 )
             );
