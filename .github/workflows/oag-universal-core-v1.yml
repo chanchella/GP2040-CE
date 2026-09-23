@@ -8,6 +8,9 @@ on:
       - 'oag/**'
       - 'docs/oag-universal-core-v1/**'
       - '.github/workflows/oag-universal-core-v1.yml'
+      - '.gitmodules'
+      - 'lib/pico_pio_usb'
+      - 'lib/tinyusb'
   workflow_dispatch:
 
 jobs:
@@ -56,7 +59,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u1-hw1:
+  firmware-u1-hw2:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -124,13 +127,25 @@ jobs:
           mkdir -p artifacts
           arm-none-eabi-size "${OAG_ELF_PATH}" | tee artifacts/size-report.txt
 
-      - name: Generate build manifest
+      - name: Generate and verify build manifest
         shell: bash
         run: |
           set -euo pipefail
           python3 oag/tools/generate_build_manifest.py \
             build/oag-fw \
             artifacts/build-manifest.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
+          assert manifest["phase"] == "U1-HW2"
+          assert manifest["dependencies"]["pico_pio_usb"] == "5a37a66dc5d3fbe0ef3cdbeda923a757440f984f"
+          assert manifest["dependencies"]["tinyusb"] == "9865cba11ecbcdd25237ba9cf4ccbe3fd1fd821d"
+          assert manifest["verification"]["ci_verified"] is True
+          print("OAG_MANIFEST_VERIFY=PASS")
+          PY
 
       - name: Package exact-SHA artifacts
         shell: bash
@@ -139,17 +154,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U1_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U1_HW2_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U1_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U1_HW2_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U1_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U1_HW2_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U1-HW1 firmware bundle
+      - name: Upload U1-HW2 firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U1-HW1-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U1-HW2-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

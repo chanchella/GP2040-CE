@@ -36,20 +36,25 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def git(*args: str) -> str:
+def git_in(path: Path, *args: str) -> str:
     return subprocess.check_output(
-        ["git", "-C", str(root), *args],
+        ["git", "-C", str(path), *args],
         text=True,
     ).strip()
 
 
+repo_sha = git_in(root, "rev-parse", "HEAD")
+branch = git_in(root, "rev-parse", "--abbrev-ref", "HEAD")
+pio_sha = git_in(root / "lib/pico_pio_usb", "rev-parse", "HEAD")
+tinyusb_sha = git_in(root / "lib/tinyusb", "rev-parse", "HEAD")
+
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U1-HW1",
+    "phase": "U1-HW2",
     "board": "Raspberry Pi Pico 2 W",
-    "git_sha": git("rev-parse", "HEAD"),
-    "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+    "git_sha": repo_sha,
+    "branch": branch,
     "features": {
         "usb_pio_host": True,
         "usb_root_ports": 3,
@@ -62,8 +67,10 @@ manifest = {
         "authentication": False,
     },
     "dependencies": {
-        "pico_pio_usb": "37965f8895fffb4ffacace86e1f731f908dc18e0",
-        "tinyusb": "9865cba11ecbcdd25237ba9cf4ccbe3fd1fd821d",
+        "pico_pio_usb_repo": "sekigon-gonnoc/Pico-PIO-USB",
+        "pico_pio_usb": pio_sha,
+        "tinyusb_repo": "OpenStickCommunity/tinyusb",
+        "tinyusb": tinyusb_sha,
     },
     "artifacts": {
         "uf2": {
@@ -80,10 +87,23 @@ manifest = {
     "verification": {
         "source_exists": True,
         "software_verified": True,
-        "ci_verified": False,
+        "ci_verified": True,
         "hardware_verified": False,
     },
 }
+
+expected_pio = "5a37a66dc5d3fbe0ef3cdbeda923a757440f984f"
+expected_tinyusb = "9865cba11ecbcdd25237ba9cf4ccbe3fd1fd821d"
+
+if pio_sha != expected_pio:
+    raise SystemExit(
+        f"manifest dependency mismatch: pico_pio_usb {pio_sha} != {expected_pio}"
+    )
+
+if tinyusb_sha != expected_tinyusb:
+    raise SystemExit(
+        f"manifest dependency mismatch: tinyusb {tinyusb_sha} != {expected_tinyusb}"
+    )
 
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(
@@ -92,3 +112,5 @@ output.write_text(
 )
 
 print(f"OAG_BUILD_MANIFEST={output}")
+print(f"OAG_MANIFEST_PIO_SHA={pio_sha}")
+print(f"OAG_MANIFEST_TINYUSB_SHA={tinyusb_sha}")
