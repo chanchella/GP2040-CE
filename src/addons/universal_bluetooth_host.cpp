@@ -246,18 +246,66 @@ static void saveStoredClassicRemote() {
     }
 }
 
-static bool advertisementContainsHidService(uint8_t const* packet) {
+static bool advertisementLooksLikeHid(uint8_t const* packet) {
     const uint8_t* data =
         gap_event_advertising_report_get_data(packet);
 
     const uint8_t dataLength =
         gap_event_advertising_report_get_data_length(packet);
 
-    return ad_data_contains_uuid16(
-        dataLength,
-        data,
-        ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE
-    );
+    if (
+        ad_data_contains_uuid16(
+            dataLength,
+            data,
+            ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE
+        )
+    ) {
+        return true;
+    }
+
+    ad_context_t context {};
+
+    for (
+        ad_iterator_init(
+            &context,
+            dataLength,
+            data
+        );
+        ad_iterator_has_more(&context);
+        ad_iterator_next(&context)
+    ) {
+        if (
+            ad_iterator_get_data_type(&context) !=
+                BLUETOOTH_DATA_TYPE_APPEARANCE
+        ) {
+            continue;
+        }
+
+        if (ad_iterator_get_data_len(&context) < 2) {
+            continue;
+        }
+
+        const uint8_t* appearanceData =
+            ad_iterator_get_data(&context);
+
+        const uint16_t appearance =
+            little_endian_read_16(
+                appearanceData,
+                0
+            );
+
+        // Bluetooth SIG HID appearances:
+        // 0x03C0 generic HID, 0x03C1 keyboard, 0x03C2 mouse,
+        // 0x03C3 joystick, 0x03C4 gamepad.
+        if (
+            appearance >= 0x03C0 &&
+            appearance <= 0x03C4
+        ) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 static void stopDiscoveryTimer() {
@@ -1375,7 +1423,7 @@ static void btPacketHandler(
         case GAP_EVENT_ADVERTISING_REPORT:
             if (
                 bleState != BleHostState::SCANNING ||
-                !advertisementContainsHidService(packet)
+                !advertisementLooksLikeHid(packet)
             ) {
                 return;
             }
