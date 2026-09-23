@@ -275,6 +275,7 @@ src/addons/gamepad_usb_host_listener.cpp
 src/addons/universal_xinput_host.cpp
 src/addons/universal_hid_gamepad_host.cpp
 src/addons/universal_output_router.cpp
+src/addons/universal_bluetooth_host.cpp
 src/addons/tg16_input.cpp
 src/animationstation/animation.cpp
 src/animationstation/animationstation.cpp
@@ -314,6 +315,21 @@ SNESpad
 pico_mbedtls
 nanopb
 )
+
+# OAG Bluetooth Host is available only on wireless Pico boards. The proven
+# non-wireless Pico2 build remains unchanged; the dedicated Bluetooth workflow
+# builds the same GP2040 BoardConfig against pico2_w.
+if(PICO_CYW43_SUPPORTED)
+  target_link_libraries(${PROJECT_NAME}
+    pico_cyw43_arch_none
+    pico_btstack_cyw43
+    pico_btstack_ble
+    pico_btstack_classic
+  )
+  target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/headers/bluetooth
+  )
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC
 headers

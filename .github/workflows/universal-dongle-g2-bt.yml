@@ -1,0 +1,199 @@
+name: OAG Vortex G2C2 BTstack Pico2W
+
+on:
+  push:
+    branches:
+      - universal-dongle/g2c2-btstack-foundation
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  web:
+    uses: ./.github/workflows/node.js.yml
+
+  build-g2c2-pico2w:
+    needs: web
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout G2 branch with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.17.x"
+
+      - name: Setup Pico SDK pipeline
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Download Web Config artifact
+        uses: actions/download-artifact@v4.1.2
+        with:
+          name: fsData
+          path: ${{ github.workspace }}/lib/httpd/
+
+      - name: Patch Pico-PIO-USB for three root ports
+        shell: bash
+        run: |
+          set -euo pipefail
+          CFG="lib/pico_pio_usb/src/pio_usb_configuration.h"
+          test -f "$CFG"
+          grep -q '^#define PIO_USB_ROOT_PORT_CNT 2$' "$CFG"
+          sed -i 's/^#define PIO_USB_ROOT_PORT_CNT 2$/#define PIO_USB_ROOT_PORT_CNT 3 \/\/ Universal Dongle G2/' "$CFG"
+          grep '^#define PIO_USB_ROOT_PORT_CNT' "$CFG"
+
+      - name: Patch TinyUSB HID enumeration quirks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/patch_oag_tinyusb_hid_host.py
+          grep -q 'skip_set_idle' lib/tinyusb/src/class/hid/hid_host.c
+          grep -q '0x2563' lib/tinyusb/src/class/hid/hid_host.c
+
+      - name: Verify G2C2 BTstack + G2C1 invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '#define USB_PERIPHERAL_PIN_DPLUS 2' configs/Pico2/BoardConfig.h
+          grep -q '#define UNIVERSAL_XINPUT_HOST_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'G1A_PORT2_DP = 4' src/usbhostmanager.cpp
+          grep -q 'G1A_PORT3_DP = 6' src/usbhostmanager.cpp
+          grep -q 'UNIVERSAL_INPUT_SLOT_BLUETOOTH = 0' headers/input/universal_input_manager.h
+          grep -q 'UNIVERSAL_INPUT_SLOT_USB_1 = 1' headers/input/universal_input_manager.h
+          grep -q 'UniversalInputSource::USB_XINPUT' src/addons/universal_xinput_host.cpp
+          grep -q '#define UNIVERSAL_OUTPUT_ROUTER_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'UNIVERSAL_OUTPUT_SLOT_COUNT = 4' headers/output/universal_output_manager.h
+          grep -q 'UOUTPUT.syncFromInputs()' src/addons/universal_output_router.cpp
+          grep -q 'src/input/universal_input_manager.cpp' CMakeLists.txt
+          grep -q '^#define PIO_USB_ROOT_PORT_CNT 3' lib/pico_pio_usb/src/pio_usb_configuration.h
+          grep -q '#define OAG_PRODUCT_NAME "OAG Vortex Ultra Gaming"' headers/device/oag_identity.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/xinput/XInputDescriptors.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/hid/HIDDescriptors.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/ps3/PS3Descriptors.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/ps4/PS4Descriptors.h
+          grep -q 'OAG_USB_PRODUCT_STRING' headers/drivers/xbone/XBOneDescriptors.h
+          grep -q 'OAG_BLUETOOTH_DEVICE_NAME' headers/device/oag_identity.h
+          grep -q 'enum class UniversalProtocol' headers/input/universal_device_registry.h
+          grep -q 'XUSB_XBOX360' headers/input/universal_device_registry.h
+          grep -q 'HID_GAMEPAD' headers/input/universal_device_registry.h
+          grep -q 'SONY_DS3' headers/input/universal_device_registry.h
+          grep -q 'SONY_DS4' headers/input/universal_device_registry.h
+          grep -q 'SONY_DUALSENSE' headers/input/universal_device_registry.h
+          grep -q 'SONY_DUALSENSE_054C_0CE6' src/input/universal_device_registry.cpp
+          grep -q 'NINTENDO_SWITCH_PRO_057E_2009' src/input/universal_device_registry.cpp
+          grep -q 'XGIP_XBOX_ONE' headers/input/universal_device_registry.h
+          grep -q 'XBOX360_WIRELESS_RECEIVER' headers/input/universal_device_registry.h
+          grep -q 'REDRAGON_G808_2563_0575' headers/input/universal_device_registry.h
+          grep -q 'UNIVERSAL_QUIRK_SKIP_SET_IDLE' headers/input/universal_device_registry.h
+          grep -q 'connectClassified' headers/input/universal_input_manager.h
+          grep -q 'UDEVREG.classifyUsb' src/addons/universal_xinput_host.cpp
+          grep -q 'UDEVREG.classifyUsb' src/drivers/shared/xinput_host.cpp
+          grep -q 'src/input/universal_device_registry.cpp' CMakeLists.txt
+          grep -q 'class UniversalGamepadParser' headers/input/universal_gamepad_parser.h
+          grep -q 'parseXusbXbox360' src/input/universal_gamepad_parser.cpp
+          grep -q 'UGAMEPADPARSER.parse' src/addons/universal_xinput_host.cpp
+          ! grep -q 'parseXbox360Report' src/addons/universal_xinput_host.cpp
+          grep -q 'src/input/universal_gamepad_parser.cpp' CMakeLists.txt
+          grep -q 'GIMX' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q 'GPL-3.0' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q 'BlueRetro' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q 'Apache-2.0' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q 'HID-Remapper' docs/OAG_THIRD_PARTY_REFERENCE_POLICY.md
+          grep -q '#define OAG_MULTI_XINPUT_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'OAG_MULTI_XINPUT_SLOT_COUNT = 4' headers/drivers/oag/OAGMultiXInputDescriptors.h
+          grep -q 'OAG_MULTI_XINPUT_CONFIG_SIZE' headers/drivers/oag/OAGMultiXInputDescriptors.h
+          grep -q 'class OAGMultiXInputDriver' headers/drivers/oag/OAGMultiXInputDriver.h
+          grep -q 'OAG-MULTI-XINPUT' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'UOUTPUT.snapshot(slot' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'endpointIn\[OAG_MULTI_XINPUT_SLOT_COUNT\]' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'endpointOut\[OAG_MULTI_XINPUT_SLOT_COUNT\]' src/drivers/oag/OAGMultiXInputDriver.cpp
+          grep -q 'new OAGMultiXInputDriver' src/drivermanager.cpp
+          grep -q 'src/drivers/oag/OAGMultiXInputDriver.cpp' CMakeLists.txt
+          ! grep -q 'Storage::getInstance().GetGamepad' src/addons/universal_output_router.cpp
+          grep -q '#define UNIVERSAL_HID_GAMEPAD_HOST_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q '#define OAG_PC_MULTI_HID_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q '#define CFG_TUD_HID              4' headers/tusb_config.h
+          grep -q 'UniversalHIDGamepadHostAddon' src/gp2040.cpp
+          grep -q 'claimUsbSlot' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'OAG_MULTI_HID_SLOT_COUNT = 4' headers/drivers/oag/OAGMultiHIDDescriptors.h
+          grep -q 'tud_hid_n_report' src/drivers/oag/OAGMultiHIDDriver.cpp
+          grep -q 'new OAGMultiHIDDriver' src/drivermanager.cpp
+          grep -q 'src/drivers/oag/OAGMultiHIDDriver.cpp' CMakeLists.txt
+          grep -q 'REDRAGON_G808_2563_0575' src/input/universal_device_registry.cpp
+          grep -q 'SHANWAN_FALLBACK_20BC_0055' src/input/universal_device_registry.cpp
+          grep -q 'SHANWAN_HID_20BC_5500' src/input/universal_device_registry.cpp
+          grep -q 'XBOX_ONE_SPECTRA_24C6_542A' src/input/universal_device_registry.cpp
+          grep -q 'GIGAMAX_0079_0006' src/input/universal_device_registry.cpp
+          grep -q 'XBOX_ONE_S_045E_02EA' src/input/universal_device_registry.cpp
+          grep -q 'parseXgipXboxOne' src/input/universal_gamepad_parser.cpp
+          grep -q 'XONE_S_INIT' src/addons/universal_xinput_host.cpp
+          grep -q 'XONE_AUTH_DONE' src/addons/universal_xinput_host.cpp
+          grep -q 'USAGE_PAGE_SIMULATION' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'knownZrRightStick' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'patch_oag_tinyusb_hid_host.py' .github/workflows/universal-dongle-g2.yml
+          grep -q 'class UniversalFeedbackManager' headers/output/universal_feedback_manager.h
+          grep -q 'src/output/universal_feedback_manager.cpp' CMakeLists.txt
+          grep -q 'set_report_with_itf' src/usbdriver.cpp
+          grep -q 'OAGMultiHIDFeedbackReport' headers/drivers/oag/OAGMultiHIDDescriptors.h
+          grep -q 'UFEEDBACK.publish' src/drivers/oag/OAGMultiHIDDriver.cpp
+          grep -q 'serviceFeedback' src/addons/universal_xinput_host.cpp
+          grep -q 'REDRAGON_G808_2563_0575' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'GIGAMAX_0079_0006' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'UNIVERSAL_CAP_RUMBLE' headers/input/universal_device_registry.h
+          grep -q 'verifiedCapabilities' headers/input/universal_device_registry.h
+          grep -q 'UNIVERSAL_CAP_TRIGGER_RUMBLE' src/input/universal_device_registry.cpp
+          grep -q '#define OAG_BLUETOOTH_HOST_ENABLED 1' configs/Pico2/BoardConfig.h
+          grep -q 'UniversalBluetoothHostAddon' src/gp2040.cpp
+          grep -q 'pico_btstack_cyw43' CMakeLists.txt
+          grep -q 'pico_btstack_classic' CMakeLists.txt
+          grep -q 'pico_btstack_ble' CMakeLists.txt
+          grep -q 'hid_host_init' src/addons/universal_bluetooth_host.cpp
+          grep -q 'hids_host_init' src/addons/universal_bluetooth_host.cpp
+          grep -q 'btstack_run_loop_embedded_execute_once' src/addons/universal_bluetooth_host.cpp
+          echo "G2C2_BTSTACK_G2C1_VERIFY=PASS"
+
+      - name: Configure Pico2W
+        shell: bash
+        run: |
+          PICO_SDK_PATH=${{ github.workspace }}/pico-sdk \
+          GP2040_BOARDCONFIG=Pico2 \
+          SKIP_WEBBUILD=TRUE \
+          SKIP_SUBMODULES=TRUE \
+          cmake -B ${{ github.workspace }}/build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+
+      - name: Build G2C2 BTstack + Universal Input
+        shell: bash
+        run: |
+          GP2040_BOARDCONFIG=Pico2 \
+          cmake --build ${{ github.workspace }}/build \
+            --config ${{ env.BUILD_TYPE }} \
+            --parallel 2
+
+      - name: Show build outputs
+        shell: bash
+        run: |
+          find build -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.elf' -o -name '*.bin' \) -print
+
+      - name: Upload G2C2 BTstack UF2
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-Vortex-G2C2-BTstack-Pico2W-UF2
+          path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.uf2
+          if-no-files-found: error
+
+      - name: Upload G2C2 BTstack ELF
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-Vortex-G2C2-BTstack-Pico2W-ELF
+          path: ${{ github.workspace }}/build/GP2040-CE_*_Pico2.elf
+          if-no-files-found: error
