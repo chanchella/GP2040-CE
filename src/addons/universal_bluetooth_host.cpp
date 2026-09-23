@@ -21,6 +21,7 @@
 
 #include "device/oag_identity.h"
 #include "input/universal_input_manager.h"
+#include "input/universal_human_interface_manager.h"
 #include "output/universal_feedback_manager.h"
 
 namespace {
@@ -30,10 +31,14 @@ static constexpr uint32_t OAG_CLASSIC_REMOTE_TLV_TAG = 0x4F414743u; // "OAGC"
 static constexpr uint32_t BLE_DISCOVERY_WINDOW_MS = 5000;
 static constexpr uint8_t MAX_HID_SERVICES = 4;
 static constexpr uint8_t MAX_FIELD_RANGES = 96;
+static constexpr uint8_t MAX_HID_REPORT_META = 16;
+static constexpr uint8_t MAX_HID_REPORT_CONTRIBUTIONS = 8;
 
 static constexpr uint16_t USAGE_PAGE_GENERIC_DESKTOP = 0x01;
 static constexpr uint16_t USAGE_PAGE_SIMULATION = 0x02;
+static constexpr uint16_t USAGE_PAGE_KEYBOARD = 0x07;
 static constexpr uint16_t USAGE_PAGE_BUTTON = 0x09;
+static constexpr uint16_t USAGE_PAGE_CONSUMER = 0x0C;
 
 static constexpr uint16_t USAGE_X = 0x30;
 static constexpr uint16_t USAGE_Y = 0x31;
@@ -41,6 +46,7 @@ static constexpr uint16_t USAGE_Z = 0x32;
 static constexpr uint16_t USAGE_RX = 0x33;
 static constexpr uint16_t USAGE_RY = 0x34;
 static constexpr uint16_t USAGE_RZ = 0x35;
+static constexpr uint16_t USAGE_WHEEL = 0x38;
 static constexpr uint16_t USAGE_HAT = 0x39;
 static constexpr uint16_t USAGE_DPAD_UP = 0x90;
 static constexpr uint16_t USAGE_DPAD_DOWN = 0x91;
@@ -49,6 +55,20 @@ static constexpr uint16_t USAGE_DPAD_LEFT = 0x93;
 
 static constexpr uint16_t USAGE_SIM_ACCELERATOR = 0xC4;
 static constexpr uint16_t USAGE_SIM_BRAKE = 0xC5;
+static constexpr uint16_t USAGE_CONSUMER_AC_PAN = 0x0238;
+
+static constexpr uint16_t USAGE_DESKTOP_MOUSE = 0x02;
+static constexpr uint16_t USAGE_DESKTOP_JOYSTICK = 0x04;
+static constexpr uint16_t USAGE_DESKTOP_GAMEPAD = 0x05;
+static constexpr uint16_t USAGE_DESKTOP_KEYBOARD = 0x06;
+
+enum HidReportClassFlag : uint8_t {
+    HID_REPORT_CLASS_NONE = 0,
+    HID_REPORT_CLASS_KEYBOARD = 1u << 0,
+    HID_REPORT_CLASS_CONSUMER = 1u << 1,
+    HID_REPORT_CLASS_BUTTONS = 1u << 2,
+    HID_REPORT_CLASS_POINTER = 1u << 3,
+};
 
 enum class BluetoothGamepadProfile : uint8_t {
     GENERIC_HID = 0,
@@ -78,13 +98,48 @@ struct HidFieldRange {
     int32_t logicalMax = 0;
 };
 
+struct HidReportMeta {
+    bool used = false;
+    uint16_t reportId = HID_REPORT_ID_UNDEFINED;
+    uint8_t classFlags = HID_REPORT_CLASS_NONE;
+};
+
+struct KeyboardReportContribution {
+    bool used = false;
+    uint16_t reportId = HID_REPORT_ID_UNDEFINED;
+    UniversalKeyboardState state {};
+};
+
+struct MouseReportContribution {
+    bool used = false;
+    uint16_t reportId = HID_REPORT_ID_UNDEFINED;
+    uint32_t buttons = 0;
+};
+
 struct HidServiceCache {
     bool parsed = false;
+
+    bool hasGamepadApplication = false;
+    bool hasKeyboardApplication = false;
+    bool hasMouseApplication = false;
+
     bool looksLikeGamepad = false;
+    bool looksLikeKeyboard = false;
+    bool looksLikeMouse = false;
+
     bool xboxBleButtonLayout = false;
     BluetoothGamepadProfile profile = BluetoothGamepadProfile::GENERIC_HID;
+
     uint8_t fieldCount = 0;
     HidFieldRange fields[MAX_FIELD_RANGES] {};
+
+    uint8_t reportMetaCount = 0;
+    HidReportMeta reportMeta[MAX_HID_REPORT_META] {};
+
+    KeyboardReportContribution
+        keyboardReports[MAX_HID_REPORT_CONTRIBUTIONS] {};
+    MouseReportContribution
+        mouseReports[MAX_HID_REPORT_CONTRIBUTIONS] {};
 };
 
 enum class BleHostState : uint8_t {
@@ -296,6 +351,11 @@ static void handleGattClientEvent(
     uint8_t* packet,
     uint16_t size
 );
+
+static void resetBluetoothHumanInterfaceState() {
+    UHIDINPUT.disconnectKeyboard(UNIVERSAL_HID_SLOT_BLUETOOTH);
+    UHIDINPUT.disconnectMouse(UNIVERSAL_HID_SLOT_BLUETOOTH);
+}
 
 static void resetBluetoothGamepadState() {
     bluetoothGamepadState = GamepadState {};
@@ -639,300 +699,163 @@ static void connectHids() {
     gap_disconnect(connectionHandle);
 }
 
-static void populateHidCache(
+static HidReportMeta* ensureReportMeta(
     HidServiceCache& cache,
-    uint8_t const* descriptor,
-    uint16_t descriptorLength
-);
+    uint16_t reportId
+) {
+    for (uint8_t i = 0; i < cache.reportMetaCount; i++) {
+        if (
+            cache.reportMeta[i].used &&
+            cache.reportMeta[i].reportId == reportId
+        ) {
+            return &cache.reportMeta[i];
+        }
+    }
 
-static HidServiceCache* ensureServiceCache(uint8_t serviceIndex) {
-    if (serviceIndex >= MAX_HID_SERVICES) {
+    if (cache.reportMetaCount >= MAX_HID_REPORT_META) {
         return nullptr;
     }
 
-    HidServiceCache& cache = serviceCaches[serviceIndex];
+    HidReportMeta& meta =
+        cache.reportMeta[cache.reportMetaCount++];
 
-    if (cache.parsed) {
-        return &cache;
-    }
-
-    cache = HidServiceCache {};
-    cache.parsed = true;
-
-    const uint8_t* descriptor =
-        hids_client_descriptor_storage_get_descriptor_data(
-            hidsCid,
-            serviceIndex
-        );
-
-    const uint16_t descriptorLength =
-        hids_client_descriptor_storage_get_descriptor_len(
-            hidsCid,
-            serviceIndex
-        );
-
-    populateHidCache(
-        cache,
-        descriptor,
-        descriptorLength
-    );
-
-    return &cache;
+    meta.used = true;
+    meta.reportId = reportId;
+    return &meta;
 }
 
-static bool findFieldRange(
+static const HidReportMeta* findReportMeta(
     HidServiceCache const& cache,
-    uint16_t reportId,
-    uint16_t usagePage,
-    uint16_t usage,
-    int32_t& logicalMin,
-    int32_t& logicalMax
+    uint16_t reportId
 ) {
-    for (uint8_t i = 0; i < cache.fieldCount; i++) {
-        HidFieldRange const& field = cache.fields[i];
-
+    for (uint8_t i = 0; i < cache.reportMetaCount; i++) {
         if (
-            field.usagePage == usagePage &&
-            field.usage == usage &&
+            cache.reportMeta[i].used &&
             (
-                field.reportId == reportId ||
-                field.reportId == HID_REPORT_ID_UNDEFINED
+                cache.reportMeta[i].reportId == reportId ||
+                cache.reportMeta[i].reportId == HID_REPORT_ID_UNDEFINED
             )
         ) {
-            logicalMin = field.logicalMin;
-            logicalMax = field.logicalMax;
-            return true;
+            return &cache.reportMeta[i];
         }
     }
 
-    return false;
+    return nullptr;
 }
 
-static uint16_t scaleAxis(
-    int32_t value,
-    int32_t logicalMin,
-    int32_t logicalMax
+static void classifyTopLevelApplications(
+    HidServiceCache& cache,
+    const uint8_t* descriptor,
+    uint16_t descriptorLength
 ) {
-    if (logicalMax <= logicalMin) {
-        if (value < 0) {
-            const int32_t shifted = value + 32768;
-            return static_cast<uint16_t>(
-                shifted < 0
-                    ? 0
-                    : shifted > 65535
-                        ? 65535
-                        : shifted
+    uint32_t usagePage = 0;
+    uint32_t localUsage = 0;
+
+    uint16_t offset = 0;
+
+    while (offset < descriptorLength) {
+        const uint8_t prefix = descriptor[offset++];
+
+        if (prefix == 0xFE) {
+            if (offset + 2 > descriptorLength) {
+                break;
+            }
+
+            const uint8_t longSize = descriptor[offset];
+            offset = static_cast<uint16_t>(
+                offset + 2 + longSize
             );
+            continue;
         }
 
-        return static_cast<uint16_t>(
-            value > 65535 ? 65535 : value
-        );
-    }
-
-    if (value < logicalMin) value = logicalMin;
-    if (value > logicalMax) value = logicalMax;
-
-    const int64_t numerator =
-        static_cast<int64_t>(value - logicalMin) *
-        GAMEPAD_JOYSTICK_MAX;
-
-    return static_cast<uint16_t>(
-        numerator / (logicalMax - logicalMin)
-    );
-}
-
-static uint8_t scaleTrigger(
-    int32_t value,
-    int32_t logicalMin,
-    int32_t logicalMax
-) {
-    if (logicalMax <= logicalMin) {
-        if (value <= 0) return 0;
-        if (value >= 255) return 255;
-        return static_cast<uint8_t>(value);
-    }
-
-    if (value < logicalMin) value = logicalMin;
-    if (value > logicalMax) value = logicalMax;
-
-    const int64_t numerator =
-        static_cast<int64_t>(value - logicalMin) * 255;
-
-    return static_cast<uint8_t>(
-        numerator / (logicalMax - logicalMin)
-    );
-}
-
-static uint32_t buttonMaskForUsage(
-    uint16_t usage,
-    BluetoothGamepadProfile profile
-) {
-    if (profile == BluetoothGamepadProfile::XBOX_BLE) {
-        switch (usage) {
-            case 1:  return GAMEPAD_MASK_B1; // A / South
-            case 2:  return GAMEPAD_MASK_B2; // B / East
-            case 4:  return GAMEPAD_MASK_B3; // X / West
-            case 5:  return GAMEPAD_MASK_B4; // Y / North
-            case 7:  return GAMEPAD_MASK_L1;
-            case 8:  return GAMEPAD_MASK_R1;
-            case 11: return GAMEPAD_MASK_S1; // View
-            case 12: return GAMEPAD_MASK_S2; // Menu
-            case 13: return GAMEPAD_MASK_A1; // Guide
-            case 14: return GAMEPAD_MASK_L3;
-            case 15: return GAMEPAD_MASK_R3;
-            default: return 0;
+        uint8_t dataSize = prefix & 0x03;
+        if (dataSize == 3) {
+            dataSize = 4;
         }
-    }
 
-    if (
-        profile == BluetoothGamepadProfile::SONY_DS4_CLASSIC ||
-        profile == BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC
-    ) {
-        // Canonical physical-position mapping:
-        // Cross=South(A), Circle=East(B), Square=West(X), Triangle=North(Y).
-        switch (usage) {
-            case 1:  return GAMEPAD_MASK_B3; // Square / West
-            case 2:  return GAMEPAD_MASK_B1; // Cross / South
-            case 3:  return GAMEPAD_MASK_B2; // Circle / East
-            case 4:  return GAMEPAD_MASK_B4; // Triangle / North
-            case 5:  return GAMEPAD_MASK_L1;
-            case 6:  return GAMEPAD_MASK_R1;
-            case 7:  return GAMEPAD_MASK_L2;
-            case 8:  return GAMEPAD_MASK_R2;
-            case 9:  return GAMEPAD_MASK_S1; // Share/Create
-            case 10: return GAMEPAD_MASK_S2; // Options
-            case 11: return GAMEPAD_MASK_L3;
-            case 12: return GAMEPAD_MASK_R3;
-            case 13: return GAMEPAD_MASK_A1; // PS
-            case 14: return GAMEPAD_MASK_A2; // Touchpad
-            default: return 0;
+        if (offset + dataSize > descriptorLength) {
+            break;
         }
-    }
 
-    // Generic HID canonical fallback. Unknown devices still work immediately;
-    // a known profile can override this when its physical layout is identified.
-    switch (usage) {
-        case 1:  return GAMEPAD_MASK_B1;
-        case 2:  return GAMEPAD_MASK_B2;
-        case 3:  return GAMEPAD_MASK_B3;
-        case 4:  return GAMEPAD_MASK_B4;
-        case 5:  return GAMEPAD_MASK_L1;
-        case 6:  return GAMEPAD_MASK_R1;
-        case 7:  return GAMEPAD_MASK_L2;
-        case 8:  return GAMEPAD_MASK_R2;
-        case 9:  return GAMEPAD_MASK_S1;
-        case 10: return GAMEPAD_MASK_S2;
-        case 11: return GAMEPAD_MASK_L3;
-        case 12: return GAMEPAD_MASK_R3;
-        case 13: return GAMEPAD_MASK_A1;
-        case 14: return GAMEPAD_MASK_A2;
-        default: return 0;
+        uint32_t value = 0;
+
+        for (uint8_t i = 0; i < dataSize; i++) {
+            value |=
+                static_cast<uint32_t>(descriptor[offset + i]) <<
+                (8 * i);
+        }
+
+        offset = static_cast<uint16_t>(offset + dataSize);
+
+        const uint8_t type = (prefix >> 2) & 0x03;
+        const uint8_t tag = (prefix >> 4) & 0x0F;
+
+        // Global Usage Page.
+        if (type == 1 && tag == 0) {
+            usagePage = value;
+            continue;
+        }
+
+        // Local Usage.
+        if (type == 2 && tag == 0) {
+            localUsage = value;
+            continue;
+        }
+
+        if (type != 0) {
+            continue;
+        }
+
+        // Collection (Application).
+        if (
+            tag == 0x0A &&
+            value == 0x01 &&
+            usagePage == USAGE_PAGE_GENERIC_DESKTOP
+        ) {
+            switch (localUsage) {
+                case USAGE_DESKTOP_GAMEPAD:
+                case USAGE_DESKTOP_JOYSTICK:
+                    cache.hasGamepadApplication = true;
+                    break;
+
+                case USAGE_DESKTOP_KEYBOARD:
+                    cache.hasKeyboardApplication = true;
+                    break;
+
+                case USAGE_DESKTOP_MOUSE:
+                    cache.hasMouseApplication = true;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        // HID local items are scoped to the next Main item.
+        localUsage = 0;
     }
 }
 
-static uint8_t hatToDpad(
-    int32_t value,
-    int32_t logicalMin,
-    int32_t logicalMax
+static uint16_t reportIdForDescriptor(
+    const uint8_t* descriptor,
+    uint16_t descriptorLength,
+    const uint8_t* report,
+    uint16_t reportLength
 ) {
-    int32_t index = -1;
-
     if (
-        logicalMin == 0 &&
-        logicalMax >= 7 &&
-        value >= 0 &&
-        value <= 7
+        descriptor == nullptr ||
+        report == nullptr ||
+        reportLength == 0
     ) {
-        index = value;
-    } else if (
-        logicalMin == 1 &&
-        logicalMax >= 8 &&
-        value >= 1 &&
-        value <= 8
-    ) {
-        index = value - 1;
+        return HID_REPORT_ID_UNDEFINED;
     }
 
-    switch (index) {
-        case 0: return GAMEPAD_MASK_UP;
-        case 1: return GAMEPAD_MASK_UP | GAMEPAD_MASK_RIGHT;
-        case 2: return GAMEPAD_MASK_RIGHT;
-        case 3: return GAMEPAD_MASK_DOWN | GAMEPAD_MASK_RIGHT;
-        case 4: return GAMEPAD_MASK_DOWN;
-        case 5: return GAMEPAD_MASK_DOWN | GAMEPAD_MASK_LEFT;
-        case 6: return GAMEPAD_MASK_LEFT;
-        case 7: return GAMEPAD_MASK_UP | GAMEPAD_MASK_LEFT;
-        default: return 0;
-    }
-}
-
-static void ensureBluetoothSlotConnected(
-    UniversalTransport transport,
-    BluetoothGamepadProfile profile
-) {
-    // Slot 0 is allowed to refine its Bluetooth profile after connection.
-    // This matters for devices whose family cannot be known until the HID
-    // descriptor or first input report is available. Reclassifying Slot 0
-    // is intentionally isolated from USB Slots 1..3.
-    if (
-        bluetoothSlotConnected &&
-        activeBluetoothProfile == profile
-    ) {
-        return;
-    }
-
-    const bool profileChanged =
-        bluetoothSlotConnected &&
-        activeBluetoothProfile != profile;
-
-    UniversalDeviceMatch match {};
-    match.recognized = true;
-    match.transport = transport;
-    match.deviceClass = UniversalDeviceClass::GAMEPAD;
-    match.protocol = UniversalProtocol::HID_GAMEPAD;
-    match.driverFamily = UniversalDriverFamily::HID;
-    match.profile = UniversalDeviceProfileId::GENERIC_HID_GAMEPAD;
-    match.capabilities = UNIVERSAL_CAP_WIRELESS_PAIRING;
-
-    switch (profile) {
-        case BluetoothGamepadProfile::XBOX_BLE:
-            match.capabilities |=
-                UNIVERSAL_CAP_RUMBLE |
-                UNIVERSAL_CAP_TRIGGER_RUMBLE;
-            break;
-
-        case BluetoothGamepadProfile::SONY_DS4_CLASSIC:
-        case BluetoothGamepadProfile::SONY_DUALSENSE_CLASSIC:
-        case BluetoothGamepadProfile::NINTENDO_SWITCH_CLASSIC:
-            match.capabilities |= UNIVERSAL_CAP_RUMBLE;
-            break;
-
-        case BluetoothGamepadProfile::GENERIC_HID:
-        default:
-            break;
-    }
-
-    activeBluetoothProfile = profile;
-
-    if (profileChanged) {
-        // If feedback was already consumed while the device was still
-        // classified as Generic HID, force the latest Slot 0 feedback state
-        // to be reconsidered by the newly selected family adapter.
-        lastBluetoothFeedbackGeneration = 0;
-    }
-
-    if (
-        UINPUT.connectClassified(
-            UNIVERSAL_INPUT_SLOT_BLUETOOTH,
-            UniversalInputSource::BLUETOOTH_GAMEPAD,
-            match,
-            0,
-            0
-        )
-    ) {
-        bluetoothSlotConnected = true;
-    }
+    return btstack_hid_report_id_declared(
+        descriptor,
+        descriptorLength
+    )
+        ? report[0]
+        : HID_REPORT_ID_UNDEFINED;
 }
 
 static void populateHidCache(
@@ -947,6 +870,12 @@ static void populateHidCache(
         return;
     }
 
+    classifyTopLevelApplications(
+        cache,
+        descriptor,
+        descriptorLength
+    );
+
     btstack_hid_usage_iterator_t iterator {};
     btstack_hid_usage_iterator_init(
         &iterator,
@@ -957,6 +886,7 @@ static void populateHidCache(
 
     bool hasAxis = false;
     bool hasButtons = false;
+    bool hasKeyboardFields = false;
     bool hasAccelerator = false;
     bool hasBrake = false;
     bool hasXboxButton1 = false;
@@ -971,10 +901,7 @@ static void populateHidCache(
     bool hasXboxButton14 = false;
     bool hasXboxButton15 = false;
 
-    while (
-        btstack_hid_usage_iterator_has_more(&iterator) &&
-        cache.fieldCount < MAX_FIELD_RANGES
-    ) {
+    while (btstack_hid_usage_iterator_has_more(&iterator)) {
         const int32_t logicalMin =
             iterator.global_logical_minimum;
         const int32_t logicalMax =
@@ -990,19 +917,41 @@ static void populateHidCache(
             continue;
         }
 
-        HidFieldRange& field =
-            cache.fields[cache.fieldCount++];
+        if (cache.fieldCount < MAX_FIELD_RANGES) {
+            HidFieldRange& field =
+                cache.fields[cache.fieldCount++];
 
-        field.reportId = item.report_id;
-        field.usagePage = item.usage_page;
-        field.usage = item.usage;
-        field.logicalMin = logicalMin;
-        field.logicalMax = logicalMax;
+            field.reportId = item.report_id;
+            field.usagePage = item.usage_page;
+            field.usage = item.usage;
+            field.logicalMin = logicalMin;
+            field.logicalMax = logicalMax;
+        }
 
-        if (field.usagePage == USAGE_PAGE_BUTTON) {
+        HidReportMeta* meta =
+            ensureReportMeta(cache, item.report_id);
+
+        if (item.usage_page == USAGE_PAGE_KEYBOARD) {
+            hasKeyboardFields = true;
+            if (meta != nullptr) {
+                meta->classFlags |= HID_REPORT_CLASS_KEYBOARD;
+            }
+        }
+
+        if (item.usage_page == USAGE_PAGE_CONSUMER) {
+            if (meta != nullptr) {
+                meta->classFlags |= HID_REPORT_CLASS_CONSUMER;
+            }
+        }
+
+        if (item.usage_page == USAGE_PAGE_BUTTON) {
             hasButtons = true;
 
-            switch (field.usage) {
+            if (meta != nullptr) {
+                meta->classFlags |= HID_REPORT_CLASS_BUTTONS;
+            }
+
+            switch (item.usage) {
                 case 1:  hasXboxButton1 = true; break;
                 case 2:  hasXboxButton2 = true; break;
                 case 4:  hasXboxButton4 = true; break;
@@ -1018,41 +967,74 @@ static void populateHidCache(
             }
         }
 
-        if (field.usagePage == USAGE_PAGE_SIMULATION) {
-            if (field.usage == USAGE_SIM_ACCELERATOR) {
+        if (item.usage_page == USAGE_PAGE_SIMULATION) {
+            if (item.usage == USAGE_SIM_ACCELERATOR) {
                 hasAccelerator = true;
-            } else if (field.usage == USAGE_SIM_BRAKE) {
+            } else if (item.usage == USAGE_SIM_BRAKE) {
                 hasBrake = true;
             }
         }
 
         if (
-            field.usagePage == USAGE_PAGE_GENERIC_DESKTOP &&
+            item.usage_page == USAGE_PAGE_GENERIC_DESKTOP &&
             (
-                field.usage == USAGE_X ||
-                field.usage == USAGE_Y ||
-                field.usage == USAGE_Z ||
-                field.usage == USAGE_RX ||
-                field.usage == USAGE_RY ||
-                field.usage == USAGE_RZ ||
-                field.usage == USAGE_HAT ||
-                field.usage == USAGE_DPAD_UP ||
-                field.usage == USAGE_DPAD_DOWN ||
-                field.usage == USAGE_DPAD_RIGHT ||
-                field.usage == USAGE_DPAD_LEFT
+                item.usage == USAGE_X ||
+                item.usage == USAGE_Y ||
+                item.usage == USAGE_Z ||
+                item.usage == USAGE_RX ||
+                item.usage == USAGE_RY ||
+                item.usage == USAGE_RZ ||
+                item.usage == USAGE_WHEEL ||
+                item.usage == USAGE_HAT ||
+                item.usage == USAGE_DPAD_UP ||
+                item.usage == USAGE_DPAD_DOWN ||
+                item.usage == USAGE_DPAD_RIGHT ||
+                item.usage == USAGE_DPAD_LEFT
             )
         ) {
             hasAxis = true;
+
+            if (
+                meta != nullptr &&
+                (
+                    item.usage == USAGE_X ||
+                    item.usage == USAGE_Y ||
+                    item.usage == USAGE_WHEEL
+                )
+            ) {
+                meta->classFlags |= HID_REPORT_CLASS_POINTER;
+            }
         }
     }
 
-    cache.looksLikeGamepad = hasAxis && hasButtons;
+    // Top-level Application usages are the primary discriminator. This avoids
+    // treating a mouse (X/Y + buttons) as a gamepad.
+    cache.looksLikeKeyboard =
+        cache.hasKeyboardApplication ||
+        hasKeyboardFields;
 
-    // Xbox Bluetooth HID uses sparse button usages plus the Simulation
-    // Accelerator/Brake fields for its analog triggers. Keep this
-    // descriptor-driven so other generic HID controllers retain the
-    // generic sequential mapping.
+    cache.looksLikeMouse =
+        cache.hasMouseApplication;
+
+    cache.looksLikeGamepad =
+        cache.hasGamepadApplication &&
+        hasAxis &&
+        hasButtons;
+
+    // Legacy fallback for unusual gamepad descriptors that omit a recognizable
+    // Game Pad/Joystick application usage. Never steal known keyboard/mouse HID.
+    if (
+        !cache.looksLikeGamepad &&
+        !cache.looksLikeKeyboard &&
+        !cache.looksLikeMouse &&
+        hasAxis &&
+        hasButtons
+    ) {
+        cache.looksLikeGamepad = true;
+    }
+
     cache.xboxBleButtonLayout =
+        cache.looksLikeGamepad &&
         hasAccelerator &&
         hasBrake &&
         hasXboxButton1 &&
@@ -1434,6 +1416,518 @@ static void handleGenericHidGamepadReport(
 
 
 
+static KeyboardReportContribution*
+findOrCreateKeyboardContribution(
+    HidServiceCache& cache,
+    uint16_t reportId
+) {
+    for (uint8_t i = 0; i < MAX_HID_REPORT_CONTRIBUTIONS; i++) {
+        KeyboardReportContribution& item =
+            cache.keyboardReports[i];
+
+        if (item.used && item.reportId == reportId) {
+            return &item;
+        }
+    }
+
+    for (uint8_t i = 0; i < MAX_HID_REPORT_CONTRIBUTIONS; i++) {
+        KeyboardReportContribution& item =
+            cache.keyboardReports[i];
+
+        if (!item.used) {
+            item = KeyboardReportContribution {};
+            item.used = true;
+            item.reportId = reportId;
+            return &item;
+        }
+    }
+
+    return nullptr;
+}
+
+static MouseReportContribution*
+findOrCreateMouseContribution(
+    HidServiceCache& cache,
+    uint16_t reportId
+) {
+    for (uint8_t i = 0; i < MAX_HID_REPORT_CONTRIBUTIONS; i++) {
+        MouseReportContribution& item =
+            cache.mouseReports[i];
+
+        if (item.used && item.reportId == reportId) {
+            return &item;
+        }
+    }
+
+    for (uint8_t i = 0; i < MAX_HID_REPORT_CONTRIBUTIONS; i++) {
+        MouseReportContribution& item =
+            cache.mouseReports[i];
+
+        if (!item.used) {
+            item = MouseReportContribution {};
+            item.used = true;
+            item.reportId = reportId;
+            return &item;
+        }
+    }
+
+    return nullptr;
+}
+
+static void appendConsumerUsage(
+    UniversalKeyboardState& state,
+    uint16_t usage
+) {
+    if (usage == 0) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < state.consumerUsageCount; i++) {
+        if (state.consumerUsages[i] == usage) {
+            return;
+        }
+    }
+
+    if (
+        state.consumerUsageCount >=
+        UNIVERSAL_KEYBOARD_MAX_CONSUMER_USAGES
+    ) {
+        return;
+    }
+
+    state.consumerUsages[state.consumerUsageCount++] = usage;
+}
+
+static void mergeKeyboardCache(
+    UniversalKeyboardState& out,
+    HidServiceCache const& cache
+) {
+    for (uint8_t i = 0; i < MAX_HID_REPORT_CONTRIBUTIONS; i++) {
+        KeyboardReportContribution const& contribution =
+            cache.keyboardReports[i];
+
+        if (!contribution.used) {
+            continue;
+        }
+
+        for (
+            uint8_t word = 0;
+            word < UNIVERSAL_KEYBOARD_USAGE_BITMAP_WORDS;
+            word++
+        ) {
+            out.keys[word] |= contribution.state.keys[word];
+        }
+
+        out.modifiers |= contribution.state.modifiers;
+
+        for (
+            uint8_t c = 0;
+            c < contribution.state.consumerUsageCount;
+            c++
+        ) {
+            appendConsumerUsage(
+                out,
+                contribution.state.consumerUsages[c]
+            );
+        }
+    }
+}
+
+static uint32_t mergeMouseButtons(
+    HidServiceCache const& cache
+) {
+    uint32_t buttons = 0;
+
+    for (uint8_t i = 0; i < MAX_HID_REPORT_CONTRIBUTIONS; i++) {
+        if (cache.mouseReports[i].used) {
+            buttons |= cache.mouseReports[i].buttons;
+        }
+    }
+
+    return buttons;
+}
+
+static UniversalHumanInterfaceSource
+humanInterfaceSourceForTransport(
+    UniversalTransport transport
+) {
+    return transport == UniversalTransport::BLUETOOTH_LE
+        ? UniversalHumanInterfaceSource::BLUETOOTH_LE_HID
+        : UniversalHumanInterfaceSource::BLUETOOTH_CLASSIC_HID;
+}
+
+static void publishBluetoothKeyboardAggregate(
+    UniversalTransport transport
+) {
+    UniversalKeyboardState aggregate {};
+
+    if (transport == UniversalTransport::BLUETOOTH_LE) {
+        for (uint8_t i = 0; i < hidsServiceCount; i++) {
+            mergeKeyboardCache(
+                aggregate,
+                serviceCaches[i]
+            );
+        }
+    } else {
+        mergeKeyboardCache(
+            aggregate,
+            classicCache
+        );
+    }
+
+    UHIDINPUT.connectKeyboard(
+        UNIVERSAL_HID_SLOT_BLUETOOTH,
+        humanInterfaceSourceForTransport(transport),
+        transport,
+        UniversalProtocol::HID_KEYBOARD,
+        0,
+        0,
+        0,
+        0
+    );
+
+    UHIDINPUT.publishKeyboard(
+        UNIVERSAL_HID_SLOT_BLUETOOTH,
+        aggregate
+    );
+}
+
+static uint32_t aggregateBluetoothMouseButtons(
+    UniversalTransport transport
+) {
+    uint32_t buttons = 0;
+
+    if (transport == UniversalTransport::BLUETOOTH_LE) {
+        for (uint8_t i = 0; i < hidsServiceCount; i++) {
+            buttons |= mergeMouseButtons(
+                serviceCaches[i]
+            );
+        }
+    } else {
+        buttons = mergeMouseButtons(
+            classicCache
+        );
+    }
+
+    return buttons;
+}
+
+static void handleGenericHidKeyboardReport(
+    HidServiceCache& cache,
+    uint8_t const* descriptor,
+    uint16_t descriptorLength,
+    uint8_t const* report,
+    uint16_t reportLength,
+    UniversalTransport transport
+) {
+    if (
+        !cache.looksLikeKeyboard ||
+        descriptor == nullptr ||
+        descriptorLength == 0 ||
+        report == nullptr ||
+        reportLength == 0
+    ) {
+        return;
+    }
+
+    const uint16_t reportId =
+        reportIdForDescriptor(
+            descriptor,
+            descriptorLength,
+            report,
+            reportLength
+        );
+
+    const HidReportMeta* meta =
+        findReportMeta(cache, reportId);
+
+    const bool ownsKeyboardPage =
+        meta != nullptr &&
+        (meta->classFlags & HID_REPORT_CLASS_KEYBOARD) != 0;
+
+    const bool ownsConsumerPage =
+        meta != nullptr &&
+        (meta->classFlags & HID_REPORT_CLASS_CONSUMER) != 0;
+
+    if (!ownsKeyboardPage && !ownsConsumerPage) {
+        return;
+    }
+
+    KeyboardReportContribution* contribution =
+        findOrCreateKeyboardContribution(
+            cache,
+            reportId
+        );
+
+    if (contribution == nullptr) {
+        return;
+    }
+
+    if (ownsKeyboardPage) {
+        for (
+            uint8_t word = 0;
+            word < UNIVERSAL_KEYBOARD_USAGE_BITMAP_WORDS;
+            word++
+        ) {
+            contribution->state.keys[word] = 0;
+        }
+
+        contribution->state.modifiers = 0;
+    }
+
+    if (ownsConsumerPage) {
+        contribution->state.consumerUsageCount = 0;
+        std::memset(
+            contribution->state.consumerUsages,
+            0,
+            sizeof(contribution->state.consumerUsages)
+        );
+    }
+
+    btstack_hid_parser_t parser {};
+    btstack_hid_parser_init(
+        &parser,
+        descriptor,
+        descriptorLength,
+        BT_HID_REPORT_TYPE_INPUT,
+        report,
+        reportLength
+    );
+
+    while (btstack_hid_parser_has_more(&parser)) {
+        uint16_t usagePage = 0;
+        uint16_t usage = 0;
+        int32_t value = 0;
+
+        btstack_hid_parser_get_field(
+            &parser,
+            &usagePage,
+            &usage,
+            &value
+        );
+
+        if (
+            usagePage == USAGE_PAGE_KEYBOARD &&
+            value != 0
+        ) {
+            if (usage >= 0xE0 && usage <= 0xE7) {
+                contribution->state.modifiers |=
+                    static_cast<uint8_t>(
+                        1u << (usage - 0xE0)
+                    );
+            } else if (usage <= 0xFF) {
+                contribution->state.setKeyDown(
+                    static_cast<uint8_t>(usage),
+                    true
+                );
+            }
+
+            continue;
+        }
+
+        if (
+            usagePage == USAGE_PAGE_CONSUMER &&
+            value != 0
+        ) {
+            appendConsumerUsage(
+                contribution->state,
+                usage
+            );
+        }
+    }
+
+    publishBluetoothKeyboardAggregate(transport);
+}
+
+static void handleGenericHidMouseReport(
+    HidServiceCache& cache,
+    uint8_t const* descriptor,
+    uint16_t descriptorLength,
+    uint8_t const* report,
+    uint16_t reportLength,
+    UniversalTransport transport
+) {
+    if (
+        !cache.looksLikeMouse ||
+        descriptor == nullptr ||
+        descriptorLength == 0 ||
+        report == nullptr ||
+        reportLength == 0
+    ) {
+        return;
+    }
+
+    const uint16_t reportId =
+        reportIdForDescriptor(
+            descriptor,
+            descriptorLength,
+            report,
+            reportLength
+        );
+
+    MouseReportContribution* contribution =
+        findOrCreateMouseContribution(
+            cache,
+            reportId
+        );
+
+    if (contribution == nullptr) {
+        return;
+    }
+
+    const HidReportMeta* meta =
+        findReportMeta(cache, reportId);
+
+    if (
+        meta != nullptr &&
+        (meta->classFlags & HID_REPORT_CLASS_BUTTONS) != 0
+    ) {
+        contribution->buttons = 0;
+    }
+
+    UniversalMouseState next {};
+
+    btstack_hid_parser_t parser {};
+    btstack_hid_parser_init(
+        &parser,
+        descriptor,
+        descriptorLength,
+        BT_HID_REPORT_TYPE_INPUT,
+        report,
+        reportLength
+    );
+
+    bool sawMouseField = false;
+
+    while (btstack_hid_parser_has_more(&parser)) {
+        uint16_t usagePage = 0;
+        uint16_t usage = 0;
+        int32_t value = 0;
+
+        btstack_hid_parser_get_field(
+            &parser,
+            &usagePage,
+            &usage,
+            &value
+        );
+
+        if (
+            usagePage == USAGE_PAGE_BUTTON &&
+            usage >= 1 &&
+            usage <= 32
+        ) {
+            const uint32_t mask =
+                1u << (usage - 1);
+
+            if (value != 0) {
+                contribution->buttons |= mask;
+            } else {
+                contribution->buttons &= ~mask;
+            }
+
+            sawMouseField = true;
+            continue;
+        }
+
+        if (usagePage == USAGE_PAGE_GENERIC_DESKTOP) {
+            switch (usage) {
+                case USAGE_X:
+                    next.x = value;
+                    sawMouseField = true;
+                    break;
+
+                case USAGE_Y:
+                    next.y = value;
+                    sawMouseField = true;
+                    break;
+
+                case USAGE_WHEEL:
+                    next.wheel = value;
+                    sawMouseField = true;
+                    break;
+
+                default:
+                    break;
+            }
+
+            continue;
+        }
+
+        if (
+            usagePage == USAGE_PAGE_CONSUMER &&
+            usage == USAGE_CONSUMER_AC_PAN
+        ) {
+            next.horizontalWheel = value;
+            sawMouseField = true;
+        }
+    }
+
+    if (!sawMouseField) {
+        return;
+    }
+
+    next.buttons =
+        aggregateBluetoothMouseButtons(transport);
+
+    UHIDINPUT.connectMouse(
+        UNIVERSAL_HID_SLOT_BLUETOOTH,
+        humanInterfaceSourceForTransport(transport),
+        transport,
+        UniversalProtocol::HID_MOUSE,
+        0,
+        0,
+        0,
+        0
+    );
+
+    UHIDINPUT.publishMouse(
+        UNIVERSAL_HID_SLOT_BLUETOOTH,
+        next
+    );
+}
+
+static void routeBluetoothHidReport(
+    HidServiceCache& cache,
+    uint8_t const* descriptor,
+    uint16_t descriptorLength,
+    uint8_t const* report,
+    uint16_t reportLength,
+    UniversalTransport transport
+) {
+    if (cache.looksLikeGamepad) {
+        handleGenericHidGamepadReport(
+            cache,
+            descriptor,
+            descriptorLength,
+            report,
+            reportLength,
+            transport
+        );
+    }
+
+    if (cache.looksLikeKeyboard) {
+        handleGenericHidKeyboardReport(
+            cache,
+            descriptor,
+            descriptorLength,
+            report,
+            reportLength,
+            transport
+        );
+    }
+
+    if (cache.looksLikeMouse) {
+        handleGenericHidMouseReport(
+            cache,
+            descriptor,
+            descriptorLength,
+            report,
+            reportLength,
+            transport
+        );
+    }
+}
+
 static uint8_t scaleMotor255To100(uint8_t value) {
     return static_cast<uint8_t>(
         (static_cast<uint16_t>(value) * 100U) / 255U
@@ -1808,7 +2302,7 @@ static void handleBleHidReport(
             serviceIndex
         );
 
-    handleGenericHidGamepadReport(
+    routeBluetoothHidReport(
         *cache,
         descriptor,
         descriptorLength,
@@ -1904,7 +2398,7 @@ static void handleClassicHidReport(
             classicHidCid
         );
 
-    handleGenericHidGamepadReport(
+    routeBluetoothHidReport(
         classicCache,
         descriptor,
         descriptorLength,
@@ -1992,6 +2486,7 @@ static void handleGattClientEvent(
 
         case GATTSERVICE_SUBEVENT_HID_SERVICE_DISCONNECTED:
             resetBluetoothGamepadState();
+            resetBluetoothHumanInterfaceState();
             resetServiceCaches();
             hidsCid = 0;
             hidsServiceCount = 0;
@@ -2258,6 +2753,7 @@ static void btPacketHandler(
             hidsServiceCount = 0;
 
             resetBluetoothGamepadState();
+            resetBluetoothHumanInterfaceState();
             resetServiceCaches();
 
             // Continuous discovery: after any BLE disconnect, return to the
@@ -2384,7 +2880,11 @@ static void btPacketHandler(
                         classicCache.profile = detectedProfile;
                     }
 
-                    if (!classicCache.looksLikeGamepad) {
+                    if (
+                        !classicCache.looksLikeGamepad &&
+                        !classicCache.looksLikeKeyboard &&
+                        !classicCache.looksLikeMouse
+                    ) {
                         hid_host_disconnect(
                             classicHidCid
                         );
@@ -2415,6 +2915,7 @@ static void btPacketHandler(
                     classicDescriptorAvailable = false;
                     classicCache = HidServiceCache {};
                     resetBluetoothGamepadState();
+                    resetBluetoothHumanInterfaceState();
 
                     if (
                         connectionHandle ==
@@ -2482,6 +2983,7 @@ void UniversalBluetoothHostAddon::preprocess() {
         initNotBeforeUs = 0;
 
         resetBluetoothGamepadState();
+        resetBluetoothHumanInterfaceState();
         resetServiceCaches();
 
         l2cap_init();
