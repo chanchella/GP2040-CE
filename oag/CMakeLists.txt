@@ -11,6 +11,7 @@ add_library(oag_core STATIC
     src/mapping/pass_through_mapping.cpp
     src/output/xinput/xinput_report_encoder.cpp
     src/output/xinput/xinput_feedback_decoder.cpp
+    src/mapping/mouse_to_stick_mapper.cpp
 )
 
 target_include_directories(oag_core
@@ -38,4 +39,13 @@ if(OAG_BUILD_HOST_TESTS)
     target_compile_features(oag_core_tests PRIVATE cxx_std_17)
 
     add_test(NAME oag_core_tests COMMAND oag_core_tests)
+
+    add_executable(oag_mouse_mapping_tests
+        tests/host/test_mouse_mapping.cpp
+    )
+
+    target_link_libraries(oag_mouse_mapping_tests PRIVATE oag_core)
+    target_compile_features(oag_mouse_mapping_tests PRIVATE cxx_std_17)
+
+    add_test(NAME oag_mouse_mapping_tests COMMAND oag_mouse_mapping_tests)
 endif()
