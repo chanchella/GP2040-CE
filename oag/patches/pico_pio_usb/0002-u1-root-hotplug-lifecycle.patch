@@ -1,0 +1,38 @@
+--- a/src/pio_usb_host.c
++++ b/src/pio_usb_host.c
+@@
+-      // device disconnect
+-      port->connected = false;
+-      port->suspended = true;
+-      port->ints |= PIO_USB_INTS_DISCONNECT_BITS;
+-
+-      // failed/retired all queuing transfer in this root
+       uint8_t root_idx = port - PIO_USB_ROOT_PORT(0);
+       for (int ep_idx = 0; ep_idx < PIO_USB_EP_POOL_CNT; ep_idx++) {
+         endpoint_t *ep = PIO_USB_ENDPOINT(ep_idx);
+-        if ((ep->root_idx == root_idx) && ep->size && ep->has_transfer) {
+-          pio_usb_ll_transfer_complete(ep, PIO_USB_INTS_ENDPOINT_ERROR_BITS);
++        if ((ep->root_idx == root_idx) && ep->size) {
++          memset(ep, 0, sizeof(*ep));
+         }
+       }
++      port->connected = false;
++      port->suspended = true;
++      port->addr0_exists = false;
++      port->root_device = NULL;
++      port->ep_complete = 0;
++      port->ep_error = 0;
++      port->ep_stalled = 0;
++      port->ints = PIO_USB_INTS_DISCONNECT_BITS;
+@@
+-        root->is_fullspeed = (line_state == PORT_PIN_FS_IDLE);
++        root->is_fullspeed = (line_state == PORT_PIN_FS_IDLE);
++        root->addr0_exists = false;
++        root->root_device = NULL;
++        root->ep_complete = 0;
++        root->ep_error = 0;
++        root->ep_stalled = 0;
+         root->connected = true;
+         root->suspended = true;
+-        root->ints |= PIO_USB_INTS_CONNECT_BITS;
++        root->ints = PIO_USB_INTS_CONNECT_BITS;
