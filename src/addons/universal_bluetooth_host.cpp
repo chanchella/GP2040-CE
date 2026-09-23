@@ -8,6 +8,7 @@
 #include "btstack_run_loop_embedded.h"
 #include "btstack_tlv.h"
 #include "pico/cyw43_arch.h"
+#include "pico/time.h"
 
 #include "device/oag_identity.h"
 #include "input/universal_input_manager.h"
@@ -106,6 +107,45 @@ static HidServiceCache serviceCaches[MAX_HID_SERVICES] {};
 static GamepadState bluetoothGamepadState {};
 static bool bluetoothGamepadStateValid = false;
 static bool bluetoothSlotConnected = false;
+
+static uint64_t diagnosticLastToggleUs = 0;
+static bool diagnosticLedState = false;
+
+static void serviceBluetoothDiagnosticLed() {
+    uint64_t now = time_us_64();
+    uint64_t intervalUs = 0;
+
+    switch (bleState) {
+        case BleHostState::SCANNING:
+            intervalUs = 500000;
+            break;
+
+        case BleHostState::CONNECTING:
+        case BleHostState::PAIRING:
+        case BleHostState::HIDS_CONNECTING:
+            intervalUs = 120000;
+            break;
+
+        case BleHostState::READY:
+            diagnosticLedState = true;
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+            return;
+
+        default:
+            diagnosticLedState = false;
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+            return;
+    }
+
+    if (now - diagnosticLastToggleUs >= intervalUs) {
+        diagnosticLastToggleUs = now;
+        diagnosticLedState = !diagnosticLedState;
+        cyw43_arch_gpio_put(
+            CYW43_WL_GPIO_LED_PIN,
+            diagnosticLedState ? 1 : 0
+        );
+    }
+}
 
 static const btstack_tlv_t* tlvImpl = nullptr;
 static void* tlvContext = nullptr;
@@ -1783,5 +1823,6 @@ void UniversalBluetoothHostAddon::preprocess() {
     }
 
     btstack_run_loop_embedded_execute_once();
+    serviceBluetoothDiagnosticLed();
 #endif
 }
