@@ -9,7 +9,9 @@ UniversalDeviceMatch makeMatch(
     UniversalProtocol protocol,
     UniversalDriverFamily driverFamily,
     UniversalDeviceProfileId profile,
-    uint32_t quirks = UNIVERSAL_QUIRK_NONE
+    uint32_t quirks = UNIVERSAL_QUIRK_NONE,
+    uint32_t capabilities = UNIVERSAL_CAP_NONE,
+    uint32_t verifiedCapabilities = UNIVERSAL_CAP_NONE
 ) {
     UniversalDeviceMatch match {};
     match.recognized = true;
@@ -19,6 +21,8 @@ UniversalDeviceMatch makeMatch(
     match.driverFamily = driverFamily;
     match.profile = profile;
     match.quirks = quirks;
+    match.capabilities = capabilities;
+    match.verifiedCapabilities = verifiedCapabilities;
     match.vid = probe.vid;
     match.pid = probe.pid;
     return match;
@@ -66,7 +70,9 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
             UniversalDriverFamily::XINPUT,
             UniversalDeviceProfileId::XUSB_045E_028E_COMPAT,
             UNIVERSAL_QUIRK_XUSB_STATUS_BYTE_VARIANT |
-            UNIVERSAL_QUIRK_XUSB_STARTUP_OUT
+            UNIVERSAL_QUIRK_XUSB_STARTUP_OUT,
+            UNIVERSAL_CAP_RUMBLE,
+            UNIVERSAL_CAP_RUMBLE
         );
     }
 
@@ -79,7 +85,10 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
             UniversalDeviceClass::GAMEPAD,
             UniversalProtocol::HID_GAMEPAD,
             UniversalDriverFamily::HID,
-            UniversalDeviceProfileId::REDRAGON_G808_2563_0575
+            UniversalDeviceProfileId::REDRAGON_G808_2563_0575,
+            UNIVERSAL_QUIRK_NONE,
+            UNIVERSAL_CAP_RUMBLE,
+            UNIVERSAL_CAP_RUMBLE
         );
     }
 
@@ -92,7 +101,9 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
             UniversalDeviceClass::GAMEPAD,
             UniversalProtocol::XGIP_XBOX_ONE,
             UniversalDriverFamily::XGIP,
-            UniversalDeviceProfileId::XBOX_ONE_SPECTRA_24C6_542A
+            UniversalDeviceProfileId::XBOX_ONE_SPECTRA_24C6_542A,
+            UNIVERSAL_QUIRK_NONE,
+            UNIVERSAL_CAP_RUMBLE | UNIVERSAL_CAP_TRIGGER_RUMBLE
         );
     }
 
@@ -130,7 +141,10 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
             UniversalDeviceClass::GAMEPAD,
             UniversalProtocol::HID_GAMEPAD,
             UniversalDriverFamily::HID,
-            UniversalDeviceProfileId::GIGAMAX_0079_0006
+            UniversalDeviceProfileId::GIGAMAX_0079_0006,
+            UNIVERSAL_QUIRK_NONE,
+            UNIVERSAL_CAP_RUMBLE,
+            UNIVERSAL_CAP_RUMBLE
         );
     }
 
@@ -142,7 +156,10 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyKnownUsb(
             UniversalDeviceClass::GAMEPAD,
             UniversalProtocol::XGIP_XBOX_ONE,
             UniversalDriverFamily::XGIP,
-            UniversalDeviceProfileId::XBOX_ONE_S_045E_02EA
+            UniversalDeviceProfileId::XBOX_ONE_S_045E_02EA,
+            UNIVERSAL_QUIRK_NONE,
+            UNIVERSAL_CAP_RUMBLE | UNIVERSAL_CAP_TRIGGER_RUMBLE,
+            UNIVERSAL_CAP_RUMBLE
         );
     }
 
@@ -222,7 +239,8 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyUsbSignature(
                 UniversalProtocol::XUSB_XBOX360,
                 UniversalDriverFamily::XINPUT,
                 UniversalDeviceProfileId::GENERIC_XUSB_GAMEPAD,
-                UNIVERSAL_QUIRK_XUSB_STARTUP_OUT
+                UNIVERSAL_QUIRK_XUSB_STARTUP_OUT,
+                UNIVERSAL_CAP_RUMBLE
             );
         }
 
@@ -264,7 +282,9 @@ UniversalDeviceMatch UniversalDeviceRegistry::classifyUsbSignature(
             UniversalDeviceClass::GAMEPAD,
             UniversalProtocol::XGIP_XBOX_ONE,
             UniversalDriverFamily::XGIP,
-            UniversalDeviceProfileId::GENERIC_XGIP
+            UniversalDeviceProfileId::GENERIC_XGIP,
+            UNIVERSAL_QUIRK_NONE,
+            UNIVERSAL_CAP_RUMBLE | UNIVERSAL_CAP_TRIGGER_RUMBLE
         );
     }
 

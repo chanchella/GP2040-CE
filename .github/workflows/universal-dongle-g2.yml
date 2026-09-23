@@ -147,6 +147,9 @@ jobs:
           grep -q 'serviceFeedback' src/addons/universal_xinput_host.cpp
           grep -q 'REDRAGON_G808_2563_0575' src/addons/universal_hid_gamepad_host.cpp
           grep -q 'GIGAMAX_0079_0006' src/addons/universal_hid_gamepad_host.cpp
+          grep -q 'UNIVERSAL_CAP_RUMBLE' headers/input/universal_device_registry.h
+          grep -q 'verifiedCapabilities' headers/input/universal_device_registry.h
+          grep -q 'UNIVERSAL_CAP_TRIGGER_RUMBLE' src/input/universal_device_registry.cpp
           echo "G2C1_UNIVERSAL_INPUT_BROWSER_OUTPUT_VERIFY=PASS"
 
       - name: Configure Pico2

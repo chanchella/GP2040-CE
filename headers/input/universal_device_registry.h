@@ -91,6 +91,26 @@ enum class UniversalDeviceProfileId : uint8_t {
     NINTENDO_SWITCH_PRO_057E_2009,
 };
 
+enum UniversalCapability : uint32_t {
+    UNIVERSAL_CAP_NONE = 0,
+
+    UNIVERSAL_CAP_RUMBLE = 1u << 0,
+    UNIVERSAL_CAP_TRIGGER_RUMBLE = 1u << 1,
+
+    // Audio capabilities are intentionally populated only after a concrete
+    // USB/XGIP/BT capability probe confirms that the active transport exposes
+    // the corresponding path.
+    UNIVERSAL_CAP_AUDIO_OUTPUT = 1u << 2,
+    UNIVERSAL_CAP_AUDIO_INPUT = 1u << 3,
+    UNIVERSAL_CAP_HEADSET_CONTROLS = 1u << 4,
+
+    UNIVERSAL_CAP_WIRELESS_PAIRING = 1u << 5,
+    UNIVERSAL_CAP_BATTERY_TELEMETRY = 1u << 6,
+    UNIVERSAL_CAP_LED_CONTROL = 1u << 7,
+    UNIVERSAL_CAP_MOTION = 1u << 8,
+    UNIVERSAL_CAP_TOUCHPAD = 1u << 9,
+};
+
 enum UniversalDeviceQuirk : uint32_t {
     UNIVERSAL_QUIRK_NONE = 0,
 
@@ -133,6 +153,12 @@ struct UniversalDeviceMatch {
 
     uint32_t quirks = UNIVERSAL_QUIRK_NONE;
 
+    // capabilities: statically known or runtime-probed capabilities.
+    // verifiedCapabilities: capabilities proven on real hardware for this
+    // exact profile/transport path.
+    uint32_t capabilities = UNIVERSAL_CAP_NONE;
+    uint32_t verifiedCapabilities = UNIVERSAL_CAP_NONE;
+
     uint16_t vid = 0;
     uint16_t pid = 0;
 };
@@ -151,6 +177,23 @@ public:
         UniversalDeviceQuirk quirk
     ) {
         return (match.quirks & static_cast<uint32_t>(quirk)) != 0;
+    }
+
+    static bool hasCapability(
+        UniversalDeviceMatch const& match,
+        UniversalCapability capability
+    ) {
+        return (match.capabilities & static_cast<uint32_t>(capability)) != 0;
+    }
+
+    static bool hasVerifiedCapability(
+        UniversalDeviceMatch const& match,
+        UniversalCapability capability
+    ) {
+        return (
+            match.verifiedCapabilities &
+            static_cast<uint32_t>(capability)
+        ) != 0;
     }
 
     static const char* protocolName(UniversalProtocol protocol);
