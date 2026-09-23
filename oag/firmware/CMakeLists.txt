@@ -15,7 +15,7 @@ set(PICO_PIO_USB_PATH "${OAG_REPO_ROOT}/lib/pico_pio_usb" CACHE PATH "Pinned Pic
 
 include("${OAG_REPO_ROOT}/pico_sdk_import.cmake")
 
-project(OAG_Abo_Gemi_Ultra_Gaming_U1 LANGUAGES C CXX ASM)
+project(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W LANGUAGES C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -25,7 +25,6 @@ pico_sdk_init()
 add_executable(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W
     src/main.cpp
     src/usb_pio_host.cpp
-    src/usb_pio_recovery.c
     src/xinput_host.cpp
     src/pc_hid_output.cpp
     src/usb_descriptors.cpp
@@ -69,6 +68,7 @@ pico_set_program_name(
     "OAG Abo Gemi Ultra Gaming"
 )
 pico_set_program_version(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W "U1")
+
 
 target_link_options(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W PRIVATE
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W.map"

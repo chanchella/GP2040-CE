@@ -5,7 +5,6 @@
 #include "pico/stdlib.h"
 #include "pico/time.h"
 #include "tusb.h"
-#include "host/usbh_pvt.h"
 
 #include "oag/device/device_registry.h"
 #include "oag/firmware/pc_hid_output.h"
@@ -27,14 +26,12 @@ public:
 
         // U1 has Bluetooth disabled. The product invariant remains:
         // PIO USB Host must be initialized before any future CYW43/BT start.
-        recoveryDeadlineUs_ = time_us_64() + kRecoveryArmDelayUs;
         return usbHost_.start();
     }
 
     void task() {
         tud_task();
         usbHost_.task();
-        serviceHostRecovery();
     }
 
     void onXusbMounted(
@@ -47,15 +44,6 @@ public:
         if (!tuh_vid_pid_get(devAddr, &vid, &pid)) {
             return;
         }
-
-        const std::uint8_t rhport = usbh_get_rhport(devAddr);
-        if (rhport >= 1 && rhport <= 3) {
-            mountedRootMask_ |= static_cast<std::uint8_t>(
-                1u << static_cast<std::uint8_t>(rhport - 1u)
-            );
-        }
-
-        recoveryArmed_ = false;
 
         const oag::UsbTransportHandle handle {
             devAddr,
@@ -88,13 +76,6 @@ public:
         std::uint8_t devAddr,
         std::uint8_t instance
     ) {
-        const std::uint8_t rhport = usbh_get_rhport(devAddr);
-        if (rhport >= 1 && rhport <= 3) {
-            mountedRootMask_ &= static_cast<std::uint8_t>(
-                ~(1u << static_cast<std::uint8_t>(rhport - 1u))
-            );
-        }
-
         const oag::UsbTransportHandle handle {
             devAddr,
             instance,
@@ -114,9 +95,6 @@ public:
 
         slots_.release(*id);
         registry_.disconnect(*id);
-
-        recoveryArmed_ = false;
-        recoveryDeadlineUs_ = time_us_64() + kRecoveryArmDelayUs;
 
         if (slot && primaryBefore && *slot == *primaryBefore) {
             sendPrimaryPcOutput();
@@ -163,6 +141,9 @@ public:
             return;
         }
 
+        // U1-HW1 exposes one PC HID gamepad while retaining four independent
+        // internal slots. The primary output is deterministic: the lowest
+        // currently bound slot, never whichever controller was active last.
         const auto primary = primaryPcSlot();
         if (primary && *slot == *primary) {
             pcOutput_.send(mapping_.process(states_[*slot]));
@@ -170,40 +151,6 @@ public:
     }
 
 private:
-    static constexpr std::uint64_t kRecoveryArmDelayUs = 1000000;
-    static constexpr std::uint64_t kRecoveryRetryUs = 1500000;
-
-    void serviceHostRecovery() {
-        const std::uint8_t physicalMask = usbHost_.physicalRootMask();
-
-        if (physicalMask == 0) {
-            recoveryArmed_ = false;
-            return;
-        }
-
-        // Healthy if at least one physically occupied root matches a mounted
-        // XUSB root. U1 currently exposes one XUSB gameplay source.
-        if ((physicalMask & mountedRootMask_) != 0) {
-            recoveryArmed_ = false;
-            return;
-        }
-
-        const std::uint64_t now = time_us_64();
-
-        if (!recoveryArmed_) {
-            recoveryArmed_ = true;
-            recoveryDeadlineUs_ = now + kRecoveryArmDelayUs;
-            return;
-        }
-
-        if (now < recoveryDeadlineUs_) {
-            return;
-        }
-
-        usbHost_.forceReenumerateConnectedRoots();
-        recoveryDeadlineUs_ = now + kRecoveryRetryUs;
-    }
-
     std::optional<oag::LogicalSlotId> primaryPcSlot() const {
         for (std::size_t i = 0; i < oag::LogicalSlotManager::kGamepadSlots; ++i) {
             const auto slot = static_cast<oag::LogicalSlotId>(i);
@@ -234,15 +181,10 @@ private:
     oag::XusbInputDriver xusb_;
     oag::PassThroughMapping mapping_;
     oag::firmware::PcHidOutput pcOutput_;
-
     std::array<
         oag::UniversalGamepadState,
         oag::LogicalSlotManager::kGamepadSlots
     > states_ {};
-
-    std::uint8_t mountedRootMask_ = 0;
-    bool recoveryArmed_ = false;
-    std::uint64_t recoveryDeadlineUs_ = 0;
 };
 
 FirmwareCore gCore;
