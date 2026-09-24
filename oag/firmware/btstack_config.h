@@ -7,6 +7,10 @@
 #ifdef ENABLE_BLE
 #define ENABLE_GATT_CLIENT_PAIRING
 #define ENABLE_LE_CENTRAL
+// Required by the pinned BTstack HCI layout when enhanced LE connection
+// events are enabled. U9B remains runtime Host-only: advertising is never
+// configured or started, and incoming LE slave-role links are rejected.
+#define ENABLE_LE_PERIPHERAL
 #define ENABLE_LE_DATA_LENGTH_EXTENSION
 #define ENABLE_LE_PRIVACY_ADDRESS_RESOLUTION
 #define ENABLE_LE_SECURE_CONNECTIONS
