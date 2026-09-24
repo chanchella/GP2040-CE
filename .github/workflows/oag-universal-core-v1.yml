@@ -149,7 +149,7 @@ jobs:
           assert manifest["features"]["usb_host_device_capacity"] == 12
           assert manifest["features"]["usb_host_hub_capacity"] == 4
           assert manifest["features"]["logical_gamepad_slots"] == 8
-          assert manifest["features"]["shared_device_registry_capacity"] == 20
+          assert manifest["features"]["shared_device_registry_capacity"] == 12
           assert manifest["features"]["host_enumeration_buffer_bytes"] == 1024
           assert manifest["features"]["pc_generic_hid_output"] is False
           assert manifest["features"]["pc_xinput_output"] is True

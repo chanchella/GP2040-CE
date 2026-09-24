@@ -62,7 +62,7 @@ manifest = {
         "usb_host_device_capacity": 12,
         "usb_host_hub_capacity": 4,
         "logical_gamepad_slots": 8,
-        "shared_device_registry_capacity": 20,
+        "shared_device_registry_capacity": 12,
         "host_enumeration_buffer_bytes": 1024,
         "host_root_watchdog_2s": False,
         "golden_usb_host_clock_120mhz": True,
