@@ -57,6 +57,11 @@ target_include_directories(OAG_Abo_Gemi_Ultra_Gaming_U8A_Pico2W PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}"
     "${CMAKE_CURRENT_LIST_DIR}/include"
     "${CMAKE_CURRENT_LIST_DIR}/../include"
+
+    # Pico SDK 2.1.1 cyw43.h references lwIP public types even with
+    # CYW43_LWIP=0. Expose headers only; OAG still uses the explicit poll
+    # CYW43 architecture and does not enable the Wi-Fi/lwIP runtime.
+    "${PICO_SDK_PATH}/lib/lwip/src/include"
 )
 
 target_compile_definitions(OAG_Abo_Gemi_Ultra_Gaming_U8A_Pico2W PRIVATE
