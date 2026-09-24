@@ -113,12 +113,15 @@ private:
 
     void startLeScan();
     void startClassicInquiry();
+    void serviceDeferredBleConnect();
     void resumeDiscovery();
     void stopDiscovery();
     void scheduleDiscoveryTimer(std::uint32_t timeoutMs);
     void stopDiscoveryTimer();
 
-    bool advertisementLooksLikeHid(const std::uint8_t* packet) const;
+    bool advertisementHasHidServiceUuid(
+        const std::uint8_t* packet
+    ) const;
     void clearLegacyBondsOnce();
     void clearBleBondDatabase();
 
@@ -143,6 +146,10 @@ private:
     std::array<std::uint8_t, 6> pendingAddress_ {};
     std::uint8_t pendingAddressType_ = 0;
     std::uint16_t pendingClassicCid_ = 0;
+
+    bool deferredBleCandidateValid_ = false;
+    std::array<std::uint8_t, 6> deferredBleAddress_ {};
+    std::uint8_t deferredBleAddressType_ = 0;
 
     std::array<Peer, kMaxPeers> peers_ {};
 

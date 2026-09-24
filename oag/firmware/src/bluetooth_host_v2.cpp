@@ -74,8 +74,29 @@ void discoveryTimerThunk(btstack_timer_source_t* timer) {
 }
 
 constexpr std::uint32_t kU9FreshBondTag = 0x4F394252u;
-constexpr std::uint32_t kU9FreshBondVersion = 1u;
+constexpr std::uint32_t kU9FreshBondVersion = 2u; // U9C compatibility reset
 constexpr std::uint32_t kLeScanWindowMs = 5000u;
+
+// Minimal GAP Device Name ATT database. This mirrors the historical
+// BluetoothHCI behavior where the Pico exposes a local GAP service even while
+// acting as the BLE HID Host/Central.
+constexpr std::uint8_t kLocalGapProfile[] = {
+    0x01,
+
+    // 0x0001 PRIMARY_SERVICE, GAP_SERVICE (0x1800)
+    0x0a, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x28, 0x00, 0x18,
+
+    // 0x0002 CHARACTERISTIC, GAP_DEVICE_NAME (0x2A00), READ
+    0x0d, 0x00, 0x02, 0x00, 0x02, 0x00, 0x03, 0x28,
+    0x02, 0x03, 0x00, 0x00, 0x2a,
+
+    // 0x0003 VALUE, "OAG Abo Gemi Ultra Gaming"
+    0x21, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x2a,
+    'O','A','G',' ','A','b','o',' ','G','e','m','i',' ',
+    'U','l','t','r','a',' ','G','a','m','i','n','g',
+
+    0x00, 0x00
+};
 
 } // namespace
 
@@ -107,6 +128,14 @@ bool BluetoothHostV2::initialize(
     );
 
     gatt_client_init();
+
+    // Historical BluetoothHCI installed a local GAP/ATT server before power-on.
+    // Keep runtime Host-only: this does not start advertising.
+    att_server_init(
+        kLocalGapProfile,
+        nullptr,
+        nullptr
+    );
 
     hid_host_init(
         classicDescriptorStorage_.data(),
@@ -166,6 +195,11 @@ bool BluetoothHostV2::initialize(
 void BluetoothHostV2::poll() {
     // pico_cyw43_arch_none + pico_btstack_cyw43 are serviced by the
     // SDK async context. Deliberately do not call cyw43_arch_poll().
+    //
+    // U9C intentionally performs gap_connect() here, outside the advertising
+    // event callback, matching the historical BluetoothHIDMaster flow:
+    // scan -> stop -> connect.
+    serviceDeferredBleConnect();
 }
 
 std::size_t BluetoothHostV2::connectedPeerCount() const {
@@ -273,13 +307,27 @@ bool BluetoothHostV2::addressConnected(
 bool BluetoothHostV2::addressPending(
     const std::uint8_t* address
 ) const {
-    return
-        address != nullptr &&
+    if (address == nullptr) {
+        return false;
+    }
+
+    if (
         pendingKind_ != PendingKind::None &&
         std::memcmp(
             pendingAddress_.data(),
             address,
             pendingAddress_.size()
+        ) == 0
+    ) {
+        return true;
+    }
+
+    return
+        deferredBleCandidateValid_ &&
+        std::memcmp(
+            deferredBleAddress_.data(),
+            address,
+            deferredBleAddress_.size()
         ) == 0;
 }
 
@@ -392,6 +440,7 @@ void BluetoothHostV2::stopDiscovery() {
     gap_stop_scan();
     gap_inquiry_stop();
     gap_connect_cancel();
+    deferredBleCandidateValid_ = false;
     discoveryPhase_ = DiscoveryPhase::Idle;
 }
 
@@ -408,10 +457,14 @@ void BluetoothHostV2::startLeScan() {
     gap_inquiry_stop();
     gap_connect_cancel();
 
+    deferredBleCandidateValid_ = false;
+
+    // Historical BluetoothHCI::scanBLE() used passive scan, interval 75,
+    // window 50. Keep the same cadence for the compatibility bootstrap.
     gap_set_scan_parameters(
-        1,
-        0x0030,
-        0x0030
+        0,
+        75,
+        50
     );
 
     gap_start_scan();
@@ -480,7 +533,7 @@ void BluetoothHostV2::handleDiscoveryTimer() {
     startClassicInquiry();
 }
 
-bool BluetoothHostV2::advertisementLooksLikeHid(
+bool BluetoothHostV2::advertisementHasHidServiceUuid(
     const std::uint8_t* packet
 ) const {
     if (packet == nullptr) {
@@ -493,50 +546,42 @@ bool BluetoothHostV2::advertisementLooksLikeHid(
     const std::uint8_t dataLength =
         gap_event_advertising_report_get_data_length(packet);
 
+    // Historical BluetoothHIDMaster::connectBLE() scans specifically for
+    // service UUID 0x1812. Do not infer HID from appearance in U9C.
+    return ad_data_contains_uuid16(
+        dataLength,
+        data,
+        ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE
+    );
+}
+
+void BluetoothHostV2::serviceDeferredBleConnect() {
     if (
-        ad_data_contains_uuid16(
-            dataLength,
-            data,
-            ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE
-        )
+        !deferredBleCandidateValid_ ||
+        !hciWorking_ ||
+        !hasCapacity() ||
+        pendingKind_ != PendingKind::None
     ) {
-        return true;
+        return;
     }
 
-    ad_context_t context {};
+    const auto address = deferredBleAddress_;
+    const std::uint8_t addressType =
+        deferredBleAddressType_;
 
-    for (
-        ad_iterator_init(
-            &context,
-            dataLength,
-            data
-        );
-        ad_iterator_has_more(&context);
-        ad_iterator_next(&context)
-    ) {
-        if (
-            ad_iterator_get_data_type(&context) !=
-                BLUETOOTH_DATA_TYPE_APPEARANCE ||
-            ad_iterator_get_data_len(&context) < 2
-        ) {
-            continue;
-        }
+    deferredBleCandidateValid_ = false;
 
-        const std::uint16_t appearance =
-            little_endian_read_16(
-                ad_iterator_get_data(&context),
-                0
-            );
+    // Crucial U9C compatibility rule: stop scanning first, then connect from
+    // main-context poll(), never from GAP_EVENT_ADVERTISING_REPORT.
+    stopDiscoveryTimer();
+    gap_stop_scan();
+    gap_inquiry_stop();
+    gap_connect_cancel();
 
-        if (
-            appearance >= 0x03C0 &&
-            appearance <= 0x03C4
-        ) {
-            return true;
-        }
-    }
-
-    return false;
+    connectLeCandidate(
+        address.data(),
+        addressType
+    );
 }
 
 void BluetoothHostV2::connectLeCandidate(
@@ -934,7 +979,8 @@ void BluetoothHostV2::handlePacket(
             if (
                 discoveryPhase_ != DiscoveryPhase::LeScan ||
                 pendingKind_ != PendingKind::None ||
-                !advertisementLooksLikeHid(packet)
+                deferredBleCandidateValid_ ||
+                !advertisementHasHidServiceUuid(packet)
             ) {
                 break;
             }
@@ -952,12 +998,23 @@ void BluetoothHostV2::handlePacket(
                 break;
             }
 
-            connectLeCandidate(
+            std::copy(
                 address,
+                address + deferredBleAddress_.size(),
+                deferredBleAddress_.begin()
+            );
+
+            deferredBleAddressType_ =
                 gap_event_advertising_report_get_address_type(
                     packet
-                )
-            );
+                );
+
+            deferredBleCandidateValid_ = true;
+
+            // Freeze discovery logically. The actual BTstack stop/connect calls
+            // are intentionally deferred to poll() / main context.
+            discoveryPhase_ =
+                DiscoveryPhase::PausedForConnection;
             break;
         }
 
@@ -1019,6 +1076,7 @@ void BluetoothHostV2::handlePacket(
                     );
 
                 if (status != ERROR_CODE_SUCCESS) {
+                    deferredBleCandidateValid_ = false;
                     pendingKind_ = PendingKind::None;
                     resumeDiscovery();
                     break;

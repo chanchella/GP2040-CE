@@ -51,7 +51,7 @@ tinyusb_sha = git_in(root / "lib/tinyusb", "rev-parse", "HEAD")
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U9B",
+    "phase": "U9C",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -106,6 +106,14 @@ manifest = {
         "bluetooth_g2e3_transport_sequence": True,
         "bluetooth_init_after_usb_host_ms": 100,
         "bluetooth_fresh_bond_reset_once": True,
+        "bluetooth_historical_hidmaster_compatibility": True,
+        "bluetooth_local_gap_att_server": True,
+        "bluetooth_scan_uuid_1812_only": True,
+        "bluetooth_scan_type": "passive",
+        "bluetooth_scan_interval": 75,
+        "bluetooth_scan_window": 50,
+        "bluetooth_deferred_connect_outside_adv_callback": True,
+        "bluetooth_u9c_bond_reset_version": 2,
         "authentication": False,
     },
     "pc_xinput_profile": {
