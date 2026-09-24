@@ -635,6 +635,32 @@ void BluetoothRuntime::resumeDiscovery() {
     startLeScan();
 }
 
+void BluetoothRuntime::requestLeSecurityOrStartHids(
+    std::uint16_t connectionHandle
+) {
+    LeLink* link = findLeByHandle(connectionHandle);
+    if (link == nullptr) {
+        return;
+    }
+
+    const gap_security_level_t level =
+        gap_security_level(connectionHandle);
+
+    if (level >= LEVEL_2) {
+        link->hidsWaitingForSecurity = false;
+        setDiagnosticStage(5);
+        startLeHids(connectionHandle);
+        return;
+    }
+
+    link->hidsWaitingForSecurity = true;
+
+    gap_request_security_level(
+        connectionHandle,
+        LEVEL_2
+    );
+}
+
 void BluetoothRuntime::startLeHids(
     std::uint16_t connectionHandle
 ) {
@@ -642,6 +668,17 @@ void BluetoothRuntime::startLeHids(
     if (link == nullptr || link->hidsCid != 0) {
         return;
     }
+
+    if (gap_security_level(connectionHandle) < LEVEL_2) {
+        link->hidsWaitingForSecurity = true;
+        gap_request_security_level(
+            connectionHandle,
+            LEVEL_2
+        );
+        return;
+    }
+
+    link->hidsWaitingForSecurity = false;
 
     std::uint16_t cid = 0;
     const std::uint8_t status = hids_client_connect(
@@ -1018,9 +1055,37 @@ void BluetoothRuntime::handleHciPacket(
                     link->address.begin()
                 );
 
+                link->hidsWaitingForSecurity = true;
                 sm_request_pairing(link->connectionHandle);
             }
             break;
+
+        case GAP_EVENT_SECURITY_LEVEL: {
+            const std::uint16_t handle =
+                gap_event_security_level_get_handle(packet);
+
+            LeLink* link = findLeByHandle(handle);
+            if (link == nullptr) {
+                break;
+            }
+
+            const gap_security_level_t level =
+                static_cast<gap_security_level_t>(
+                    gap_event_security_level_get_security_level(packet)
+                );
+
+            if (level >= LEVEL_2) {
+                link->hidsWaitingForSecurity = false;
+                setDiagnosticStage(5);
+                startLeHids(handle);
+            } else if (link->hidsWaitingForSecurity) {
+                gap_request_security_level(
+                    handle,
+                    LEVEL_2
+                );
+            }
+            break;
+        }
 
         case HCI_EVENT_PIN_CODE_REQUEST: {
             bd_addr_t address {};
@@ -1312,8 +1377,7 @@ void BluetoothRuntime::handleSmPacket(
                 sm_event_pairing_complete_get_status(packet);
 
             if (status == ERROR_CODE_SUCCESS) {
-                setDiagnosticStage(5);
-                startLeHids(handle);
+                requestLeSecurityOrStartHids(handle);
             } else {
                 const std::uint8_t reason =
                     sm_event_pairing_complete_get_reason(packet);
@@ -1334,8 +1398,7 @@ void BluetoothRuntime::handleSmPacket(
                 sm_event_reencryption_complete_get_status(packet);
 
             if (status == ERROR_CODE_SUCCESS) {
-                setDiagnosticStage(5);
-                startLeHids(handle);
+                requestLeSecurityOrStartHids(handle);
             } else {
                 setDiagnosticFailure(4, 1, status);
                 gap_disconnect(handle);
@@ -1383,6 +1446,20 @@ void BluetoothRuntime::handleLeHidPacket(
                 );
 
             if (status != ERROR_CODE_SUCCESS) {
+                if (status == ATT_ERROR_INSUFFICIENT_ENCRYPTION) {
+                    link->hidsCid = 0;
+                    link->serviceCount = 0;
+                    link->hidsWaitingForSecurity = true;
+
+                    setDiagnosticStage(4);
+
+                    gap_request_security_level(
+                        link->connectionHandle,
+                        LEVEL_2
+                    );
+                    break;
+                }
+
                 setDiagnosticFailure(5, 1, status);
                 gap_disconnect(link->connectionHandle);
                 break;

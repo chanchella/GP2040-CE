@@ -123,6 +123,7 @@ private:
         std::uint16_t hidsCid = 0;
         std::uint8_t serviceCount = 0;
         std::uint8_t addressType = 0;
+        bool hidsWaitingForSecurity = false;
         std::array<std::uint8_t, 6> address {};
     };
 
@@ -179,6 +180,9 @@ private:
     void connectGoldenStoredBleRemote();
     void connectGoldenStoredClassicRemote();
 
+    void requestLeSecurityOrStartHids(
+        std::uint16_t connectionHandle
+    );
     void startLeHids(std::uint16_t connectionHandle);
     void notifyLeDescriptors(LeLink& link);
     void disconnectLeServices(LeLink& link);

@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u8i:
+  firmware-u8j:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U8I firmware
+      - name: Configure Pico 2 W U8J firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -94,7 +94,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U8I firmware
+      - name: Build Pico 2 W U8J firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -140,7 +140,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U8I"
+          assert manifest["phase"] == "U8J"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -196,6 +196,9 @@ jobs:
           assert manifest["features"]["bluetooth_stage_coded_led_diagnostic"] is True
           assert manifest["features"]["bluetooth_xinput_slot3_diagnostic_overlay"] is True
           assert manifest["features"]["bluetooth_exact_failure_code_overlay"] is True
+          assert manifest["features"]["bluetooth_hids_security_level_gate"] is True
+          assert manifest["features"]["bluetooth_hids_requires_level_2"] is True
+          assert manifest["features"]["bluetooth_att_0x0f_same_link_recovery"] is True
           assert manifest["features"]["bluetooth_failure_start_button"] == 8
           assert manifest["features"]["bluetooth_failure_classic_marker_button"] == 7
           assert manifest["features"]["bluetooth_failure_code_buttons"] == [1, 2, 3, 4, 5, 6, 9, 10]
@@ -224,17 +227,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U8I_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U8J_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U8I_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U8J_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U8I_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U8J_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U8I firmware bundle
+      - name: Upload U8J firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U8I-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U8J-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

@@ -51,7 +51,7 @@ tinyusb_sha = git_in(root / "lib/tinyusb", "rev-parse", "HEAD")
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U8I",
+    "phase": "U8J",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -116,6 +116,9 @@ manifest = {
         "bluetooth_stage_coded_led_diagnostic": True,
         "bluetooth_xinput_slot3_diagnostic_overlay": True,
         "bluetooth_exact_failure_code_overlay": True,
+        "bluetooth_hids_security_level_gate": True,
+        "bluetooth_hids_requires_level_2": True,
+        "bluetooth_att_0x0f_same_link_recovery": True,
         "bluetooth_failure_start_button": 8,
         "bluetooth_failure_classic_marker_button": 7,
         "bluetooth_failure_code_buttons": [1, 2, 3, 4, 5, 6, 9, 10],
