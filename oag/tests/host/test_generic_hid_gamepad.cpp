@@ -175,5 +175,60 @@ int main() {
     assert(idState.lx == std::numeric_limits<std::int32_t>::min());
     assert(idState.ly == std::numeric_limits<std::int32_t>::max());
 
+    // Chinese/vendor receiver heuristic: wrong top-level collection, but
+    // structurally it still exposes X/Y axes and buttons.
+    const std::uint8_t vendorWrappedDescriptor[] = {
+        0x06, 0x00, 0xFF, // Vendor Usage Page
+        0x09, 0x01,
+        0xA1, 0x01,       // Vendor top-level Application collection
+
+        0x05, 0x01,       // Generic Desktop
+        0x15, 0x00,
+        0x26, 0xFF, 0x00,
+        0x75, 0x08,
+        0x95, 0x04,
+        0x09, 0x30,       // X
+        0x09, 0x31,       // Y
+        0x09, 0x33,       // Rx
+        0x09, 0x34,       // Ry
+        0x81, 0x02,
+
+        0x05, 0x09,       // Buttons
+        0x19, 0x01,
+        0x29, 0x08,
+        0x15, 0x00,
+        0x25, 0x01,
+        0x75, 0x01,
+        0x95, 0x08,
+        0x81, 0x02,
+        0xC0
+    };
+
+    GenericHidGamepadDescriptor rejectedVendor {};
+    assert(!driver.parseDescriptor(
+        vendorWrappedDescriptor,
+        sizeof(vendorWrappedDescriptor),
+        quirks,
+        rejectedVendor
+    ));
+
+    assert(driver.looksLikeGamepadDescriptor(
+        vendorWrappedDescriptor,
+        sizeof(vendorWrappedDescriptor)
+    ));
+
+    GenericHidGamepadQuirks forced {};
+    forced.forceGamepad = true;
+
+    GenericHidGamepadDescriptor recoveredVendor {};
+    assert(driver.parseDescriptor(
+        vendorWrappedDescriptor,
+        sizeof(vendorWrappedDescriptor),
+        forced,
+        recoveredVendor
+    ));
+    assert(recoveredVendor.valid);
+    assert(recoveredVendor.fieldCount >= 12);
+
     return 0;
 }

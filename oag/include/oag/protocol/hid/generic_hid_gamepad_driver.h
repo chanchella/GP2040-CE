@@ -46,6 +46,11 @@ public:
         GenericHidGamepadDescriptor& output
     ) const;
 
+    bool looksLikeGamepadDescriptor(
+        const std::uint8_t* descriptor,
+        std::size_t descriptorLength
+    ) const;
+
     bool parseReport(
         DeviceId source,
         const GenericHidGamepadDescriptor& descriptor,

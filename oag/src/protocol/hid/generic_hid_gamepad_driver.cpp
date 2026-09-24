@@ -377,6 +377,108 @@ bool GenericHidGamepadDriver::parseDescriptor(
     return output.valid;
 }
 
+bool GenericHidGamepadDriver::looksLikeGamepadDescriptor(
+    const std::uint8_t* descriptor,
+    std::size_t descriptorLength
+) const {
+    if (descriptor == nullptr || descriptorLength == 0) {
+        return false;
+    }
+
+    std::uint16_t usagePage = 0;
+    bool hasX = false;
+    bool hasY = false;
+    bool hasHat = false;
+    bool hasButtons = false;
+    std::uint8_t axisCount = 0;
+
+    std::size_t offset = 0;
+
+    while (offset < descriptorLength) {
+        const std::uint8_t prefix = descriptor[offset++];
+
+        if (prefix == 0xFE) {
+            if (offset + 2 > descriptorLength) {
+                return false;
+            }
+
+            const std::uint8_t longSize = descriptor[offset];
+            offset += 2;
+
+            if (offset + longSize > descriptorLength) {
+                return false;
+            }
+
+            offset += longSize;
+            continue;
+        }
+
+        const std::uint8_t sizeCode = prefix & 0x03u;
+        const std::uint8_t dataSize =
+            sizeCode == 3u ? 4u : sizeCode;
+        const std::uint8_t type = (prefix >> 2u) & 0x03u;
+        const std::uint8_t tag = (prefix >> 4u) & 0x0Fu;
+
+        if (offset + dataSize > descriptorLength) {
+            return false;
+        }
+
+        const std::uint32_t value =
+            readUnsigned(descriptor + offset, dataSize);
+        offset += dataSize;
+
+        if (type == 1 && tag == 0) {
+            usagePage = static_cast<std::uint16_t>(value);
+            continue;
+        }
+
+        if (type != 2) {
+            continue;
+        }
+
+        if (usagePage == kUsagePageButton) {
+            if (tag == 0 || tag == 1) {
+                hasButtons = true;
+            }
+            continue;
+        }
+
+        if (usagePage != kUsagePageGenericDesktop || tag != 0) {
+            continue;
+        }
+
+        const std::uint16_t usage =
+            static_cast<std::uint16_t>(value);
+
+        switch (usage) {
+            case kUsageX:
+                hasX = true;
+                ++axisCount;
+                break;
+            case kUsageY:
+                hasY = true;
+                ++axisCount;
+                break;
+            case kUsageZ:
+            case kUsageRx:
+            case kUsageRy:
+            case kUsageRz:
+                ++axisCount;
+                break;
+            case kUsageHat:
+                hasHat = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    return
+        hasX &&
+        hasY &&
+        (hasButtons || hasHat || axisCount >= 4);
+}
+
 bool GenericHidGamepadDriver::parseReport(
     DeviceId source,
     const GenericHidGamepadDescriptor& descriptor,

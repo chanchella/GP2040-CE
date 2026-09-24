@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "host/usbh_pvt.h"
+#include "oag/device/usb_device_classifier.h"
 
 namespace {
 
@@ -98,7 +99,8 @@ void completeMount(std::uint8_t devAddr, std::uint8_t instanceIndex) {
 
     // Preserve the G2E3/T29 startup behavior. Some compatible wired
     // controllers remain silent until they see normal OUT traffic.
-    if (instance->gameplay &&
+    if (instance->type == OAG_XINPUT_XBOX360 &&
+        instance->gameplay &&
         instance->epOut != 0 &&
         instance->epOutSize >= 3 &&
         !usbh_edpt_busy(devAddr, instance->epOut) &&
@@ -311,17 +313,27 @@ extern "C" bool xinputh_open(
     std::uint16_t pid = 0;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
 
-    const bool standardXusb =
-        desc_itf->bInterfaceClass == 0xFF &&
-        desc_itf->bInterfaceSubClass == 0x5D &&
-        desc_itf->bInterfaceProtocol == 0x01;
+    oag::UsbDeviceClassifier classifier;
+    const oag::UsbDeviceClassification classification =
+        classifier.classify(
+            oag::UsbDeviceProbe {
+                vid,
+                pid,
+                desc_itf->bInterfaceClass,
+                desc_itf->bInterfaceSubClass,
+                desc_itf->bInterfaceProtocol,
+                desc_itf->bNumEndpoints,
+            }
+        );
 
-    const bool exactT29Fallback =
-        vid == 0x045E &&
-        pid == 0x028E &&
-        desc_itf->bNumEndpoints >= 2;
+    const bool supported =
+        classification.driver == oag::UsbDriverFamily::Xinput &&
+        (
+            classification.protocol == oag::ProtocolKind::XusbXbox360 ||
+            classification.protocol == oag::ProtocolKind::XgipXboxOne
+        );
 
-    if (!standardXusb && !exactT29Fallback) {
+    if (!supported) {
         return false;
     }
 
@@ -347,11 +359,20 @@ extern "C" bool xinputh_open(
     }
 
     iface->itfNum = desc_itf->bInterfaceNumber;
-    iface->type = OAG_XINPUT_XBOX360;
     iface->gameplay = true;
 
-    if (exactT29Fallback) {
-        iface->subtype = 0x01;
+    if (classification.protocol == oag::ProtocolKind::XgipXboxOne) {
+        iface->type = OAG_XINPUT_XBOXONE;
+        iface->subtype = 0;
+    } else {
+        iface->type = OAG_XINPUT_XBOX360;
+
+        if (
+            classification.profile ==
+            oag::UsbDeviceProfile::Xusb045e028e
+        ) {
+            iface->subtype = 0x01;
+        }
     }
 
     const std::uint8_t* cursor =
@@ -375,7 +396,8 @@ extern "C" bool xinputh_open(
             break;
         }
 
-        if (descriptorType == kReservedDescriptorType &&
+        if (iface->type == OAG_XINPUT_XBOX360 &&
+            descriptorType == kReservedDescriptorType &&
             descriptorLength >= 5) {
             iface->subtype = cursor[4];
         }
@@ -425,10 +447,16 @@ extern "C" bool xinputh_open(
         cursor = tu_desc_next(cursor);
     }
 
-    if (iface->epIn == 0 ||
-        iface->epInSize == 0 ||
-        iface->epOut == 0 ||
-        iface->epOutSize == 0) {
+    if (iface->epIn == 0 || iface->epInSize == 0) {
+        std::memset(iface, 0, sizeof(*iface));
+        return false;
+    }
+
+    // Both XUSB and the supported wired XGIP initialization path need OUT.
+    if (
+        iface->gameplay &&
+        (iface->epOut == 0 || iface->epOutSize == 0)
+    ) {
         std::memset(iface, 0, sizeof(*iface));
         return false;
     }

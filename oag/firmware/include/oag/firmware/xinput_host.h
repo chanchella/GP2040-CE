@@ -12,6 +12,7 @@ extern "C" {
 enum : std::uint8_t {
     OAG_XINPUT_UNKNOWN = 0,
     OAG_XINPUT_XBOX360 = 1,
+    OAG_XINPUT_XBOXONE = 2,
 };
 
 std::uint8_t tuh_xinput_instance_count(std::uint8_t dev_addr);

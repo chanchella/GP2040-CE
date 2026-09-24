@@ -9,6 +9,7 @@
 #include "host/usbh_pvt.h"
 
 #include "oag/device/device_registry.h"
+#include "oag/device/usb_device_classifier.h"
 #include "oag/feedback/rumble_command.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
@@ -23,9 +24,40 @@
 #include "oag/protocol/hid/boot_mouse_input_driver.h"
 #include "oag/protocol/hid/generic_hid_gamepad_driver.h"
 #include "oag/protocol/xusb/xusb_input_driver.h"
+#include "oag/protocol/xgip/xgip_input_driver.h"
 #include "oag/transport/host_root_reconciler.h"
 
 namespace {
+
+enum class XgipInitPhase : std::uint8_t {
+    None = 0,
+    Power,
+    SystemInit,
+    ExtraInput,
+    Led,
+    AuthDone,
+    Ready,
+};
+
+static constexpr std::uint8_t kXonePowerOn[] = {
+    0x05, 0x20, 0x00, 0x01, 0x00
+};
+
+static constexpr std::uint8_t kXoneSystemInit[] = {
+    0x05, 0x20, 0x00, 0x0F, 0x06
+};
+
+static constexpr std::uint8_t kXoneExtraInput[] = {
+    0x4D, 0x10, 0x01, 0x02, 0x07, 0x00
+};
+
+static constexpr std::uint8_t kXoneLedOn[] = {
+    0x0A, 0x20, 0x00, 0x03, 0x00, 0x01, 0x14
+};
+
+static constexpr std::uint8_t kXoneAuthDone[] = {
+    0x06, 0x20, 0x00, 0x02, 0x01, 0x00
+};
 
 class FirmwareCore {
 public:
@@ -58,7 +90,8 @@ public:
 
         usbHost_.task();
 
-        maintainXusbInput();
+        maintainXinputTransport();
+        serviceXgipInit();
         serviceMouseAimRelease();
         servicePlatformFeedback();
     }
@@ -67,9 +100,10 @@ public:
         rememberMountedRoot(devAddr);
     }
 
-    void onXusbMounted(
+    void onXinputMounted(
         std::uint8_t devAddr,
-        std::uint8_t instance
+        std::uint8_t instance,
+        std::uint8_t type
     ) {
         std::uint16_t vid = 0;
         std::uint16_t pid = 0;
@@ -77,6 +111,11 @@ public:
         if (!tuh_vid_pid_get(devAddr, &vid, &pid)) {
             return;
         }
+
+        const oag::ProtocolKind protocol =
+            type == OAG_XINPUT_XBOXONE
+                ? oag::ProtocolKind::XgipXboxOne
+                : oag::ProtocolKind::XusbXbox360;
 
         const oag::UsbTransportHandle handle {
             devAddr,
@@ -87,7 +126,7 @@ public:
             handle,
             vid,
             pid,
-            oag::ProtocolKind::XusbXbox360
+            protocol
         );
 
         if (!id) {
@@ -103,9 +142,16 @@ public:
         states_[*slot] = {};
         states_[*slot].source = *id;
         states_[*slot].connected = true;
+
+        xgipPhases_[*slot] =
+            protocol == oag::ProtocolKind::XgipXboxOne
+                ? XgipInitPhase::Power
+                : XgipInitPhase::None;
+        xgipTxPending_[*slot] = false;
+        xgipGuidePressed_[*slot] = false;
     }
 
-    void onXusbUnmounted(
+    void onXinputUnmounted(
         std::uint8_t devAddr,
         std::uint8_t instance
     ) {
@@ -121,7 +167,10 @@ public:
 
         const oag::DeviceRecord* record = registry_.find(*id);
         if (record == nullptr ||
-            record->protocol != oag::ProtocolKind::XusbXbox360) {
+            (
+                record->protocol != oag::ProtocolKind::XusbXbox360 &&
+                record->protocol != oag::ProtocolKind::XgipXboxOne
+            )) {
             return;
         }
 
@@ -130,6 +179,9 @@ public:
 
         if (slot) {
             states_[*slot] = {};
+            xgipPhases_[*slot] = XgipInitPhase::None;
+            xgipTxPending_[*slot] = false;
+            xgipGuidePressed_[*slot] = false;
         }
 
         slots_.release(*id);
@@ -207,16 +259,37 @@ public:
             return;
         }
 
-        const oag::GenericHidGamepadQuirks quirks =
+        oag::GenericHidGamepadQuirks quirks =
             genericHidQuirksFor(vid, pid);
 
         oag::GenericHidGamepadDescriptor descriptor {};
-        if (!genericHid_.parseDescriptor(
+
+        bool parsed = genericHid_.parseDescriptor(
+            reportDescriptor,
+            reportDescriptorLength,
+            quirks,
+            descriptor
+        );
+
+        if (!parsed &&
+            genericHid_.looksLikeGamepadDescriptor(
+                reportDescriptor,
+                reportDescriptorLength
+            )) {
+            // Some inexpensive controllers expose correct gamepad fields
+            // under a vendor/composite top-level collection. Force only after
+            // structural X/Y + buttons/hat evidence is present.
+            quirks.forceGamepad = true;
+
+            parsed = genericHid_.parseDescriptor(
                 reportDescriptor,
                 reportDescriptorLength,
                 quirks,
                 descriptor
-            )) {
+            );
+        }
+
+        if (!parsed) {
             return;
         }
 
@@ -399,11 +472,11 @@ public:
         for (std::uint8_t instance = 0;
              instance < CFG_TUH_XINPUT;
              ++instance) {
-            onXusbUnmounted(devAddr, instance);
+            onXinputUnmounted(devAddr, instance);
         }
     }
 
-    void onXusbReport(
+    void onXinputReport(
         std::uint8_t devAddr,
         std::uint8_t instance,
         const std::uint8_t* report,
@@ -420,8 +493,7 @@ public:
         }
 
         const oag::DeviceRecord* record = registry_.find(*id);
-        if (record == nullptr ||
-            record->protocol != oag::ProtocolKind::XusbXbox360) {
+        if (record == nullptr) {
             return;
         }
 
@@ -430,13 +502,49 @@ public:
             return;
         }
 
-        if (!xusb_.parse(
+        bool parsed = false;
+
+        if (record->protocol == oag::ProtocolKind::XusbXbox360) {
+            parsed = xusb_.parse(
                 *id,
                 report,
                 length,
                 time_us_64(),
                 states_[*slot]
-            )) {
+            );
+        } else if (record->protocol == oag::ProtocolKind::XgipXboxOne) {
+            if (report != nullptr && length != 0 && report[0] == 0x02) {
+                xgipPhases_[*slot] = XgipInitPhase::Power;
+                xgipTxPending_[*slot] = false;
+                return;
+            }
+
+            if (report != nullptr && length >= 5 && report[0] == 0x07) {
+                xgipGuidePressed_[*slot] = report[4] == 0x01;
+
+                if (xgipGuidePressed_[*slot]) {
+                    states_[*slot].buttons |= oag::ButtonGuide;
+                } else {
+                    states_[*slot].buttons &= ~oag::ButtonGuide;
+                }
+
+                parsed = true;
+            } else {
+                parsed = xgip_.parse(
+                    *id,
+                    report,
+                    length,
+                    time_us_64(),
+                    states_[*slot]
+                );
+
+                if (parsed && xgipGuidePressed_[*slot]) {
+                    states_[*slot].buttons |= oag::ButtonGuide;
+                }
+            }
+        }
+
+        if (!parsed) {
             return;
         }
 
@@ -444,6 +552,13 @@ public:
         if (primary && *slot == *primary) {
             sendComposedOutput();
         }
+    }
+
+    void onXinputReportSent(
+        std::uint8_t devAddr,
+        std::uint8_t instance
+    ) {
+        handleXinputReportSent(devAddr, instance);
     }
 
 private:
@@ -454,24 +569,23 @@ private:
         std::uint16_t vid,
         std::uint16_t pid
     ) {
+        const oag::UsbDeviceClassification classification =
+            oag::UsbDeviceClassifier {}.classify(
+                oag::UsbDeviceProbe {
+                    vid,
+                    pid,
+                    0x03,
+                    0x00,
+                    0x00,
+                    0,
+                }
+            );
+
         oag::GenericHidGamepadQuirks quirks {};
-
-        // Golden-known DirectInput layouts expose Z/Rz as the right stick.
-        if (
-            (vid == 0x2563 && pid == 0x0575) ||
-            (vid == 0x0079 && pid == 0x0006)
-        ) {
-            quirks.zRzAsRightStick = true;
-        }
-
-        // Known Shanwan fallback identities can expose gamepad fields without
-        // a conventional top-level Game Pad usage.
-        if (
-            (vid == 0x20BC && pid == 0x0055) ||
-            (vid == 0x20BC && pid == 0x5500)
-        ) {
-            quirks.forceGamepad = true;
-        }
+        quirks.forceGamepad =
+            classification.hasQuirk(oag::UsbQuirkForceHidGamepad);
+        quirks.zRzAsRightStick =
+            classification.hasQuirk(oag::UsbQuirkZRzAsRightStick);
 
         return quirks;
     }
@@ -513,7 +627,7 @@ private:
         mountedRootMask_ = mask;
     }
 
-    void maintainXusbInput() {
+    void maintainXinputTransport() {
         // Port the proven Golden maintenance behavior: continuously make
         // sure each mounted gameplay IN endpoint stays armed. This recovers
         // idle/busy transitions without synthesizing root REMOVE/ATTACH
@@ -530,7 +644,10 @@ private:
 
             const oag::DeviceRecord* record = registry_.find(source);
             if (record == nullptr ||
-                record->protocol != oag::ProtocolKind::XusbXbox360) {
+                (
+                    record->protocol != oag::ProtocolKind::XusbXbox360 &&
+                    record->protocol != oag::ProtocolKind::XgipXboxOne
+                )) {
                 continue;
             }
 
@@ -541,6 +658,133 @@ private:
                 tuh_xinput_ready(devAddr, instance)) {
                 tuh_xinput_receive_report(devAddr, instance);
             }
+        }
+    }
+
+    void serviceXgipInit() {
+        for (std::size_t i = 0;
+             i < oag::LogicalSlotManager::kGamepadSlots;
+             ++i) {
+            const auto slot = static_cast<oag::LogicalSlotId>(i);
+            const oag::DeviceId source = slots_.deviceFor(slot);
+            const oag::DeviceRecord* record = registry_.find(source);
+
+            if (record == nullptr ||
+                record->protocol != oag::ProtocolKind::XgipXboxOne ||
+                xgipPhases_[i] == XgipInitPhase::None ||
+                xgipPhases_[i] == XgipInitPhase::Ready ||
+                xgipTxPending_[i]) {
+                continue;
+            }
+
+            const std::uint8_t* packet = nullptr;
+            std::uint16_t packetLength = 0;
+
+            switch (xgipPhases_[i]) {
+                case XgipInitPhase::Power:
+                    packet = kXonePowerOn;
+                    packetLength = sizeof(kXonePowerOn);
+                    break;
+                case XgipInitPhase::SystemInit:
+                    packet = kXoneSystemInit;
+                    packetLength = sizeof(kXoneSystemInit);
+                    break;
+                case XgipInitPhase::ExtraInput:
+                    packet = kXoneExtraInput;
+                    packetLength = sizeof(kXoneExtraInput);
+                    break;
+                case XgipInitPhase::Led:
+                    packet = kXoneLedOn;
+                    packetLength = sizeof(kXoneLedOn);
+                    break;
+                case XgipInitPhase::AuthDone:
+                    packet = kXoneAuthDone;
+                    packetLength = sizeof(kXoneAuthDone);
+                    break;
+                default:
+                    break;
+            }
+
+            if (packet != nullptr &&
+                tuh_xinput_send_report(
+                    record->usb.deviceAddress,
+                    record->usb.interfaceInstance,
+                    packet,
+                    packetLength
+                )) {
+                xgipTxPending_[i] = true;
+            }
+        }
+    }
+
+    void advanceXgipInit(oag::LogicalSlotId slot) {
+        if (slot >= xgipPhases_.size()) {
+            return;
+        }
+
+        const oag::DeviceId source = slots_.deviceFor(slot);
+        const oag::DeviceRecord* record = registry_.find(source);
+
+        if (record == nullptr ||
+            record->protocol != oag::ProtocolKind::XgipXboxOne) {
+            return;
+        }
+
+        switch (xgipPhases_[slot]) {
+            case XgipInitPhase::Power:
+                if (record->vid == 0x045E &&
+                    (record->pid == 0x02EA || record->pid == 0x0B00)) {
+                    xgipPhases_[slot] = XgipInitPhase::SystemInit;
+                } else {
+                    xgipPhases_[slot] = XgipInitPhase::Led;
+                }
+                break;
+            case XgipInitPhase::SystemInit:
+                xgipPhases_[slot] =
+                    record->vid == 0x045E && record->pid == 0x0B00
+                        ? XgipInitPhase::ExtraInput
+                        : XgipInitPhase::Led;
+                break;
+            case XgipInitPhase::ExtraInput:
+                xgipPhases_[slot] = XgipInitPhase::Led;
+                break;
+            case XgipInitPhase::Led:
+                xgipPhases_[slot] = XgipInitPhase::AuthDone;
+                break;
+            case XgipInitPhase::AuthDone:
+                xgipPhases_[slot] = XgipInitPhase::Ready;
+                break;
+            default:
+                break;
+        }
+    }
+
+    void handleXinputReportSent(
+        std::uint8_t devAddr,
+        std::uint8_t instance
+    ) {
+        const auto id = registry_.findUsb(
+            oag::UsbTransportHandle {devAddr, instance}
+        );
+
+        if (!id) {
+            return;
+        }
+
+        const oag::DeviceRecord* record = registry_.find(*id);
+        if (record == nullptr ||
+            record->protocol != oag::ProtocolKind::XgipXboxOne) {
+            return;
+        }
+
+        const auto slot = slots_.slotFor(*id);
+        if (!slot || *slot >= xgipTxPending_.size()) {
+            return;
+        }
+
+        if (xgipTxPending_[*slot]) {
+            xgipTxPending_[*slot] = false;
+            advanceXgipInit(*slot);
         }
     }
 
@@ -661,31 +905,68 @@ private:
         const oag::DeviceId source = slots_.deviceFor(*primary);
         const oag::DeviceRecord* record = registry_.find(source);
 
-        if (record == nullptr ||
-            record->protocol != oag::ProtocolKind::XusbXbox360) {
+        if (record == nullptr) {
             pendingRumbleValid_ = false;
             return;
         }
 
-        const std::uint8_t rumblePacket[8] = {
-            0x00,
-            0x08,
-            0x00,
-            pendingRumble_.leftMotor,
-            pendingRumble_.rightMotor,
-            0x00,
-            0x00,
-            0x00,
-        };
+        if (record->protocol == oag::ProtocolKind::XusbXbox360) {
+            const std::uint8_t rumblePacket[8] = {
+                0x00,
+                0x08,
+                0x00,
+                pendingRumble_.leftMotor,
+                pendingRumble_.rightMotor,
+                0x00,
+                0x00,
+                0x00,
+            };
 
-        if (tuh_xinput_send_report(
-                record->usb.deviceAddress,
-                record->usb.interfaceInstance,
-                rumblePacket,
-                sizeof(rumblePacket)
-            )) {
-            pendingRumbleValid_ = false;
+            if (tuh_xinput_send_report(
+                    record->usb.deviceAddress,
+                    record->usb.interfaceInstance,
+                    rumblePacket,
+                    sizeof(rumblePacket)
+                )) {
+                pendingRumbleValid_ = false;
+            }
+
+            return;
         }
+
+        if (record->protocol == oag::ProtocolKind::XgipXboxOne) {
+            if (*primary >= xgipPhases_.size() ||
+                xgipPhases_[*primary] != XgipInitPhase::Ready ||
+                xgipTxPending_[*primary]) {
+                return;
+            }
+
+            const std::uint8_t rumblePacket[13] = {
+                0x09, 0x00, xgipRumbleSequence_, 0x09,
+                0x00, 0x0F,
+                0x00, 0x00,
+                pendingRumble_.leftMotor,
+                pendingRumble_.rightMotor,
+                0xFF, 0x00, 0xFF,
+            };
+
+            if (tuh_xinput_send_report(
+                    record->usb.deviceAddress,
+                    record->usb.interfaceInstance,
+                    rumblePacket,
+                    sizeof(rumblePacket)
+                )) {
+                pendingRumbleValid_ = false;
+                ++xgipRumbleSequence_;
+                if (xgipRumbleSequence_ == 0) {
+                    xgipRumbleSequence_ = 1;
+                }
+            }
+
+            return;
+        }
+
+        pendingRumbleValid_ = false;
     }
 
     std::optional<oag::LogicalSlotId> primaryOutputSlot() const {
@@ -705,6 +986,7 @@ private:
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;
     oag::XusbInputDriver xusb_;
+    oag::XgipInputDriver xgip_;
     oag::BootKeyboardInputDriver keyboard_;
     oag::BootMouseInputDriver mouse_;
     oag::GenericHidGamepadDriver genericHid_;
@@ -747,6 +1029,23 @@ private:
     oag::MouseMotion currentMouseMotion_ {};
     std::uint64_t mouseAimExpiresUs_ = 0;
     bool mouseAimActive_ = false;
+
+    std::array<
+        XgipInitPhase,
+        oag::LogicalSlotManager::kGamepadSlots
+    > xgipPhases_ {};
+
+    std::array<
+        bool,
+        oag::LogicalSlotManager::kGamepadSlots
+    > xgipTxPending_ {};
+
+    std::array<
+        bool,
+        oag::LogicalSlotManager::kGamepadSlots
+    > xgipGuidePressed_ {};
+
+    std::uint8_t xgipRumbleSequence_ = 1;
 
     oag::RumbleCommand pendingRumble_ {};
     bool pendingRumbleValid_ = false;
@@ -804,14 +1103,14 @@ extern "C" void tuh_xinput_mount_cb(
 ) {
     (void)type;
     (void)subtype;
-    gCore.onXusbMounted(dev_addr, instance);
+    gCore.onXinputMounted(dev_addr, instance, type);
 }
 
 extern "C" void tuh_xinput_umount_cb(
     std::uint8_t dev_addr,
     std::uint8_t instance
 ) {
-    gCore.onXusbUnmounted(dev_addr, instance);
+    gCore.onXinputUnmounted(dev_addr, instance);
 }
 
 extern "C" void tuh_xinput_report_received_cb(
@@ -820,7 +1119,7 @@ extern "C" void tuh_xinput_report_received_cb(
     std::uint8_t const* report,
     std::uint16_t len
 ) {
-    gCore.onXusbReport(dev_addr, instance, report, len);
+    gCore.onXinputReport(dev_addr, instance, report, len);
 }
 
 extern "C" void tuh_xinput_report_sent_cb(
@@ -829,10 +1128,9 @@ extern "C" void tuh_xinput_report_sent_cb(
     std::uint8_t const* report,
     std::uint16_t len
 ) {
-    (void)dev_addr;
-    (void)instance;
     (void)report;
     (void)len;
+    gCore.onXinputReportSent(dev_addr, instance);
 }
 
 int main() {

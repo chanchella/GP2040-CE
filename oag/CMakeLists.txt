@@ -6,7 +6,9 @@ option(OAG_BUILD_HOST_TESTS "Build host-side OAG core tests" ON)
 
 add_library(oag_core STATIC
     src/device/device_registry.cpp
+    src/device/usb_device_classifier.cpp
     src/protocol/xusb/xusb_input_driver.cpp
+    src/protocol/xgip/xgip_input_driver.cpp
     src/mapping/logical_slot_manager.cpp
     src/mapping/pass_through_mapping.cpp
     src/output/xinput/xinput_report_encoder.cpp
@@ -141,4 +143,11 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_platform_selection_tests PRIVATE oag_core)
     target_compile_features(oag_platform_selection_tests PRIVATE cxx_std_17)
     add_test(NAME oag_platform_selection_tests COMMAND oag_platform_selection_tests)
+
+    add_executable(oag_usb_classifier_xgip_tests
+        tests/host/test_usb_classifier_xgip.cpp
+    )
+    target_link_libraries(oag_usb_classifier_xgip_tests PRIVATE oag_core)
+    target_compile_features(oag_usb_classifier_xgip_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_usb_classifier_xgip_tests COMMAND oag_usb_classifier_xgip_tests)
 endif()

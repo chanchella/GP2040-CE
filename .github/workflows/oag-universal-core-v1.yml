@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u6a:
+  firmware-u6b:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U6A firmware
+      - name: Configure Pico 2 W U6B firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -94,7 +94,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U6A firmware
+      - name: Build Pico 2 W U6B firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -140,8 +140,12 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U6A"
+          assert manifest["phase"] == "U6B"
           assert manifest["features"]["usb_hub_host"] is True
+          assert manifest["features"]["wired_xgip_input"] is True
+          assert manifest["features"]["xgip_host_init_sequence"] is True
+          assert manifest["features"]["generic_hid_structural_fallback"] is True
+          assert manifest["features"]["known_usb_controller_classifier"] is True
           assert manifest["features"]["usb_host_device_capacity"] == 12
           assert manifest["features"]["usb_host_hub_capacity"] == 4
           assert manifest["features"]["logical_gamepad_slots"] == 8
@@ -174,17 +178,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6A_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6B_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6A_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6B_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6A_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6B_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U6A firmware bundle
+      - name: Upload U6B firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U6A-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U6B-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
