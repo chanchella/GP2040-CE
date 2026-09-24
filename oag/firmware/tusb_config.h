@@ -22,7 +22,12 @@ extern "C" {
 #define CFG_TUD_CDC 0
 #define CFG_TUD_MSC 0
 #define CFG_TUD_MIDI 0
-#define CFG_TUD_VENDOR 0
+
+// TinyUSB 0.17's device stack cannot compile with an empty built-in driver
+// table. Keep one Vendor driver as a compile anchor. OAG's custom XInput
+// application driver is registered first and claims all four XInput vendor
+// interfaces, so this built-in driver is not the gameplay transport.
+#define CFG_TUD_VENDOR 1
 
 // U2E device-side output is a custom Xbox 360/XInput-compatible vendor
 // interface. Generic HID device mode is intentionally disabled.
