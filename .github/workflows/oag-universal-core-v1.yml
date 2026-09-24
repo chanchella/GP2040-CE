@@ -29,75 +29,71 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
 
-      - name: Verify U10J USB-safe pairing scope against U10I and U10F
+      - name: Verify U10K three-root attach recovery scope
         shell: bash
         run: |
           set -euo pipefail
-          U10I_BASELINE="5a840a789f7d91808e34ba8c137947c4527c0996"
+          U10J_BASELINE="278da5b28020f1c335dfba21e644407ad7c1df4b"
           U10F_BASELINE="7799d270d98ae09e7608f05b15f687a20a459871"
 
-          git merge-base --is-ancestor "${U10I_BASELINE}" HEAD
+          git merge-base --is-ancestor "${U10J_BASELINE}" HEAD
           git merge-base --is-ancestor "${U10F_BASELINE}" HEAD
 
-          EXPECTED="$(printf '%s\n' \
-            'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
-            'oag/firmware/src/bluetooth_host_v2.cpp' \
-            'oag/firmware/src/main.cpp' | sort)"
-
-          ACTUAL="$(git diff --name-only "${U10F_BASELINE}" -- \
+          RUNTIME_CHANGED="$(git diff --name-only "${U10J_BASELINE}" -- \
             oag/firmware/include \
             oag/firmware/src \
             oag/firmware/tusb_config.h \
             oag/include \
             oag/src | sort)"
 
-          test "${ACTUAL}" = "${EXPECTED}"
+          test "${RUNTIME_CHANGED}" = "oag/firmware/src/main.cpp"
 
-          git diff --exit-code "${U10F_BASELINE}" -- \
-            oag/firmware/src/usb_host.cpp \
-            oag/firmware/include/oag/firmware/usb_host.h \
+          # Pairing Mode, Bluetooth parser/transport, receiver, Player-1/KM,
+          # Hub/XInput/HID drivers and the three-root backend are frozen.
+          git diff --exit-code "${U10J_BASELINE}" -- \
+            oag/firmware/include/oag/firmware/bluetooth_host_v2.h \
+            oag/firmware/src/bluetooth_host_v2.cpp \
+            oag/firmware/include/oag/firmware/bluetooth_hid_parser_v2.h \
+            oag/firmware/src/bluetooth_hid_parser_v2.cpp \
+            oag/firmware/include/oag/firmware/usb_pio_host.h \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/usb_pio_probe.c \
+            oag/firmware/src/xinput_host.cpp \
             oag/firmware/src/usb_descriptors.cpp \
             oag/firmware/tusb_config.h \
-            oag/firmware/src/bluetooth_hid_parser_v2.cpp \
             oag/firmware/include/oag/firmware/pc_xinput_device.h \
             oag/firmware/src/pc_xinput_device.cpp \
             oag/firmware/include/oag/firmware/pc_xinput_platform_driver.h \
             oag/firmware/src/pc_xinput_platform_driver.cpp \
-            oag/include/oag/input/gamepad_state.h
+            oag/include/oag/input/gamepad_state.h \
+            oag/src/mapping/keyboard_mouse_gamepad_mapper.cpp
 
+          grep -F 'serviceMissingRootAttachRecovery();' oag/firmware/src/main.cpp
+          grep -F 'usbHost_.reconcileRootEvents(' oag/firmware/src/main.cpp
+          grep -F '0,' oag/firmware/src/main.cpp
+          grep -F 'kMissingRootStableUs = 2000000ull' oag/firmware/src/main.cpp
+          grep -F 'kRootAttachRetryUs = 5000000ull' oag/firmware/src/main.cpp
+
+          # Fail closed if the new service ever starts synthesizing REMOVE.
           python3 - <<'PY'
           from pathlib import Path
-          import re
-          import subprocess
 
-          baseline = subprocess.check_output(
-              ["git", "show", "7799d270d98ae09e7608f05b15f687a20a459871:oag/firmware/src/main.cpp"],
-              text=True,
-          )
-          current = Path("oag/firmware/src/main.cpp").read_text()
+          text = Path("oag/firmware/src/main.cpp").read_text()
+          start = text.index("void serviceMissingRootAttachRecovery()")
+          end = text.index("void serviceKeyboardLeds()", start)
+          body = text[start:end]
 
-          pattern = re.compile(
-              r"\n\s*bluetoothHost_\.notifyWiredGamepadDetached\(\s*"
-              r"record->vid,\s*record->pid\s*\);\n"
-          )
+          if "plan.removeMask" in body:
+              raise SystemExit("U10K must never synthesize root REMOVE")
 
-          matches = pattern.findall(current)
-          if len(matches) != 2:
-              raise SystemExit(
-                  f"expected exactly two detach-only pairing hooks, found {len(matches)}"
-              )
+          if "reconcileRootEvents(\n                0,\n                attachMask" not in body:
+              raise SystemExit("U10K attach-only reconciliation contract missing")
 
-          normalized = pattern.sub("\n", current)
-          if normalized != baseline:
-              raise SystemExit(
-                  "main.cpp changed beyond detach-only pairing hooks"
-              )
-
-          print("U10J_MAIN_U10F_PLUS_DETACH_ONLY=PASS")
+          print("U10K_ATTACH_ONLY_ROOT_RECOVERY=PASS")
           PY
 
-          echo "U10J_U10F_USB_RECEIVER_KM_FREEZE=PASS"
-          echo "U10J_PAIRING_ASSIST_USB_ISOLATION=PASS"
+          echo "U10K_U10J_PAIRING_RECEIVER_ROUTING_FREEZE=PASS"
+          echo "U10K_USB_HUB_AND_HOST_BACKEND_FREEZE=PASS"
 
       - name: Verify no Antigravity coupling
         shell: bash
@@ -131,7 +127,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u10j:
+  firmware-u10k:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -159,7 +155,7 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Verify exact U10J SDK and Bluetooth dependencies
+      - name: Verify exact U10K SDK and Bluetooth dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -167,8 +163,8 @@ jobs:
           test "$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
           test "$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
           echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-u9d" >> "${GITHUB_ENV}"
-          echo "U10J_PICO_SDK_230=PASS"
-          echo "U10J_BTSTACK_HIDS_HOST=PASS"
+          echo "U10K_PICO_SDK_230=PASS"
+          echo "U10K_BTSTACK_HIDS_HOST=PASS"
 
       - name: Verify and prepare pinned dependencies
         shell: bash
@@ -176,7 +172,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U10J firmware
+      - name: Configure Pico 2 W U10K firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -186,7 +182,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U10J firmware
+      - name: Build Pico 2 W U10K firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -232,7 +228,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U10J"
+          assert manifest["phase"] == "U10K"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -342,6 +338,17 @@ jobs:
           assert manifest["features"]["u10j_u10f_usb_host_runtime_frozen"] is True
           assert manifest["features"]["u10j_u10f_keyboard_mouse_runtime_frozen"] is True
           assert manifest["features"]["u10j_wired_gamepad_mount_does_not_touch_bt_discovery"] is True
+          assert manifest["features"]["u10k_missing_root_attach_recovery"] is True
+          assert manifest["features"]["u10k_root_probe_period_ms"] == 250
+          assert manifest["features"]["u10k_missing_root_stable_ms"] == 2000
+          assert manifest["features"]["u10k_root_attach_retry_ms"] == 5000
+          assert manifest["features"]["u10k_synthetic_root_remove_events"] is False
+          assert manifest["features"]["u10k_root_dp_pins"] == [2, 4, 6]
+          assert manifest["features"]["u10k_usb_hub_support_frozen"] is True
+          assert manifest["features"]["u10k_pairing_mode_frozen_from_u10j"] is True
+          assert manifest["features"]["u10k_bluetooth_max_peers_frozen"] == 4
+          assert manifest["features"]["u10k_bluetooth_primary_player1_frozen"] is True
+          assert manifest["features"]["u10k_keyboard_mouse_follow_primary_frozen"] is True
           assert manifest["verification"]["hardware_verified"] is False
           assert manifest["verification"]["hardware_verified_baseline_phase"] == "U9G"
           assert manifest["verification"]["hardware_verified_baseline_sha"] == "3fffa9484f159df6cfbeb807c3acbdf46bdbe52e"
@@ -359,10 +366,15 @@ jobs:
           assert manifest["verification"]["u10i_pairing_mode_recovery"] == "HARDWARE_VERIFIED_BY_USER"
           assert manifest["verification"]["u10i_wired_pairing_assist"] == "NOT_SEPARATELY_VERIFIED"
           assert manifest["verification"]["u10i_u10f_regression"] == "FAILED_USB_HOST_PORTS_AND_GAMEPADS"
-          assert manifest["verification"]["u10j_pairing_mode_preservation"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10j_three_usb_root_ports"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10j_wired_gamepads"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10j_keyboard_mouse_all_ports"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10j_pairing_mode_preservation"] == "HARDWARE_VERIFIED_BY_USER"
+          assert manifest["verification"]["u10j_three_usb_root_ports"] == "FAILED_PORT3"
+          assert manifest["verification"]["u10j_wired_gamepads"] == "PARTIAL_HARDWARE"
+          assert manifest["verification"]["u10j_keyboard_mouse_all_ports"] == "PARTIAL_P1_P2_ONLY"
+          assert manifest["verification"]["u10k_pairing_mode_preservation"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10k_three_usb_root_ports"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10k_usb_hub"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10k_four_bluetooth_peers"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10k_primary_and_keyboard_mouse_routing"] == "PENDING_HARDWARE"
           assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
           assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
           assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
@@ -383,17 +395,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10J_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10K_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10J_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10K_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10J_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10K_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U10J firmware bundle
+      - name: Upload U10K firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U10J-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U10K-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

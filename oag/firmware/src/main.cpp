@@ -86,6 +86,11 @@ public:
         bluetoothInitNotBeforeUs_ =
             time_us_64() + 100000ull;
 
+        // Missing-root recovery is attach-only and starts after a normal
+        // enumeration grace period. It never synthesizes REMOVE events.
+        nextRootProbeUs_ =
+            time_us_64() + kMissingRootStableUs;
+
         if (!platformOutput_.initialize()) {
             return false;
         }
@@ -99,6 +104,7 @@ public:
         servicePlatformPlayerAssignments();
 
         usbHost_.task();
+        serviceMissingRootAttachRecovery();
         serviceBluetoothHostV2();
 
         serviceKeyboardLeds();
@@ -919,6 +925,9 @@ public:
 
 private:
     static constexpr std::uint8_t kRootCount = 3;
+    static constexpr std::uint64_t kRootProbePeriodUs = 250000ull;
+    static constexpr std::uint64_t kMissingRootStableUs = 2000000ull;
+    static constexpr std::uint64_t kRootAttachRetryUs = 5000000ull;
     static constexpr std::uint64_t kMouseAimHoldUs = 6000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
@@ -1009,6 +1018,98 @@ private:
         }
 
         mountedRootMask_ = mask;
+    }
+
+    void serviceMissingRootAttachRecovery() {
+        if (!usbHost_.ready()) {
+            return;
+        }
+
+        const std::uint64_t nowUs = time_us_64();
+
+        if (nowUs < nextRootProbeUs_) {
+            return;
+        }
+
+        nextRootProbeUs_ =
+            nowUs + kRootProbePeriodUs;
+
+        const std::uint8_t validMask =
+            static_cast<std::uint8_t>((1u << kRootCount) - 1u);
+
+        const std::uint8_t physicalMask =
+            static_cast<std::uint8_t>(
+                usbHost_.physicalRootMask() & validMask
+            );
+
+        const auto plan =
+            oag::planHostRootReconcile(
+                physicalMask,
+                mountedRootMask_,
+                validMask
+            );
+
+        // Important safety boundary:
+        // U10K never synthesizes REMOVE. Upstream Pico-PIO-USB owns normal
+        // disconnect/hot-unplug lifecycle. We only recover a CONNECT/ATTACH
+        // event that appears to have been missed for a physically present root.
+        std::uint8_t attachMask = 0;
+
+        for (std::uint8_t rootIndex = 0;
+             rootIndex < kRootCount;
+             ++rootIndex) {
+            const std::uint8_t bit =
+                static_cast<std::uint8_t>(1u << rootIndex);
+
+            const bool physicallyPresent =
+                (physicalMask & bit) != 0;
+
+            const bool alreadyMounted =
+                (mountedRootMask_ & bit) != 0;
+
+            const bool missingAttach =
+                (plan.attachMask & bit) != 0;
+
+            if (
+                !physicallyPresent ||
+                alreadyMounted ||
+                !missingAttach
+            ) {
+                missingRootSinceUs_[rootIndex] = 0;
+                rootAttachRetryNotBeforeUs_[rootIndex] = 0;
+                continue;
+            }
+
+            if (missingRootSinceUs_[rootIndex] == 0) {
+                missingRootSinceUs_[rootIndex] = nowUs;
+                continue;
+            }
+
+            if (
+                nowUs - missingRootSinceUs_[rootIndex] <
+                kMissingRootStableUs
+            ) {
+                continue;
+            }
+
+            if (
+                nowUs <
+                rootAttachRetryNotBeforeUs_[rootIndex]
+            ) {
+                continue;
+            }
+
+            attachMask |= bit;
+            rootAttachRetryNotBeforeUs_[rootIndex] =
+                nowUs + kRootAttachRetryUs;
+        }
+
+        if (attachMask != 0) {
+            usbHost_.reconcileRootEvents(
+                0,
+                attachMask
+            );
+        }
     }
 
     void serviceKeyboardLeds() {
@@ -1920,6 +2021,18 @@ private:
     > rootByDevice_ {};
 
     std::uint8_t mountedRootMask_ = 0;
+
+    std::array<
+        std::uint64_t,
+        kRootCount
+    > missingRootSinceUs_ {};
+
+    std::array<
+        std::uint64_t,
+        kRootCount
+    > rootAttachRetryNotBeforeUs_ {};
+
+    std::uint64_t nextRootProbeUs_ = 0;
 
     oag::MouseMotion currentMouseMotion_ {};
     std::uint64_t mouseAimExpiresUs_ = 0;
