@@ -15,14 +15,14 @@ set(PICO_PIO_USB_PATH "${OAG_REPO_ROOT}/lib/pico_pio_usb" CACHE PATH "Pinned Pic
 
 include("${OAG_REPO_ROOT}/pico_sdk_import.cmake")
 
-project(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W LANGUAGES C CXX ASM)
+project(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W LANGUAGES C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
-add_executable(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W
+add_executable(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W
     src/main.cpp
     src/usb_pio_host.cpp
     src/usb_pio_probe.c
@@ -50,26 +50,26 @@ add_executable(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W
     ../src/feedback/keyboard_led_state.cpp
 )
 
-target_include_directories(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W PRIVATE
+target_include_directories(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}"
     "${CMAKE_CURRENT_LIST_DIR}/include"
     "${CMAKE_CURRENT_LIST_DIR}/../include"
     "${PICO_SDK_PATH}/lib/lwip/src/include"
 )
 
-target_compile_definitions(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W PRIVATE
+target_compile_definitions(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W PRIVATE
     PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64
     PICO_STACK_SIZE=0x1000
     CYW43_LWIP=0
 )
 
-target_compile_options(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W PRIVATE
+target_compile_options(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W PRIVATE
     -Wall
     -Wextra
     -Wpedantic
 )
 
-target_link_libraries(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W PRIVATE
+target_link_libraries(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W PRIVATE
     pico_stdlib
     pico_unique_id
     tinyusb_device
@@ -81,17 +81,17 @@ target_link_libraries(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W PRIVATE
     pico_btstack_classic
 )
 
-pico_enable_stdio_usb(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W 0)
-pico_enable_stdio_uart(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W 0)
+pico_enable_stdio_usb(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W 0)
+pico_enable_stdio_uart(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W 0)
 
 pico_set_program_name(
-    OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W
+    OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W
     "OAG Abo Gemi Ultra Gaming"
 )
-pico_set_program_version(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W "U10C")
+pico_set_program_version(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W "U10D")
 
-target_link_options(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W PRIVATE
-    "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W.map"
+target_link_options(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W PRIVATE
+    "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W.map"
 )
 
-pico_add_extra_outputs(OAG_Abo_Gemi_Ultra_Gaming_U10C_Pico2W)
+pico_add_extra_outputs(OAG_Abo_Gemi_Ultra_Gaming_U10D_Pico2W)

@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10C",
+    "phase": "U10D",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -144,6 +144,11 @@ manifest = {
         "u10c_xbox_ble_consumer_record_share": True,
         "u10c_keyboard_mouse_follow_primary": True,
         "u10c_usb_hub_gamepads_not_port_bound": True,
+        "u10d_independent_xinput_interfaces": True,
+        "u10d_custom_descriptor_type": "0x22",
+        "u10d_sequential_endpoint_pairs": ["81/01", "82/02", "83/03", "84/04"],
+        "u10d_fresh_windows_serial_namespace": "OAG-IND",
+        "u10d_u10c_runtime_routing_frozen": True,
         "authentication": False,
     },
     "pc_xinput_profile": {
@@ -189,7 +194,8 @@ manifest = {
         "u10a_single_bluetooth_primary_plus_wired_gamepad_keyboard_mouse": "HARDWARE_VERIFIED",
         "u10a_multibluetooth_2_to_4_peers": "PENDING_HARDWARE",
         "u10b_receiver_descriptor_experiment": "REJECTED_RETURNED_TO_U10A",
-        "u10c_primary_selection_chord": "PENDING_HARDWARE",
+        "u10c_primary_selection_chord": "HARDWARE_VERIFIED",
+        "u10d_independent_controller_output": "PENDING_HARDWARE",
     },
 }
 
