@@ -24,6 +24,11 @@ public:
         RumbleCommand& output
     ) override;
 
+    bool takePlayerAssignment(
+        std::uint8_t& receiverSlot,
+        std::uint8_t& playerIndex
+    );
+
 private:
     PcXinputDevice device_;
 };

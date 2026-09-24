@@ -52,4 +52,11 @@ bool PcXinputPlatformDriver::takeRumble(
     return device_.takeRumble(logicalSlot, output);
 }
 
+bool PcXinputPlatformDriver::takePlayerAssignment(
+    std::uint8_t& receiverSlot,
+    std::uint8_t& playerIndex
+) {
+    return device_.takePlayerAssignment(receiverSlot, playerIndex);
+}
+
 } // namespace oag::firmware

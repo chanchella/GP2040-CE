@@ -96,6 +96,7 @@ public:
     void task() {
         tud_task();
         platformOutput_.poll();
+        servicePlatformPlayerAssignments();
 
         usbHost_.task();
         serviceBluetoothHostV2();
@@ -1204,7 +1205,8 @@ private:
             (state.buttons & oag::ButtonStart) != 0 &&
             (
                 (state.buttons & oag::ButtonShare) != 0 ||
-                (state.buttons & oag::ButtonBack) != 0
+                (state.buttons & oag::ButtonBack) != 0 ||
+                (state.buttons & oag::ButtonGuide) != 0
             );
     }
 
@@ -1324,123 +1326,187 @@ private:
             );
     }
 
+    void servicePlatformPlayerAssignments() {
+        std::uint8_t receiverSlot = 0;
+        std::uint8_t playerIndex = 0;
+        bool primaryOutputChanged = false;
+
+        while (platformOutput_.takePlayerAssignment(
+                receiverSlot,
+                playerIndex
+            )) {
+            if (
+                receiverSlot >= pcOutputRoutes_.size() ||
+                playerIndex >= pcOutputRoutes_.size()
+            ) {
+                continue;
+            }
+
+            // Windows/xusb22 assigns XInput user numbers dynamically for
+            // receiver child controllers. Player 1 is XInput user index 0.
+            if (
+                playerIndex == 0 &&
+                hostPrimaryOutputSlot_ != receiverSlot
+            ) {
+                hostPrimaryOutputSlot_ = receiverSlot;
+                primaryOutputChanged = true;
+            }
+        }
+
+        if (primaryOutputChanged) {
+            rebuildPcOutputRouting();
+        }
+    }
+
     void rebuildPcOutputRouting() {
         std::array<
             std::optional<oag::LogicalSlotId>,
             oag::firmware::PcXinputDevice::kOutputSlots
         > nextRoutes {};
 
-        std::size_t outputIndex = 0;
+        if (hostPrimaryOutputSlot_ >= nextRoutes.size()) {
+            hostPrimaryOutputSlot_ = 0;
+        }
 
-        const auto appendSlot =
+        const auto alreadyRouted =
             [&](oag::LogicalSlotId slot) {
-                if (outputIndex >= nextRoutes.size()) {
+                for (const auto& route : nextRoutes) {
+                    if (route && *route == slot) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+        const auto appendRemaining =
+            [&](oag::LogicalSlotId slot) {
+                if (alreadyRouted(slot)) {
                     return;
                 }
 
-                for (std::size_t i = 0; i < outputIndex; ++i) {
-                    if (nextRoutes[i] && *nextRoutes[i] == slot) {
+                for (std::size_t output = 0;
+                     output < nextRoutes.size();
+                     ++output) {
+                    if (!nextRoutes[output]) {
+                        nextRoutes[output] = slot;
                         return;
                     }
                 }
-
-                nextRoutes[outputIndex++] = slot;
             };
 
-        // Manual Start + Share/View selection overrides automatic priority
-        // while that physical controller remains connected.
+        std::optional<oag::LogicalSlotId> primarySlot;
+
+        // Manual Start + Share/View/Guide selection overrides automatic
+        // Bluetooth priority while that physical controller stays connected.
         if (
             manualPrimaryGamepad_.valid() &&
             isRoutableGamepad(manualPrimaryGamepad_)
         ) {
-            if (const auto slot = slots_.slotFor(manualPrimaryGamepad_)) {
-                appendSlot(*slot);
-            }
+            primarySlot = slots_.slotFor(manualPrimaryGamepad_);
         } else {
             manualPrimaryGamepad_ = {};
         }
 
-        // Without a manual override, the first Bluetooth gamepad is Player 1.
-        if (outputIndex == 0) {
+        // Without a manual override, keep the first connected Bluetooth
+        // gamepad as the preferred physical primary.
+        if (!primarySlot) {
             if (
                 primaryBluetoothGamepad_.valid() &&
                 isBluetoothGamepad(primaryBluetoothGamepad_)
             ) {
-                if (const auto slot = slots_.slotFor(primaryBluetoothGamepad_)) {
-                    appendSlot(*slot);
-                }
+                primarySlot =
+                    slots_.slotFor(primaryBluetoothGamepad_);
             } else {
                 primaryBluetoothGamepad_ = {};
 
                 for (std::size_t i = 0;
                      i < oag::LogicalSlotManager::kGamepadSlots;
                      ++i) {
-                    const auto slot = static_cast<oag::LogicalSlotId>(i);
-                    const oag::DeviceId device = slots_.deviceFor(slot);
+                    const auto slot =
+                        static_cast<oag::LogicalSlotId>(i);
+                    const oag::DeviceId device =
+                        slots_.deviceFor(slot);
 
                     if (!isBluetoothGamepad(device)) {
                         continue;
                     }
 
                     primaryBluetoothGamepad_ = device;
-                    appendSlot(slot);
+                    primarySlot = slot;
                     break;
                 }
             }
         }
 
-        // Remaining Bluetooth gamepads stay independent; appendSlot de-dupes
-        // whichever device already owns Player 1.
+        // If no Bluetooth gamepad exists, the first routable wired gamepad is
+        // primary, but it still occupies the host's actual Player-1 receiver
+        // child rather than an assumed receiver slot.
+        if (!primarySlot) {
+            for (std::size_t i = 0;
+                 i < oag::LogicalSlotManager::kGamepadSlots;
+                 ++i) {
+                const auto slot =
+                    static_cast<oag::LogicalSlotId>(i);
+                const oag::DeviceId device =
+                    slots_.deviceFor(slot);
+
+                if (!isRoutableGamepad(device)) {
+                    continue;
+                }
+
+                primarySlot = slot;
+                break;
+            }
+        }
+
+        if (primarySlot) {
+            nextRoutes[hostPrimaryOutputSlot_] = *primarySlot;
+        }
+
+        // Remaining Bluetooth gamepads retain priority over wired gamepads.
         for (std::size_t i = 0;
-             i < oag::LogicalSlotManager::kGamepadSlots &&
-             outputIndex < nextRoutes.size();
+             i < oag::LogicalSlotManager::kGamepadSlots;
              ++i) {
             const auto slot = static_cast<oag::LogicalSlotId>(i);
             const oag::DeviceId device = slots_.deviceFor(slot);
 
-            if (!isBluetoothGamepad(device)) {
-                continue;
+            if (isBluetoothGamepad(device)) {
+                appendRemaining(slot);
             }
-
-            appendSlot(slot);
         }
 
-        // Wired gamepads fill any remaining PC outputs. This preserves the
-        // U9G wired path while giving Bluetooth gamepads explicit priority.
+        // Wired gamepads fill every remaining receiver child.
         for (std::size_t i = 0;
-             i < oag::LogicalSlotManager::kGamepadSlots &&
-             outputIndex < nextRoutes.size();
+             i < oag::LogicalSlotManager::kGamepadSlots;
              ++i) {
             const auto slot = static_cast<oag::LogicalSlotId>(i);
             const oag::DeviceId device = slots_.deviceFor(slot);
 
             if (
-                !isRoutableGamepad(device) ||
-                isBluetoothGamepad(device)
+                isRoutableGamepad(device) &&
+                !isBluetoothGamepad(device)
             ) {
-                continue;
+                appendRemaining(slot);
             }
-
-            appendSlot(slot);
         }
 
         pcOutputRoutes_ = nextRoutes;
 
-        // A route change invalidates any not-yet-forwarded PC rumble command:
-        // never send feedback intended for an old route to a newly routed
-        // physical controller.
         for (std::size_t i = 0; i < pendingRumble_.size(); ++i) {
             pendingRumble_[i] = {};
             pendingRumbleValid_[i] = false;
             bluetoothRumbleRetryNotBeforeUs_[i] = 0;
         }
 
-        // Refresh every statically enumerated PC output immediately.
         sendComposedOutput();
 
-        for (std::size_t pcSlot = 1;
+        for (std::size_t pcSlot = 0;
              pcSlot < pcOutputRoutes_.size();
              ++pcSlot) {
+            if (pcSlot == hostPrimaryOutputSlot_) {
+                continue;
+            }
+
             oag::LogicalGamepadState output {};
 
             if (pcOutputRoutes_[pcSlot]) {
@@ -1463,12 +1529,15 @@ private:
     }
 
     oag::LogicalGamepadState basePrimaryOutput() const {
-        if (!pcOutputRoutes_[0]) {
+        if (
+            hostPrimaryOutputSlot_ >= pcOutputRoutes_.size() ||
+            !pcOutputRoutes_[hostPrimaryOutputSlot_]
+        ) {
             return {};
         }
 
         const oag::LogicalSlotId slot =
-            *pcOutputRoutes_[0];
+            *pcOutputRoutes_[hostPrimaryOutputSlot_];
 
         if (slot >= states_.size() || !states_[slot].connected) {
             return {};
@@ -1492,7 +1561,7 @@ private:
                 continue;
             }
 
-            if (pcSlot == 0) {
+            if (pcSlot == hostPrimaryOutputSlot_) {
                 sendComposedOutput();
                 return;
             }
@@ -1531,11 +1600,14 @@ private:
         if (!output.connected && !hasKeyboard && !hasMouse) {
             // A true wireless receiver must report Player 1 absent when there
             // is no routed gamepad and no keyboard/mouse virtual input.
-            platformOutput_.submit(0, oag::LogicalGamepadState {});
+            platformOutput_.submit(
+                hostPrimaryOutputSlot_,
+                oag::LogicalGamepadState {}
+            );
             return;
         }
 
-        platformOutput_.submit(0, output);
+        platformOutput_.submit(hostPrimaryOutputSlot_, output);
     }
 
     void serviceMouseAimRelease() {
@@ -1758,6 +1830,9 @@ private:
 
     oag::DeviceId primaryBluetoothGamepad_ {};
     oag::DeviceId manualPrimaryGamepad_ {};
+
+    // Receiver child currently assigned by Windows/xusb22 to XInput Player 1.
+    std::uint8_t hostPrimaryOutputSlot_ = 0;
 
     std::array<
         oag::DeviceId,

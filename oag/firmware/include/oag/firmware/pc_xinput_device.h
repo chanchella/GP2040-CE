@@ -32,6 +32,11 @@ public:
         RumbleCommand& output
     );
 
+    bool takePlayerAssignment(
+        std::uint8_t& receiverSlot,
+        std::uint8_t& playerIndex
+    );
+
 private:
     std::array<XinputReportEncoder, kOutputSlots> encoders_ {};
     std::array<XinputReport, kOutputSlots> reports_ {};

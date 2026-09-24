@@ -48,7 +48,9 @@ struct ReceiverSlotRuntime {
     bool announcePending = false;
     bool batteryReplyPending = false;
     bool rumblePending = false;
+    bool playerAssignmentPending = false;
 
+    std::uint8_t hostPlayerIndex = 0xFF;
     std::uint64_t nextPresenceHeartbeatUs = 0;
 };
 
@@ -282,6 +284,40 @@ void parseGamepadOut(
 
         slot.latestRumble = next;
         slot.rumblePending = true;
+        return;
+    }
+
+    // Windows/xusb22 assigns XInput player numbers through the wireless
+    // receiver LED command. Commands 2..5 blink Player 1..4; 6..9 set the
+    // same quadrants steadily.
+    if (
+        length >= 4 &&
+        data[0] == 0x00 &&
+        data[1] == 0x00 &&
+        data[2] == 0x08 &&
+        (data[3] & 0xF0u) == 0x40u
+    ) {
+        const std::uint8_t command =
+            static_cast<std::uint8_t>(data[3] & 0x0Fu);
+
+        std::uint8_t playerIndex = 0xFF;
+
+        if (command >= 2 && command <= 5) {
+            playerIndex =
+                static_cast<std::uint8_t>(command - 2u);
+        } else if (command >= 6 && command <= 9) {
+            playerIndex =
+                static_cast<std::uint8_t>(command - 6u);
+        }
+
+        if (
+            playerIndex < kOutputSlots &&
+            slot.hostPlayerIndex != playerIndex
+        ) {
+            slot.hostPlayerIndex = playerIndex;
+            slot.playerAssignmentPending = true;
+        }
+
         return;
     }
 
@@ -690,6 +726,29 @@ bool PcXinputDevice::takeRumble(
         output = gSlots[slot].latestRumble;
         gSlots[slot].rumblePending = false;
         rumbleScanStart_ = (slot + 1u) % kOutputSlots;
+        return true;
+    }
+
+    return false;
+}
+
+bool PcXinputDevice::takePlayerAssignment(
+    std::uint8_t& receiverSlot,
+    std::uint8_t& playerIndex
+) {
+    for (std::size_t slot = 0; slot < kOutputSlots; ++slot) {
+        if (!gSlots[slot].playerAssignmentPending) {
+            continue;
+        }
+
+        if (gSlots[slot].hostPlayerIndex >= kOutputSlots) {
+            gSlots[slot].playerAssignmentPending = false;
+            continue;
+        }
+
+        receiverSlot = static_cast<std::uint8_t>(slot);
+        playerIndex = gSlots[slot].hostPlayerIndex;
+        gSlots[slot].playerAssignmentPending = false;
         return true;
     }
 
