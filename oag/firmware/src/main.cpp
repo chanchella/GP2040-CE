@@ -168,6 +168,13 @@ public:
         xgipTxPending_[*slot] = false;
         xgipGuidePressed_[*slot] = false;
 
+        if (protocol == oag::ProtocolKind::XgipXboxOne) {
+            bluetoothHost_.notifyWiredGamepadAttached(
+                vid,
+                pid
+            );
+        }
+
         rebuildPcOutputRouting();
     }
 

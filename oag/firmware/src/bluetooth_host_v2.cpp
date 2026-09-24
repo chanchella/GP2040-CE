@@ -201,6 +201,7 @@ void BluetoothHostV2::poll() {
     // event callback, matching the historical BluetoothHIDMaster flow:
     // scan -> stop -> connect.
     serviceDeferredBleConnect();
+    serviceWiredPairingAssist();
 
     // U10A continuous-discovery guard. Normal BLE -> Classic -> BLE cadence
     // remains unchanged; this only recovers an unexpected idle state while
@@ -293,6 +294,156 @@ BluetoothHidOutputResult BluetoothHostV2::sendLeOutputReport(
 
 bool BluetoothHostV2::hasCapacity() const {
     return connectedPeerCount() < kMaxPeers;
+}
+
+bool BluetoothHostV2::isKnownBluetoothCapableUsbGamepad(
+    std::uint16_t vid,
+    std::uint16_t pid
+) {
+    // Microsoft pads that are known to have Bluetooth-capable revisions while
+    // using XGIP/XInput over USB. Keep this deliberately narrow so plugging a
+    // random wired controller can never erase unrelated Bluetooth bonds.
+    if (vid != 0x045E) {
+        return false;
+    }
+
+    switch (pid) {
+        case 0x02D1: // Xbox One
+        case 0x02DD: // Xbox One (2015)
+        case 0x02E3: // Elite
+        case 0x02EA: // Xbox One S
+        case 0x0B00: // Elite Series 2
+        case 0x0B0A: // Adaptive Controller
+        case 0x0B12: // Xbox Series S|X
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+void BluetoothHostV2::notifyWiredGamepadAttached(
+    std::uint16_t vid,
+    std::uint16_t pid
+) {
+    if (!isKnownBluetoothCapableUsbGamepad(vid, pid)) {
+        return;
+    }
+
+    // A cable attachment is treated as an explicit pairing-recovery gesture.
+    // If Bluetooth is not initialized yet, poll() will service it immediately
+    // after HCI becomes operational.
+    wiredPairingAssistPending_ = true;
+}
+
+void BluetoothHostV2::rememberStaleLeBond(
+    const std::uint8_t* address,
+    std::uint8_t addressType
+) {
+    if (address == nullptr) {
+        return;
+    }
+
+    std::copy(
+        address,
+        address + staleLeBondAddress_.size(),
+        staleLeBondAddress_.begin()
+    );
+
+    staleLeBondAddressType_ = addressType;
+    staleLeBondValid_ = true;
+}
+
+bool BluetoothHostV2::deleteRememberedStaleLeBond() {
+    if (!staleLeBondValid_) {
+        return false;
+    }
+
+    gap_delete_bonding(
+        static_cast<bd_addr_type_t>(staleLeBondAddressType_),
+        staleLeBondAddress_.data()
+    );
+
+    staleLeBondValid_ = false;
+    staleLeBondAddress_ = {};
+    staleLeBondAddressType_ = 0;
+    return true;
+}
+
+bool BluetoothHostV2::deleteSingleStoredLeBondForAssist() {
+    // If no exact stale identity has been learned yet, a wired recovery
+    // gesture may safely repair a single stored LE bond when there are no
+    // active Bluetooth peers. Never bulk-delete when multiple bonds exist.
+    if (connectedPeerCount() != 0) {
+        return false;
+    }
+
+    int foundIndex = -1;
+    int foundCount = 0;
+    int foundAddressType = static_cast<int>(BD_ADDR_TYPE_UNKNOWN);
+    bd_addr_t foundAddress {};
+
+    const int maxEntries = le_device_db_max_count();
+
+    for (int index = 0; index < maxEntries; ++index) {
+        int addressType = static_cast<int>(BD_ADDR_TYPE_UNKNOWN);
+        bd_addr_t address {};
+        le_device_db_info(index, &addressType, address, nullptr);
+
+        if (addressType == static_cast<int>(BD_ADDR_TYPE_UNKNOWN)) {
+            continue;
+        }
+
+        ++foundCount;
+
+        if (foundCount == 1) {
+            foundIndex = index;
+            foundAddressType = addressType;
+            std::copy(
+                address,
+                address + sizeof(bd_addr_t),
+                foundAddress
+            );
+        } else {
+            break;
+        }
+    }
+
+    (void)foundIndex;
+
+    if (foundCount != 1) {
+        return false;
+    }
+
+    gap_delete_bonding(
+        static_cast<bd_addr_type_t>(foundAddressType),
+        foundAddress
+    );
+
+    return true;
+}
+
+void BluetoothHostV2::serviceWiredPairingAssist() {
+    if (
+        !wiredPairingAssistPending_ ||
+        !initialized_ ||
+        !hciWorking_ ||
+        !hasCapacity() ||
+        pendingKind_ != PendingKind::None
+    ) {
+        return;
+    }
+
+    if (!deleteRememberedStaleLeBond()) {
+        deleteSingleStoredLeBondForAssist();
+    }
+
+    // Give BLE first priority immediately. The controller still has to expose
+    // its Bluetooth radio/advertisement; USB cannot generically force that on
+    // every controller family.
+    stopDiscovery();
+    resumeDiscovery();
+    wiredPairingAssistPending_ = false;
 }
 
 BluetoothHostV2::Peer* BluetoothHostV2::allocatePeer() {
@@ -829,12 +980,52 @@ void BluetoothHostV2::handleSmPacket(
             const std::uint16_t handle =
                 sm_event_reencryption_complete_get_handle(packet);
 
-            if (
-                sm_event_reencryption_complete_get_status(packet) ==
-                ERROR_CODE_SUCCESS
-            ) {
+            const std::uint8_t status =
+                sm_event_reencryption_complete_get_status(packet);
+
+            if (status == ERROR_CODE_SUCCESS) {
+                staleLeBondValid_ = false;
                 startLeHids(handle);
-            } else if (findBleByHandle(handle) != nullptr) {
+                break;
+            }
+
+            // This is the official BTstack recovery pattern for the case where
+            // the remote controller was paired to another host and lost our
+            // old key. Authentication failure is handled the same way because
+            // it is the common stale-key outcome on modern BLE gamepads.
+            if (
+                status == ERROR_CODE_PIN_OR_KEY_MISSING ||
+                status == ERROR_CODE_AUTHENTICATION_FAILURE
+            ) {
+                bd_addr_t identityAddress {};
+
+                sm_event_reencryption_complete_get_address(
+                    packet,
+                    identityAddress
+                );
+
+                const std::uint8_t addressType =
+                    sm_event_reencryption_started_get_addr_type(packet);
+
+                rememberStaleLeBond(
+                    identityAddress,
+                    addressType
+                );
+
+                gap_delete_bonding(
+                    static_cast<bd_addr_type_t>(addressType),
+                    identityAddress
+                );
+
+                staleLeBondValid_ = false;
+
+                // Keep the current LE link and immediately perform fresh SMP
+                // pairing instead of forcing the user to reboot the Pico.
+                sm_request_pairing(handle);
+                break;
+            }
+
+            if (findBleByHandle(handle) != nullptr) {
                 gap_disconnect(handle);
             }
             break;

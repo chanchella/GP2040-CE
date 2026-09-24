@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F",
+    "phase": "U10G",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -168,6 +168,13 @@ manifest = {
         "u10f_keyboard_mouse_follow_host_player1": True,
         "u10f_primary_chord_guide_fallback": True,
         "u10f_receiver_persona_frozen_from_u10e": True,
+        "u10g_targeted_stale_bond_auto_repair": True,
+        "u10g_reencrypt_missing_key_fresh_pairing": True,
+        "u10g_reencrypt_auth_failure_fresh_pairing": True,
+        "u10g_wired_xbox_pairing_assist": True,
+        "u10g_wired_assist_single_bond_safety": True,
+        "u10g_no_bulk_bond_delete_with_multiple_bonds": True,
+        "u10g_wired_assist_ble_first": True,
         "authentication": False,
     },
     "pc_xinput_profile": {
@@ -216,7 +223,9 @@ manifest = {
         "u10c_primary_selection_chord": "HARDWARE_VERIFIED",
         "u10d_independent_controller_output": "REJECTED_HARDWARE",
         "u10e_true_xbox360_wireless_receiver": "PARTIAL_HARDWARE_VERIFIED_PRIMARY_NUMBERING_MISMATCH",
-        "u10f_host_player1_primary_alignment": "PENDING_HARDWARE",
+        "u10f_host_player1_primary_alignment": "HARDWARE_VERIFIED_BY_USER",
+        "u10g_stale_bond_recovery": "PENDING_HARDWARE",
+        "u10g_wired_pairing_assist": "PENDING_HARDWARE",
     },
 }
 
