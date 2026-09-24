@@ -403,6 +403,42 @@ jobs:
           cp "${OAG_MAP_PATH}" \
             "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10K_${SHORT_SHA}_Pico2W.map"
 
+          # Exact Bluetooth stock sources requested for offline safekeeping.
+          mkdir -p artifacts/bluetooth-stock
+
+          cp oag/firmware/src/bluetooth_host_v2.cpp \
+            artifacts/bluetooth-stock/bluetooth_host_v2.cpp
+          cp oag/firmware/include/oag/firmware/bluetooth_host_v2.h \
+            artifacts/bluetooth-stock/bluetooth_host_v2.h
+          cp oag/firmware/src/bluetooth_hid_parser_v2.cpp \
+            artifacts/bluetooth-stock/bluetooth_hid_parser_v2.cpp
+          cp oag/firmware/include/oag/firmware/bluetooth_hid_parser_v2.h \
+            artifacts/bluetooth-stock/bluetooth_hid_parser_v2.h
+
+          cat > artifacts/bluetooth-stock/README.txt <<EOF
+          OAG Universal Core V1 - U10K Bluetooth Stock Source
+          Exact repository commit: ${GITHUB_SHA}
+
+          bluetooth_host_v2.cpp / .h
+            Bluetooth transport, discovery, pairing, BLE/Classic HID Host,
+            persistent bonding and up-to-4 peer management.
+
+          bluetooth_hid_parser_v2.cpp / .h
+            HID descriptor/report parsing into OAG gamepad/keyboard/mouse state.
+
+          These files are packaged unchanged from the exact U10K source tree.
+          EOF
+
+          (
+            cd artifacts/bluetooth-stock
+            zip -q "../OAG_U10K_Bluetooth_Stock_${SHORT_SHA}.zip" \
+              bluetooth_host_v2.cpp \
+              bluetooth_host_v2.h \
+              bluetooth_hid_parser_v2.cpp \
+              bluetooth_hid_parser_v2.h \
+              README.txt
+          )
+
       - name: Upload U10K firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
