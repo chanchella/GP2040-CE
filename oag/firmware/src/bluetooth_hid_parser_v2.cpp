@@ -9,6 +9,37 @@
 namespace oag::firmware {
 namespace {
 
+// USB HID Usage Tables values are protocol constants. Keep them local so the
+// OAG parser does not depend on BTstack's public macro naming between SDK
+// releases.
+constexpr std::uint16_t kUsagePageGenericDesktop = 0x01;
+constexpr std::uint16_t kUsagePageSimulation = 0x02;
+constexpr std::uint16_t kUsagePageKeyboard = 0x07;
+constexpr std::uint16_t kUsagePageButton = 0x09;
+constexpr std::uint16_t kUsagePageConsumer = 0x0C;
+
+constexpr std::uint16_t kUsageMouse = 0x02;
+constexpr std::uint16_t kUsageJoystick = 0x04;
+constexpr std::uint16_t kUsageGamepad = 0x05;
+constexpr std::uint16_t kUsageKeyboard = 0x06;
+
+constexpr std::uint16_t kUsageX = 0x30;
+constexpr std::uint16_t kUsageY = 0x31;
+constexpr std::uint16_t kUsageZ = 0x32;
+constexpr std::uint16_t kUsageRx = 0x33;
+constexpr std::uint16_t kUsageRy = 0x34;
+constexpr std::uint16_t kUsageRz = 0x35;
+constexpr std::uint16_t kUsageWheel = 0x38;
+constexpr std::uint16_t kUsageHat = 0x39;
+constexpr std::uint16_t kUsageDpadUp = 0x90;
+constexpr std::uint16_t kUsageDpadDown = 0x91;
+constexpr std::uint16_t kUsageDpadRight = 0x92;
+constexpr std::uint16_t kUsageDpadLeft = 0x93;
+
+constexpr std::uint16_t kUsageAccelerator = 0xC4;
+constexpr std::uint16_t kUsageBrake = 0xC5;
+constexpr std::uint16_t kUsageConsumerAcPan = 0x0238;
+
 void classifyTopLevelApplications(
     BluetoothHidDescriptorV2& info,
     const std::uint8_t* descriptor,
@@ -66,19 +97,19 @@ void classifyTopLevelApplications(
             type == 0u &&
             tag == 0x0Au &&
             value == 0x01u &&
-            usagePage == USAGE_PAGE_GENERIC_DESKTOP
+            usagePage == kUsagePageGenericDesktop
         ) {
             switch (localUsage) {
-                case USAGE_DESKTOP_GAMEPAD:
-                case USAGE_DESKTOP_JOYSTICK:
+                case kUsageGamepad:
+                case kUsageJoystick:
                     info.hasGamepad = true;
                     break;
 
-                case USAGE_DESKTOP_KEYBOARD:
+                case kUsageKeyboard:
                     info.hasKeyboard = true;
                     break;
 
-                case USAGE_DESKTOP_MOUSE:
+                case kUsageMouse:
                     info.hasMouse = true;
                     break;
 
@@ -205,7 +236,7 @@ bool BluetoothHidParserV2::parseDescriptor(
         &iterator,
         descriptor,
         static_cast<std::uint16_t>(descriptorLength),
-        BT_HID_REPORT_TYPE_INPUT
+        HID_REPORT_TYPE_INPUT
     );
 
     while (btstack_hid_usage_iterator_has_more(&iterator)) {
@@ -239,14 +270,14 @@ bool BluetoothHidParserV2::parseDescriptor(
         BluetoothHidReportMetaV2* meta =
             ensureReportMeta(output, item.report_id);
 
-        if (item.usage_page == USAGE_PAGE_KEYBOARD) {
+        if (item.usage_page == kUsagePageKeyboard) {
             hasKeyboardFields = true;
             if (meta != nullptr) {
                 meta->flags |= kReportKeyboard;
             }
         }
 
-        if (item.usage_page == USAGE_PAGE_BUTTON) {
+        if (item.usage_page == kUsagePageButton) {
             hasButtons = true;
             if (meta != nullptr) {
                 meta->flags |= kReportButtons;
@@ -268,28 +299,28 @@ bool BluetoothHidParserV2::parseDescriptor(
             }
         }
 
-        if (item.usage_page == USAGE_PAGE_SIMULATION) {
-            if (item.usage == USAGE_SIM_ACCELERATOR) {
+        if (item.usage_page == kUsagePageSimulation) {
+            if (item.usage == kUsageAccelerator) {
                 hasAccelerator = true;
-            } else if (item.usage == USAGE_SIM_BRAKE) {
+            } else if (item.usage == kUsageBrake) {
                 hasBrake = true;
             }
         }
 
-        if (item.usage_page == USAGE_PAGE_GENERIC_DESKTOP) {
+        if (item.usage_page == kUsagePageGenericDesktop) {
             switch (item.usage) {
-                case USAGE_X:
-                case USAGE_Y:
-                case USAGE_Z:
-                case USAGE_RX:
-                case USAGE_RY:
-                case USAGE_RZ:
-                case USAGE_WHEEL:
-                case USAGE_HAT:
-                case USAGE_DPAD_UP:
-                case USAGE_DPAD_DOWN:
-                case USAGE_DPAD_LEFT:
-                case USAGE_DPAD_RIGHT:
+                case kUsageX:
+                case kUsageY:
+                case kUsageZ:
+                case kUsageRx:
+                case kUsageRy:
+                case kUsageRz:
+                case kUsageWheel:
+                case kUsageHat:
+                case kUsageDpadUp:
+                case kUsageDpadDown:
+                case kUsageDpadLeft:
+                case kUsageDpadRight:
                     hasAxis = true;
                     break;
 
@@ -300,9 +331,9 @@ bool BluetoothHidParserV2::parseDescriptor(
             if (
                 meta != nullptr &&
                 (
-                    item.usage == USAGE_X ||
-                    item.usage == USAGE_Y ||
-                    item.usage == USAGE_WHEEL
+                    item.usage == kUsageX ||
+                    item.usage == kUsageY ||
+                    item.usage == kUsageWheel
                 )
             ) {
                 meta->flags |= kReportPointer;
@@ -310,8 +341,8 @@ bool BluetoothHidParserV2::parseDescriptor(
         }
 
         if (
-            item.usage_page == USAGE_PAGE_CONSUMER &&
-            item.usage == USAGE_CONSUMER_AC_PAN &&
+            item.usage_page == kUsagePageConsumer &&
+            item.usage == kUsageConsumerAcPan &&
             meta != nullptr
         ) {
             meta->flags |= kReportPointer;
@@ -657,7 +688,7 @@ bool BluetoothHidParserV2::parseGamepad(
         &parser,
         descriptor,
         static_cast<std::uint16_t>(descriptorLength),
-        BT_HID_REPORT_TYPE_INPUT,
+        HID_REPORT_TYPE_INPUT,
         report,
         static_cast<std::uint16_t>(reportLength)
     );
@@ -721,7 +752,7 @@ bool BluetoothHidParserV2::parseGamepad(
             logicalMax
         );
 
-        if (usagePage == USAGE_PAGE_BUTTON) {
+        if (usagePage == kUsagePageButton) {
             sawButtonPage = true;
             sawUseful = true;
             if (value != 0) {
@@ -736,14 +767,14 @@ bool BluetoothHidParserV2::parseGamepad(
             continue;
         }
 
-        if (usagePage == USAGE_PAGE_SIMULATION) {
-            if (usage == USAGE_SIM_ACCELERATOR) {
+        if (usagePage == kUsagePageSimulation) {
+            if (usage == kUsageAccelerator) {
                 sawAccelerator = true;
                 acceleratorValue = value;
                 acceleratorMin = logicalMin;
                 acceleratorMax = logicalMax;
                 sawUseful = true;
-            } else if (usage == USAGE_SIM_BRAKE) {
+            } else if (usage == kUsageBrake) {
                 sawBrake = true;
                 brakeValue = value;
                 brakeMin = logicalMin;
@@ -753,34 +784,34 @@ bool BluetoothHidParserV2::parseGamepad(
             continue;
         }
 
-        if (usagePage != USAGE_PAGE_GENERIC_DESKTOP) {
+        if (usagePage != kUsagePageGenericDesktop) {
             continue;
         }
 
         switch (usage) {
-            case USAGE_X:
+            case kUsageX:
                 next.lx = scaleAxis(value, logicalMin, logicalMax);
                 sawUseful = true;
                 break;
 
-            case USAGE_Y:
+            case kUsageY:
                 next.ly = scaleAxis(value, logicalMin, logicalMax);
                 sawUseful = true;
                 break;
 
-            case USAGE_RX:
+            case kUsageRx:
                 next.rx = scaleAxis(value, logicalMin, logicalMax);
                 sawRx = true;
                 sawUseful = true;
                 break;
 
-            case USAGE_RY:
+            case kUsageRy:
                 next.ry = scaleAxis(value, logicalMin, logicalMax);
                 sawRy = true;
                 sawUseful = true;
                 break;
 
-            case USAGE_Z:
+            case kUsageZ:
                 sawZ = true;
                 zValue = value;
                 zMin = logicalMin;
@@ -788,7 +819,7 @@ bool BluetoothHidParserV2::parseGamepad(
                 sawUseful = true;
                 break;
 
-            case USAGE_RZ:
+            case kUsageRz:
                 sawRz = true;
                 rzValue = value;
                 rzMin = logicalMin;
@@ -796,13 +827,13 @@ bool BluetoothHidParserV2::parseGamepad(
                 sawUseful = true;
                 break;
 
-            case USAGE_HAT:
+            case kUsageHat:
                 next.dpad =
                     hatToDpad(value, logicalMin, logicalMax);
                 sawUseful = true;
                 break;
 
-            case USAGE_DPAD_UP:
+            case kUsageDpadUp:
                 if (value != 0) {
                     next.dpad |= static_cast<std::uint8_t>(DpadBits::Up);
                 } else {
@@ -811,7 +842,7 @@ bool BluetoothHidParserV2::parseGamepad(
                 sawUseful = true;
                 break;
 
-            case USAGE_DPAD_DOWN:
+            case kUsageDpadDown:
                 if (value != 0) {
                     next.dpad |= static_cast<std::uint8_t>(DpadBits::Down);
                 } else {
@@ -820,7 +851,7 @@ bool BluetoothHidParserV2::parseGamepad(
                 sawUseful = true;
                 break;
 
-            case USAGE_DPAD_LEFT:
+            case kUsageDpadLeft:
                 if (value != 0) {
                     next.dpad |= static_cast<std::uint8_t>(DpadBits::Left);
                 } else {
@@ -829,7 +860,7 @@ bool BluetoothHidParserV2::parseGamepad(
                 sawUseful = true;
                 break;
 
-            case USAGE_DPAD_RIGHT:
+            case kUsageDpadRight:
                 if (value != 0) {
                     next.dpad |= static_cast<std::uint8_t>(DpadBits::Right);
                 } else {
@@ -950,7 +981,7 @@ bool BluetoothHidParserV2::parseKeyboard(
         &parser,
         descriptor,
         static_cast<std::uint16_t>(descriptorLength),
-        BT_HID_REPORT_TYPE_INPUT,
+        HID_REPORT_TYPE_INPUT,
         report,
         static_cast<std::uint16_t>(reportLength)
     );
@@ -968,7 +999,7 @@ bool BluetoothHidParserV2::parseKeyboard(
         );
 
         if (
-            usagePage != USAGE_PAGE_KEYBOARD ||
+            usagePage != kUsagePageKeyboard ||
             value == 0
         ) {
             continue;
@@ -1047,7 +1078,7 @@ bool BluetoothHidParserV2::parseMouse(
         &parser,
         descriptor,
         static_cast<std::uint16_t>(descriptorLength),
-        BT_HID_REPORT_TYPE_INPUT,
+        HID_REPORT_TYPE_INPUT,
         report,
         static_cast<std::uint16_t>(reportLength)
     );
@@ -1065,7 +1096,7 @@ bool BluetoothHidParserV2::parseMouse(
         );
 
         if (
-            usagePage == USAGE_PAGE_BUTTON &&
+            usagePage == kUsagePageButton &&
             usage >= 1 &&
             usage <= 5
         ) {
@@ -1084,19 +1115,19 @@ bool BluetoothHidParserV2::parseMouse(
             continue;
         }
 
-        if (usagePage == USAGE_PAGE_GENERIC_DESKTOP) {
+        if (usagePage == kUsagePageGenericDesktop) {
             switch (usage) {
-                case USAGE_X:
+                case kUsageX:
                     next.dx = value;
                     saw = true;
                     break;
 
-                case USAGE_Y:
+                case kUsageY:
                     next.dy = value;
                     saw = true;
                     break;
 
-                case USAGE_WHEEL:
+                case kUsageWheel:
                     next.wheel = static_cast<std::int16_t>(
                         std::clamp<std::int32_t>(
                             value,
@@ -1114,8 +1145,8 @@ bool BluetoothHidParserV2::parseMouse(
         }
 
         if (
-            usagePage == USAGE_PAGE_CONSUMER &&
-            usage == USAGE_CONSUMER_AC_PAN
+            usagePage == kUsagePageConsumer &&
+            usage == kUsageConsumerAcPan
         ) {
             next.pan = static_cast<std::int16_t>(
                 std::clamp<std::int32_t>(
