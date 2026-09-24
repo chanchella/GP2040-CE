@@ -542,7 +542,9 @@ void BluetoothRuntime::handleHciPacket(
             }
 
             const bd_addr_type_t addressType =
-                gap_event_advertising_report_get_address_type(packet);
+                static_cast<bd_addr_type_t>(
+                    gap_event_advertising_report_get_address_type(packet)
+                );
 
             gap_stop_scan();
 
@@ -681,11 +683,10 @@ void BluetoothRuntime::handleClassicHidPacket(
 
     switch (hci_event_hid_meta_get_subevent_code(packet)) {
         case HID_SUBEVENT_INCOMING_CONNECTION:
-            if (
-                hasFreeConnectionBudget() &&
-                hid_subevent_incoming_connection_get_status(packet) ==
-                    ERROR_CODE_SUCCESS
-            ) {
+            // BTstack 2.1.1 emits this subevent only after an incoming HID
+            // control link exists; there is no status field in this event.
+            // Capacity is the admission gate.
+            if (hasFreeConnectionBudget()) {
                 hid_host_accept_connection(
                     hid_subevent_incoming_connection_get_hid_cid(
                         packet
