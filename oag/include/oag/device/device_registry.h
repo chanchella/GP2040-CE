@@ -18,6 +18,7 @@ enum class TransportType : std::uint8_t {
 enum class ProtocolKind : std::uint8_t {
     Unknown = 0,
     XusbXbox360,
+    XgipXboxOne,
     HidGamepad,
     HidKeyboard,
     HidMouse,
@@ -40,7 +41,7 @@ struct DeviceRecord {
 
 class DeviceRegistry {
 public:
-    static constexpr std::size_t kCapacity = 8;
+    static constexpr std::size_t kCapacity = 12;
 
     std::optional<DeviceId> connectUsb(
         UsbTransportHandle handle,

@@ -13,7 +13,7 @@ using LogicalSlotId = std::uint8_t;
 
 class LogicalSlotManager {
 public:
-    static constexpr std::size_t kGamepadSlots = 4;
+    static constexpr std::size_t kGamepadSlots = 8;
 
     std::optional<LogicalSlotId> bindFirstFree(DeviceId device);
     bool release(DeviceId device);

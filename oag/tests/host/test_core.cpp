@@ -40,6 +40,9 @@ int main() {
     assert(firstRecord->pid == 0x028E);
     assert(firstRecord->protocol == ProtocolKind::XusbXbox360);
 
+    static_assert(LogicalSlotManager::kGamepadSlots == 8);
+    static_assert(DeviceRegistry::kCapacity == 12);
+
     LogicalSlotManager slots;
     const auto slot0 = slots.bindFirstFree(*first);
     assert(slot0.has_value() && *slot0 == 0);
@@ -62,6 +65,40 @@ int main() {
 
     const auto rebound = slots.bindFirstFree(*second);
     assert(rebound.has_value() && *rebound == 0);
+
+    // U6A input-side capacity: eight independent gamepad slots.
+    std::array<DeviceId, LogicalSlotManager::kGamepadSlots> slotDevices {};
+    slotDevices[0] = *second;
+
+    for (std::size_t i = 1; i < LogicalSlotManager::kGamepadSlots; ++i) {
+        const UsbTransportHandle handle {
+            static_cast<std::uint8_t>(i + 1u),
+            0,
+        };
+
+        const auto id = registry.connectUsb(
+            handle,
+            static_cast<std::uint16_t>(0x1000u + i),
+            static_cast<std::uint16_t>(0x2000u + i),
+            ProtocolKind::HidGamepad
+        );
+
+        assert(id.has_value());
+        slotDevices[i] = *id;
+
+        const auto slot = slots.bindFirstFree(*id);
+        assert(slot.has_value());
+        assert(*slot == i);
+    }
+
+    const auto overflowDevice = registry.connectUsb(
+        UsbTransportHandle {10, 0},
+        0x7777,
+        0x8888,
+        ProtocolKind::HidGamepad
+    );
+    assert(overflowDevice.has_value());
+    assert(!slots.bindFirstFree(*overflowDevice).has_value());
 
     const std::uint8_t xusbReport[20] = {
         0x00, 0x14,

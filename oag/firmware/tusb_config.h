@@ -23,26 +23,27 @@ extern "C" {
 #define CFG_TUD_MSC 0
 #define CFG_TUD_MIDI 0
 
-// TinyUSB 0.17's device stack cannot compile with an empty built-in driver
-// table. Keep one Vendor driver as a compile anchor. OAG's custom XInput
-// application driver is registered first and claims all four XInput vendor
-// interfaces, so this built-in driver is not the gameplay transport.
+// TinyUSB 0.17 compile anchor. OAG's custom XInput application driver is
+// registered first and claims the target-facing XInput interfaces.
 #define CFG_TUD_VENDOR 1
-
-// U3B device-side output remains the proven Xbox 360/XInput-compatible vendor
-// interface. Generic HID device mode is intentionally disabled.
 #define CFG_TUD_HID 0
 
 #define CFG_TUH_ENABLED 1
 #define CFG_TUH_RPI_PIO_USB 1
-#define CFG_TUH_HUB 0
-#define CFG_TUH_DEVICE_MAX 4
 
-#define CFG_TUH_HID 8
-#define CFG_TUH_HID_EPIN_BUFSIZE 64
-#define CFG_TUH_HID_EPOUT_BUFSIZE 64
+// U6A multi-device host budget.
+// - up to 12 non-hub USB devices
+// - up to 4 hubs
+// - larger enumeration buffer for complex gamepad HID descriptors
+#define CFG_TUH_DEVICE_MAX 12
+#define CFG_TUH_HUB 4
+#define CFG_TUH_ENUMERATION_BUFSIZE 1024
 
-#define CFG_TUH_XINPUT 4
+#define CFG_TUH_HID 12
+#define CFG_TUH_HID_EPIN_BUFSIZE 128
+#define CFG_TUH_HID_EPOUT_BUFSIZE 128
+
+#define CFG_TUH_XINPUT 8
 #define CFG_TUH_XINPUT_EPIN_BUFSIZE 64
 #define CFG_TUH_XINPUT_EPOUT_BUFSIZE 64
 
