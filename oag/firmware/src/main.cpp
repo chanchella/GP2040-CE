@@ -874,53 +874,82 @@ private:
         diagnostic.connected = true;
         diagnostic.timestampUs = nowUs;
 
+        const std::uint8_t stage =
+            bluetooth_.diagnosticStage();
+
         if (bluetooth_.diagnosticReportSeen()) {
             diagnostic.buttons =
-                oag::ButtonGuide |
                 oag::ButtonSouth |
                 oag::ButtonEast |
                 oag::ButtonWest |
                 oag::ButtonNorth |
                 oag::ButtonLeftBumper |
-                oag::ButtonRightBumper;
-        } else {
-            switch (bluetooth_.diagnosticStage()) {
-                case 1:
-                    diagnostic.buttons = oag::ButtonSouth;
-                    break;
+                oag::ButtonRightBumper |
+                oag::ButtonGuide;
+        } else if (bluetooth_.diagnosticFailed()) {
+            diagnostic.buttons = oag::ButtonStart;
 
-                case 2:
-                    diagnostic.buttons = oag::ButtonEast;
-                    break;
-
-                case 3:
-                    diagnostic.buttons = oag::ButtonWest;
-                    break;
-
-                case 4:
-                    diagnostic.buttons = oag::ButtonNorth;
-                    break;
-
-                case 5:
-                    diagnostic.buttons = oag::ButtonLeftBumper;
-                    break;
-
-                case 6:
-                    diagnostic.buttons = oag::ButtonRightBumper;
-                    break;
-
-                default:
-                    diagnostic.buttons = 0;
-                    break;
+            // Button 7 / Back marks Classic. If it is off, the failure is BLE.
+            if (bluetooth_.diagnosticTransport() == 2) {
+                diagnostic.buttons |= oag::ButtonBack;
             }
 
-            if (bluetooth_.diagnosticFailed()) {
-                diagnostic.buttons |= oag::ButtonStart;
+            const std::uint8_t code =
+                bluetooth_.diagnosticErrorCode();
+
+            if (code & 0x01u) diagnostic.buttons |= oag::ButtonSouth;
+            if (code & 0x02u) diagnostic.buttons |= oag::ButtonEast;
+            if (code & 0x04u) diagnostic.buttons |= oag::ButtonWest;
+            if (code & 0x08u) diagnostic.buttons |= oag::ButtonNorth;
+            if (code & 0x10u) diagnostic.buttons |= oag::ButtonLeftBumper;
+            if (code & 0x20u) diagnostic.buttons |= oag::ButtonRightBumper;
+            if (code & 0x40u) diagnostic.buttons |= oag::ButtonLeftStick;
+            if (code & 0x80u) diagnostic.buttons |= oag::ButtonRightStick;
+
+            switch (stage) {
+                case 1:
+                    diagnostic.dpad =
+                        static_cast<std::uint8_t>(oag::DpadBits::Up);
+                    break;
+                case 2:
+                    diagnostic.dpad =
+                        static_cast<std::uint8_t>(oag::DpadBits::Up) |
+                        static_cast<std::uint8_t>(oag::DpadBits::Right);
+                    break;
+                case 3:
+                    diagnostic.dpad =
+                        static_cast<std::uint8_t>(oag::DpadBits::Right);
+                    break;
+                case 4:
+                    diagnostic.dpad =
+                        static_cast<std::uint8_t>(oag::DpadBits::Down) |
+                        static_cast<std::uint8_t>(oag::DpadBits::Right);
+                    break;
+                case 5:
+                    diagnostic.dpad =
+                        static_cast<std::uint8_t>(oag::DpadBits::Down);
+                    break;
+                case 6:
+                    diagnostic.dpad =
+                        static_cast<std::uint8_t>(oag::DpadBits::Down) |
+                        static_cast<std::uint8_t>(oag::DpadBits::Left);
+                    break;
+                default:
+                    diagnostic.dpad = 0;
+                    break;
+            }
+        } else {
+            switch (stage) {
+                case 1: diagnostic.buttons = oag::ButtonSouth; break;
+                case 2: diagnostic.buttons = oag::ButtonEast; break;
+                case 3: diagnostic.buttons = oag::ButtonWest; break;
+                case 4: diagnostic.buttons = oag::ButtonNorth; break;
+                case 5: diagnostic.buttons = oag::ButtonLeftBumper; break;
+                case 6: diagnostic.buttons = oag::ButtonRightBumper; break;
+                default: diagnostic.buttons = 0; break;
             }
         }
 
-        // U8H diagnostic gate intentionally owns XInput output slot 3 only.
-        // USB descriptors are unchanged; this is a temporary software overlay.
         platformOutput_.submit(
             kBluetoothDiagnosticOutputSlot,
             diagnostic

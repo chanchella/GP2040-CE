@@ -342,6 +342,7 @@ void BluetoothRuntime::connectGoldenStoredBleRemote() {
     gap_inquiry_stop();
     gap_connect_cancel();
     discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+    diagnosticTransport_ = 1;
     setDiagnosticStage(2);
 
     const std::uint8_t status = gap_connect(
@@ -357,7 +358,7 @@ void BluetoothRuntime::connectGoldenStoredBleRemote() {
         return;
     }
 
-    setDiagnosticStage(2, true);
+    setDiagnosticFailure(2, 1, status);
     goldenBleRemoteKnown_ = false;
     startLeScan();
 }
@@ -373,6 +374,7 @@ void BluetoothRuntime::connectGoldenStoredClassicRemote() {
     gap_inquiry_stop();
     gap_connect_cancel();
     discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+    diagnosticTransport_ = 2;
     setDiagnosticStage(2);
 
     std::uint16_t hidCid = 0;
@@ -388,7 +390,7 @@ void BluetoothRuntime::connectGoldenStoredClassicRemote() {
         return;
     }
 
-    setDiagnosticStage(2, true);
+    setDiagnosticFailure(2, 2, status);
     goldenClassicRemoteKnown_ = false;
     startLeScan();
 }
@@ -650,7 +652,7 @@ void BluetoothRuntime::startLeHids(
     );
 
     if (status != ERROR_CODE_SUCCESS) {
-        setDiagnosticStage(5, true);
+        setDiagnosticFailure(5, 1, status);
         gap_disconnect(connectionHandle);
         return;
     }
@@ -723,6 +725,21 @@ void BluetoothRuntime::setDiagnosticStage(
 ) {
     diagnosticStage_ = stage;
     diagnosticFailed_ = failed;
+    if (!failed) {
+        diagnosticErrorCode_ = 0;
+    }
+    diagnosticCycleStartUs_ = time_us_64();
+}
+
+void BluetoothRuntime::setDiagnosticFailure(
+    std::uint8_t stage,
+    std::uint8_t transport,
+    std::uint8_t errorCode
+) {
+    diagnosticStage_ = stage;
+    diagnosticTransport_ = transport;
+    diagnosticErrorCode_ = errorCode;
+    diagnosticFailed_ = true;
     diagnosticCycleStartUs_ = time_us_64();
 }
 
@@ -842,6 +859,7 @@ void BluetoothRuntime::handleHciPacket(
             stopDiscoveryTimer();
             gap_inquiry_stop();
             discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+            diagnosticTransport_ = 2;
             setDiagnosticStage(2);
 
             std::copy(
@@ -862,7 +880,7 @@ void BluetoothRuntime::handleHciPacket(
                 classicConnectPending_ = true;
                 setDiagnosticStage(3);
             } else {
-                setDiagnosticStage(2, true);
+                setDiagnosticFailure(2, 2, status);
                 discoveryPhase_ = DiscoveryPhase::Idle;
                 startLeScan();
             }
@@ -910,6 +928,7 @@ void BluetoothRuntime::handleHciPacket(
             stopDiscoveryTimer();
             gap_stop_scan();
             discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+            diagnosticTransport_ = 1;
             setDiagnosticStage(2);
 
             std::copy(
@@ -928,7 +947,7 @@ void BluetoothRuntime::handleHciPacket(
                 leConnectPending_ = true;
                 setDiagnosticStage(3);
             } else {
-                setDiagnosticStage(2, true);
+                setDiagnosticFailure(2, 1, status);
                 discoveryPhase_ = DiscoveryPhase::Idle;
                 startLeScan();
             }
@@ -950,12 +969,13 @@ void BluetoothRuntime::handleHciPacket(
                     );
 
                 if (status != ERROR_CODE_SUCCESS) {
-                    setDiagnosticStage(3, true);
+                    setDiagnosticFailure(3, 1, status);
                     goldenBleRemoteKnown_ = false;
                     resumeDiscovery();
                     break;
                 }
 
+                diagnosticTransport_ = 1;
                 setDiagnosticStage(4);
 
                 const std::uint16_t connectionHandle =
@@ -1027,12 +1047,14 @@ void BluetoothRuntime::handleHciPacket(
         case HCI_EVENT_DISCONNECTION_COMPLETE: {
             if (
                 !diagnosticReportSeen_ &&
+                !diagnosticFailed_ &&
                 diagnosticStage_ > 1 &&
                 diagnosticStage_ < 6
             ) {
-                setDiagnosticStage(
+                setDiagnosticFailure(
                     diagnosticStage_,
-                    true
+                    diagnosticTransport_,
+                    hci_event_disconnection_complete_get_reason(packet)
                 );
             }
 
@@ -1111,11 +1133,12 @@ void BluetoothRuntime::handleClassicHidPacket(
                 hid_subevent_connection_opened_get_status(packet);
 
             if (status != ERROR_CODE_SUCCESS) {
-                setDiagnosticStage(3, true);
+                setDiagnosticFailure(3, 2, status);
                 resumeDiscovery();
                 break;
             }
 
+            diagnosticTransport_ = 2;
             setDiagnosticStage(4);
 
             ClassicLink* link = allocateClassic();
@@ -1156,11 +1179,11 @@ void BluetoothRuntime::handleClassicHidPacket(
                 break;
             }
 
-            if (
-                hid_subevent_descriptor_available_get_status(packet) !=
-                    ERROR_CODE_SUCCESS
-            ) {
-                setDiagnosticStage(4, true);
+            const std::uint8_t descriptorStatus =
+                hid_subevent_descriptor_available_get_status(packet);
+
+            if (descriptorStatus != ERROR_CODE_SUCCESS) {
+                setDiagnosticFailure(4, 2, descriptorStatus);
                 hid_host_disconnect(cid);
                 break;
             }
@@ -1292,7 +1315,13 @@ void BluetoothRuntime::handleSmPacket(
                 setDiagnosticStage(5);
                 startLeHids(handle);
             } else {
-                setDiagnosticStage(4, true);
+                const std::uint8_t reason =
+                    sm_event_pairing_complete_get_reason(packet);
+                setDiagnosticFailure(
+                    4,
+                    1,
+                    reason != 0 ? reason : status
+                );
                 gap_disconnect(handle);
             }
             break;
@@ -1308,7 +1337,7 @@ void BluetoothRuntime::handleSmPacket(
                 setDiagnosticStage(5);
                 startLeHids(handle);
             } else {
-                setDiagnosticStage(4, true);
+                setDiagnosticFailure(4, 1, status);
                 gap_disconnect(handle);
             }
             break;
@@ -1354,7 +1383,7 @@ void BluetoothRuntime::handleLeHidPacket(
                 );
 
             if (status != ERROR_CODE_SUCCESS) {
-                setDiagnosticStage(5, true);
+                setDiagnosticFailure(5, 1, status);
                 gap_disconnect(link->connectionHandle);
                 break;
             }

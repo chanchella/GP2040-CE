@@ -70,6 +70,14 @@ public:
         return diagnosticReportSeen_;
     }
 
+    std::uint8_t diagnosticErrorCode() const {
+        return diagnosticErrorCode_;
+    }
+
+    std::uint8_t diagnosticTransport() const {
+        return diagnosticTransport_;
+    }
+
     // Called by the C BTstack thunks in the translation unit.
     void handleHciPacket(
         std::uint8_t packetType,
@@ -160,6 +168,11 @@ private:
         std::uint8_t stage,
         bool failed = false
     );
+    void setDiagnosticFailure(
+        std::uint8_t stage,
+        std::uint8_t transport,
+        std::uint8_t errorCode
+    );
 
     bool loadGoldenStoredBleRemote();
     bool loadGoldenStoredClassicRemote();
@@ -193,6 +206,8 @@ private:
     std::uint8_t diagnosticStage_ = 0;
     bool diagnosticFailed_ = false;
     bool diagnosticReportSeen_ = false;
+    std::uint8_t diagnosticErrorCode_ = 0;
+    std::uint8_t diagnosticTransport_ = 0; // 1 = BLE, 2 = Classic
 
     std::array<ClassicLink, kConnectionBudget> classicLinks_ {};
     std::array<LeLink, kConnectionBudget> leLinks_ {};
