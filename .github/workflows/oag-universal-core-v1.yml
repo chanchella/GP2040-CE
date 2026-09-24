@@ -29,19 +29,18 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
 
-      - name: Verify U10G Bluetooth recovery scope against hardware-tested U10F
+      - name: Verify U10H recovery fix scope against U10G
         shell: bash
         run: |
           set -euo pipefail
-          U10F_BASELINE="7799d270d98ae09e7608f05b15f687a20a459871"
-          git merge-base --is-ancestor "${U10F_BASELINE}" HEAD
+          U10G_BASELINE="43d745526e97edeaed6f627b1b2e5eea064f5ae9"
+          git merge-base --is-ancestor "${U10G_BASELINE}" HEAD
 
           EXPECTED="$(printf '%s\n' \
             'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
-            'oag/firmware/src/bluetooth_host_v2.cpp' \
-            'oag/firmware/src/main.cpp' | sort)"
+            'oag/firmware/src/bluetooth_host_v2.cpp' | sort)"
 
-          ACTUAL="$(git diff --name-only "${U10F_BASELINE}" -- \
+          ACTUAL="$(git diff --name-only "${U10G_BASELINE}" -- \
             oag/firmware/include \
             oag/firmware/src \
             oag/firmware/tusb_config.h \
@@ -50,7 +49,8 @@ jobs:
 
           test "${ACTUAL}" = "${EXPECTED}"
 
-          git diff --exit-code "${U10F_BASELINE}" -- \
+          git diff --exit-code "${U10G_BASELINE}" -- \
+            oag/firmware/src/main.cpp \
             oag/firmware/src/usb_descriptors.cpp \
             oag/firmware/tusb_config.h \
             oag/firmware/src/bluetooth_hid_parser_v2.cpp \
@@ -58,8 +58,8 @@ jobs:
             oag/firmware/src/pc_xinput_platform_driver.cpp \
             oag/include/oag/input/gamepad_state.h
 
-          echo "U10G_U10F_RECEIVER_PRIMARY_FREEZE=PASS"
-          echo "U10G_BLUETOOTH_RECOVERY_SCOPE=PASS"
+          echo "U10H_U10G_NON_BLUETOOTH_RUNTIME_FREEZE=PASS"
+          echo "U10H_SAFE_RECONNECT_SCOPE=PASS"
 
       - name: Verify no Antigravity coupling
         shell: bash
@@ -93,7 +93,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u10g:
+  firmware-u10h:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -121,7 +121,7 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Verify exact U10G SDK and Bluetooth dependencies
+      - name: Verify exact U10H SDK and Bluetooth dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -129,8 +129,8 @@ jobs:
           test "$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
           test "$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
           echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-u9d" >> "${GITHUB_ENV}"
-          echo "U10G_PICO_SDK_230=PASS"
-          echo "U10G_BTSTACK_HIDS_HOST=PASS"
+          echo "U10H_PICO_SDK_230=PASS"
+          echo "U10H_BTSTACK_HIDS_HOST=PASS"
 
       - name: Verify and prepare pinned dependencies
         shell: bash
@@ -138,7 +138,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U10G firmware
+      - name: Configure Pico 2 W U10H firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -148,7 +148,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U10G firmware
+      - name: Build Pico 2 W U10H firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -194,7 +194,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U10G"
+          assert manifest["phase"] == "U10H"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -296,6 +296,11 @@ jobs:
           assert manifest["features"]["u10g_wired_assist_single_bond_safety"] is True
           assert manifest["features"]["u10g_no_bulk_bond_delete_with_multiple_bonds"] is True
           assert manifest["features"]["u10g_wired_assist_ble_first"] is True
+          assert manifest["features"]["u10h_disconnect_before_fresh_pairing"] is True
+          assert manifest["features"]["u10h_hids_ready_is_recovery_success"] is True
+          assert manifest["features"]["u10h_ble_recovery_priority_window_ms"] == 30000
+          assert manifest["features"]["u10h_wired_assist_ble_priority_window"] is True
+          assert manifest["features"]["u10h_u10f_receiver_primary_frozen"] is True
           assert manifest["verification"]["hardware_verified"] is False
           assert manifest["verification"]["hardware_verified_baseline_phase"] == "U9G"
           assert manifest["verification"]["hardware_verified_baseline_sha"] == "3fffa9484f159df6cfbeb807c3acbdf46bdbe52e"
@@ -308,8 +313,10 @@ jobs:
           assert manifest["verification"]["u10d_independent_controller_output"] == "REJECTED_HARDWARE"
           assert manifest["verification"]["u10e_true_xbox360_wireless_receiver"] == "PARTIAL_HARDWARE_VERIFIED_PRIMARY_NUMBERING_MISMATCH"
           assert manifest["verification"]["u10f_host_player1_primary_alignment"] == "HARDWARE_VERIFIED_BY_USER"
-          assert manifest["verification"]["u10g_stale_bond_recovery"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10g_wired_pairing_assist"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10g_stale_bond_recovery"] == "REJECTED_LINK_ONLY_NO_HIDS"
+          assert manifest["verification"]["u10g_wired_pairing_assist"] == "PARTIAL_LINK_ONLY_NO_HIDS"
+          assert manifest["verification"]["u10h_stale_bond_clean_reconnect"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10h_wired_pairing_assist"] == "PENDING_HARDWARE"
           assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
           assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
           assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
@@ -330,17 +337,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10G_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10H_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10G_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10H_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10G_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10H_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U10G firmware bundle
+      - name: Upload U10H firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U10G-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U10H-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

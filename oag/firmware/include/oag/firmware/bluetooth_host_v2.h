@@ -187,6 +187,9 @@ private:
     std::uint8_t deferredBleAddressType_ = 0;
 
     bool wiredPairingAssistPending_ = false;
+    bool bleRecoveryPriorityActive_ = false;
+    std::uint64_t bleRecoveryPriorityUntilUs_ = 0;
+
     bool staleLeBondValid_ = false;
     std::array<std::uint8_t, 6> staleLeBondAddress_ {};
     std::uint8_t staleLeBondAddressType_ = 0;

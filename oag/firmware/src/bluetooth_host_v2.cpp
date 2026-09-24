@@ -5,6 +5,7 @@
 #include <limits>
 
 #include "pico/cyw43_arch.h"
+#include "pico/time.h"
 
 #include "btstack.h"
 #include "btstack_tlv.h"
@@ -77,6 +78,7 @@ void discoveryTimerThunk(btstack_timer_source_t* timer) {
 constexpr std::uint32_t kU9FreshBondTag = 0x4F394252u;
 constexpr std::uint32_t kU9FreshBondVersion = 3u; // U9D SDK 2.3 / HIDS Host reset
 constexpr std::uint32_t kLeScanWindowMs = 5000u;
+constexpr std::uint64_t kBleRecoveryPriorityUs = 30000000ull;
 
 // Minimal GAP Device Name ATT database. This mirrors the historical
 // BluetoothHCI behavior where the Pico exposes a local GAP service even while
@@ -202,6 +204,27 @@ void BluetoothHostV2::poll() {
     // scan -> stop -> connect.
     serviceDeferredBleConnect();
     serviceWiredPairingAssist();
+
+    if (
+        bleRecoveryPriorityActive_ &&
+        time_us_64() >= bleRecoveryPriorityUntilUs_
+    ) {
+        bleRecoveryPriorityActive_ = false;
+        bleRecoveryPriorityUntilUs_ = 0;
+    }
+
+    // During recovery, never spend the window in Classic inquiry. Keep BLE
+    // first so a controller that starts advertising after USB unplug / Pair
+    // button is caught immediately.
+    if (
+        bleRecoveryPriorityActive_ &&
+        pendingKind_ == PendingKind::None &&
+        !deferredBleCandidateValid_ &&
+        discoveryPhase_ == DiscoveryPhase::ClassicInquiry
+    ) {
+        gap_inquiry_stop();
+        startLeScan();
+    }
 
     // U10A continuous-discovery guard. Normal BLE -> Classic -> BLE cadence
     // remains unchanged; this only recovers an unexpected idle state while
@@ -438,11 +461,15 @@ void BluetoothHostV2::serviceWiredPairingAssist() {
         deleteSingleStoredLeBondForAssist();
     }
 
-    // Give BLE first priority immediately. The controller still has to expose
-    // its Bluetooth radio/advertisement; USB cannot generically force that on
-    // every controller family.
+    // Give BLE exclusive priority for a recovery window. The controller still
+    // has to expose its Bluetooth radio/advertisement; USB cannot generically
+    // force that on every controller family.
+    bleRecoveryPriorityActive_ = true;
+    bleRecoveryPriorityUntilUs_ =
+        time_us_64() + kBleRecoveryPriorityUs;
+
     stopDiscovery();
-    resumeDiscovery();
+    startLeScan();
     wiredPairingAssistPending_ = false;
 }
 
@@ -759,6 +786,17 @@ void BluetoothHostV2::handleDiscoveryTimer() {
     }
 
     gap_stop_scan();
+
+    if (
+        bleRecoveryPriorityActive_ &&
+        time_us_64() < bleRecoveryPriorityUntilUs_
+    ) {
+        startLeScan();
+        return;
+    }
+
+    bleRecoveryPriorityActive_ = false;
+    bleRecoveryPriorityUntilUs_ = 0;
     startClassicInquiry();
 }
 
@@ -989,10 +1027,11 @@ void BluetoothHostV2::handleSmPacket(
                 break;
             }
 
-            // This is the official BTstack recovery pattern for the case where
-            // the remote controller was paired to another host and lost our
-            // old key. Authentication failure is handled the same way because
-            // it is the common stale-key outcome on modern BLE gamepads.
+            // The remote controller was paired to another host and our stored
+            // key is stale. U10G attempted fresh SMP inside the same failed
+            // encrypted link; on real hardware that could leave the ACL link
+            // solid while HIDS never became ready. U10H deliberately tears
+            // down that link and lets the next connection start clean.
             if (
                 status == ERROR_CODE_PIN_OR_KEY_MISSING ||
                 status == ERROR_CODE_AUTHENTICATION_FAILURE
@@ -1019,9 +1058,14 @@ void BluetoothHostV2::handleSmPacket(
 
                 staleLeBondValid_ = false;
 
-                // Keep the current LE link and immediately perform fresh SMP
-                // pairing instead of forcing the user to reboot the Pico.
-                sm_request_pairing(handle);
+                bleRecoveryPriorityActive_ = true;
+                bleRecoveryPriorityUntilUs_ =
+                    time_us_64() + kBleRecoveryPriorityUs;
+
+                if (findBleByHandle(handle) != nullptr) {
+                    gap_disconnect(handle);
+                }
+
                 break;
             }
 
@@ -1088,6 +1132,11 @@ void BluetoothHostV2::handleLeHidPacket(
                 );
                 break;
             }
+
+            // HIDS-ready is the real success criterion. A solid controller LED
+            // alone only proves the Bluetooth ACL link exists.
+            bleRecoveryPriorityActive_ = false;
+            bleRecoveryPriorityUntilUs_ = 0;
 
             peer->serviceCount =
                 std::min<std::uint8_t>(
