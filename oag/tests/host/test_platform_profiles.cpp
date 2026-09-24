@@ -51,6 +51,17 @@ int main() {
     assert(ps4.auth.required());
     assert(ps4.auth.donorFamily == AuthDonorFamily::DualShock4);
 
+    const PlatformProfile& ps3 =
+        PlatformProfileRegistry::profile(
+            PlatformId::Playstation3
+        );
+
+    assert(!ps3.auth.required());
+    assert(
+        ps3.implementation ==
+        PlatformImplementationStatus::SoftwareFoundation
+    );
+
     const PlatformProfile& switchProfile =
         PlatformProfileRegistry::profile(
             PlatformId::NintendoSwitch

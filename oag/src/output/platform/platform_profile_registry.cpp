@@ -101,7 +101,7 @@ constexpr std::array<PlatformProfile, 11> kProfiles {{
     makeProfile(
         PlatformId::Playstation3,
         PlatformWireProtocol::Playstation3Hid,
-        PlatformImplementationStatus::Planned,
+        PlatformImplementationStatus::SoftwareFoundation,
         kNoAuth,
         1,
         true,

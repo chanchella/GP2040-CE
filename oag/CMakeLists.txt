@@ -19,6 +19,8 @@ add_library(oag_core STATIC
     src/protocol/hid/generic_hid_gamepad_driver.cpp
     src/mapping/keyboard_mouse_gamepad_mapper.cpp
     src/output/platform/switch/switch_pro_report_encoder.cpp
+    src/output/platform/playstation/ps3_report_encoder.cpp
+    src/output/platform/playstation/ps3_feedback_decoder.cpp
 )
 
 target_include_directories(oag_core
@@ -105,4 +107,11 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_switch_pro_encoder_tests PRIVATE oag_core)
     target_compile_features(oag_switch_pro_encoder_tests PRIVATE cxx_std_17)
     add_test(NAME oag_switch_pro_encoder_tests COMMAND oag_switch_pro_encoder_tests)
+
+    add_executable(oag_ps3_encoder_tests
+        tests/host/test_ps3_report_encoder.cpp
+    )
+    target_link_libraries(oag_ps3_encoder_tests PRIVATE oag_core)
+    target_compile_features(oag_ps3_encoder_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_ps3_encoder_tests COMMAND oag_ps3_encoder_tests)
 endif()
