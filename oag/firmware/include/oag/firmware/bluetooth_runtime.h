@@ -51,7 +51,7 @@ public:
     );
 
     bool peripheralConnected() const {
-        return peripheralConnectionHandle_ != 0xFFFFu;
+        return false;
     }
 
     bool initialized() const {
@@ -87,15 +87,7 @@ public:
         std::uint16_t size
     );
 
-    void handlePeripheralHidPacket(
-        std::uint8_t packetType,
-        std::uint16_t channel,
-        std::uint8_t* packet,
-        std::uint16_t size
-    );
-
     void handleDiscoveryTimer();
-    void handlePeripheralSendRequest();
 
 private:
     struct ClassicLink {
@@ -148,10 +140,8 @@ private:
     void notifyLeDescriptors(LeLink& link);
     void disconnectLeServices(LeLink& link);
 
-    void configurePeripheralAdvertising();
-    void requestPeripheralSend();
-    void sendPeripheralReport();
-    static std::uint8_t dpadToHat(std::uint8_t dpad);
+    // Bluetooth Output/Peripheral intentionally dormant in U8E.
+    // It returns after the Host pairing gate is hardware-verified.
 
     BluetoothRuntimeObserver* observer_ = nullptr;
     bool initialized_ = false;
@@ -172,9 +162,6 @@ private:
     std::array<std::uint8_t, 4096> leDescriptorStorage_ {};
     std::array<std::uint8_t, 520> normalizedReport_ {};
 
-    std::uint16_t peripheralConnectionHandle_ = 0xFFFFu;
-    bool peripheralSubscribed_ = false;
-    bool peripheralSendPending_ = false;
     LogicalGamepadState peripheralGamepadState_ {};
 };
 

@@ -1205,17 +1205,11 @@ private:
             neutral.connected = true;
             platformOutput_.submit(0, neutral);
 
-            if (bluetoothAvailable_) {
-                bluetooth_.submitPeripheralGamepad(neutral);
-            }
             return;
         }
 
         platformOutput_.submit(0, output);
 
-        if (bluetoothAvailable_) {
-            bluetooth_.submitPeripheralGamepad(output);
-        }
     }
 
     void serviceMouseAimRelease() {
