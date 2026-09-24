@@ -201,6 +201,21 @@ void BluetoothHostV2::poll() {
     // event callback, matching the historical BluetoothHIDMaster flow:
     // scan -> stop -> connect.
     serviceDeferredBleConnect();
+
+    // U10A continuous-discovery guard. Normal BLE -> Classic -> BLE cadence
+    // remains unchanged; this only recovers an unexpected idle state while
+    // peer capacity is still available. At four peers discovery pauses, then
+    // resumes automatically after any disconnect.
+    if (
+        initialized_ &&
+        hciWorking_ &&
+        hasCapacity() &&
+        pendingKind_ == PendingKind::None &&
+        !deferredBleCandidateValid_ &&
+        discoveryPhase_ == DiscoveryPhase::Idle
+    ) {
+        resumeDiscovery();
+    }
 }
 
 std::size_t BluetoothHostV2::connectedPeerCount() const {

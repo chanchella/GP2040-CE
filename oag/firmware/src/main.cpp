@@ -165,6 +165,8 @@ public:
                 : XgipInitPhase::None;
         xgipTxPending_[*slot] = false;
         xgipGuidePressed_[*slot] = false;
+
+        rebuildPcOutputRouting();
     }
 
     void onXinputUnmounted(
@@ -207,9 +209,7 @@ public:
         slots_.release(*id);
         registry_.disconnect(*id);
 
-        if (slot) {
-            sendSlotOutput(*slot);
-        }
+        rebuildPcOutputRouting();
     }
 
     void onHidMounted(
@@ -344,6 +344,8 @@ public:
             pendingRumble_[*slot] = {};
             pendingRumbleValid_[*slot] = false;
         }
+
+        rebuildPcOutputRouting();
     }
 
     void onHidUnmounted(
@@ -408,9 +410,7 @@ public:
         genericHidQuirks_[id->index] = {};
         registry_.disconnect(*id);
 
-        if (slot) {
-            sendSlotOutput(*slot);
-        }
+        rebuildPcOutputRouting();
     }
 
     void onHidReport(
@@ -715,6 +715,12 @@ public:
                     pendingRumbleValid_[*slot] = false;
                     bluetoothRumbleRetryNotBeforeUs_[*slot] = 0;
                 }
+
+                if (!primaryBluetoothGamepad_.valid()) {
+                    primaryBluetoothGamepad_ = *id;
+                }
+
+                rebuildPcOutputRouting();
             }
         }
 
@@ -881,10 +887,15 @@ public:
         keyboardStates_[id->index] = {};
         mouseStates_[id->index] = {};
         bluetoothHidDescriptors_[id->index] = {};
+
+        if (*id == primaryBluetoothGamepad_) {
+            primaryBluetoothGamepad_ = {};
+        }
+
         registry_.disconnect(*id);
 
         if (slot) {
-            sendSlotOutput(*slot);
+            rebuildPcOutputRouting();
         }
 
         if (hadKeyboard || hadMouse) {
@@ -1228,35 +1239,205 @@ private:
         return combined;
     }
 
-    oag::LogicalGamepadState baseSlotZeroOutput() const {
-        if (states_.empty() || !states_[0].connected) {
+    bool isRoutableGamepad(oag::DeviceId device) const {
+        const oag::DeviceRecord* record = registry_.find(device);
+
+        if (record == nullptr || !record->connected) {
+            return false;
+        }
+
+        return
+            record->protocol == oag::ProtocolKind::HidGamepad ||
+            record->protocol == oag::ProtocolKind::XusbXbox360 ||
+            record->protocol == oag::ProtocolKind::XgipXboxOne;
+    }
+
+    bool isBluetoothGamepad(oag::DeviceId device) const {
+        const oag::DeviceRecord* record = registry_.find(device);
+
+        return
+            record != nullptr &&
+            record->connected &&
+            record->protocol == oag::ProtocolKind::HidGamepad &&
+            (
+                record->transport == oag::TransportType::BluetoothLe ||
+                record->transport == oag::TransportType::BluetoothClassic
+            );
+    }
+
+    void rebuildPcOutputRouting() {
+        std::array<
+            std::optional<oag::LogicalSlotId>,
+            oag::firmware::PcXinputDevice::kOutputSlots
+        > nextRoutes {};
+
+        std::size_t outputIndex = 0;
+
+        const auto appendSlot =
+            [&](oag::LogicalSlotId slot) {
+                if (outputIndex >= nextRoutes.size()) {
+                    return;
+                }
+
+                for (std::size_t i = 0; i < outputIndex; ++i) {
+                    if (nextRoutes[i] && *nextRoutes[i] == slot) {
+                        return;
+                    }
+                }
+
+                nextRoutes[outputIndex++] = slot;
+            };
+
+        // The first Bluetooth gamepad that connected stays Player 1 while it
+        // remains connected, regardless of wired-device enumeration order.
+        if (primaryBluetoothGamepad_.valid() &&
+            isBluetoothGamepad(primaryBluetoothGamepad_)) {
+            if (const auto slot = slots_.slotFor(primaryBluetoothGamepad_)) {
+                appendSlot(*slot);
+            }
+        } else {
+            primaryBluetoothGamepad_ = {};
+
+            for (std::size_t i = 0;
+                 i < oag::LogicalSlotManager::kGamepadSlots;
+                 ++i) {
+                const auto slot = static_cast<oag::LogicalSlotId>(i);
+                const oag::DeviceId device = slots_.deviceFor(slot);
+
+                if (!isBluetoothGamepad(device)) {
+                    continue;
+                }
+
+                primaryBluetoothGamepad_ = device;
+                appendSlot(slot);
+                break;
+            }
+        }
+
+        // Remaining Bluetooth gamepads get the next PC XInput outputs.
+        for (std::size_t i = 0;
+             i < oag::LogicalSlotManager::kGamepadSlots &&
+             outputIndex < nextRoutes.size();
+             ++i) {
+            const auto slot = static_cast<oag::LogicalSlotId>(i);
+            const oag::DeviceId device = slots_.deviceFor(slot);
+
+            if (
+                !isBluetoothGamepad(device) ||
+                device == primaryBluetoothGamepad_
+            ) {
+                continue;
+            }
+
+            appendSlot(slot);
+        }
+
+        // Wired gamepads fill any remaining PC outputs. This preserves the
+        // U9G wired path while giving Bluetooth gamepads explicit priority.
+        for (std::size_t i = 0;
+             i < oag::LogicalSlotManager::kGamepadSlots &&
+             outputIndex < nextRoutes.size();
+             ++i) {
+            const auto slot = static_cast<oag::LogicalSlotId>(i);
+            const oag::DeviceId device = slots_.deviceFor(slot);
+
+            if (
+                !isRoutableGamepad(device) ||
+                isBluetoothGamepad(device)
+            ) {
+                continue;
+            }
+
+            appendSlot(slot);
+        }
+
+        pcOutputRoutes_ = nextRoutes;
+
+        // A route change invalidates any not-yet-forwarded PC rumble command:
+        // never send feedback intended for an old route to a newly routed
+        // physical controller.
+        for (std::size_t i = 0; i < pendingRumble_.size(); ++i) {
+            pendingRumble_[i] = {};
+            pendingRumbleValid_[i] = false;
+            bluetoothRumbleRetryNotBeforeUs_[i] = 0;
+        }
+
+        // Refresh every statically enumerated PC output immediately.
+        sendComposedOutput();
+
+        for (std::size_t pcSlot = 1;
+             pcSlot < pcOutputRoutes_.size();
+             ++pcSlot) {
+            oag::LogicalGamepadState output {};
+            output.connected = true;
+
+            if (pcOutputRoutes_[pcSlot]) {
+                const oag::LogicalSlotId internalSlot =
+                    *pcOutputRoutes_[pcSlot];
+
+                if (
+                    internalSlot < states_.size() &&
+                    states_[internalSlot].connected
+                ) {
+                    output = mapping_.process(states_[internalSlot]);
+                }
+            }
+
+            platformOutput_.submit(
+                static_cast<std::uint8_t>(pcSlot),
+                output
+            );
+        }
+    }
+
+    oag::LogicalGamepadState basePrimaryOutput() const {
+        if (!pcOutputRoutes_[0]) {
             return {};
         }
 
-        return mapping_.process(states_[0]);
+        const oag::LogicalSlotId slot =
+            *pcOutputRoutes_[0];
+
+        if (slot >= states_.size() || !states_[slot].connected) {
+            return {};
+        }
+
+        return mapping_.process(states_[slot]);
     }
 
     void sendSlotOutput(oag::LogicalSlotId slot) {
-        if (slot >= oag::firmware::PcXinputDevice::kOutputSlots) {
+        if (slot >= states_.size()) {
             return;
         }
 
-        if (slot == 0) {
-            sendComposedOutput();
-            return;
-        }
+        for (std::size_t pcSlot = 0;
+             pcSlot < pcOutputRoutes_.size();
+             ++pcSlot) {
+            if (
+                !pcOutputRoutes_[pcSlot] ||
+                *pcOutputRoutes_[pcSlot] != slot
+            ) {
+                continue;
+            }
 
-        oag::LogicalGamepadState output {};
+            if (pcSlot == 0) {
+                sendComposedOutput();
+                return;
+            }
 
-        if (slot < states_.size() && states_[slot].connected) {
-            output = mapping_.process(states_[slot]);
-        } else {
-            // The four PC interfaces are statically enumerated. Vacant OAG
-            // slots therefore remain present on Windows but report neutral.
+            oag::LogicalGamepadState output {};
             output.connected = true;
-        }
 
-        platformOutput_.submit(slot, output);
+            if (states_[slot].connected) {
+                output = mapping_.process(states_[slot]);
+            }
+
+            platformOutput_.submit(
+                static_cast<std::uint8_t>(pcSlot),
+                output
+            );
+            return;
+        }
     }
 
     void sendComposedOutput() {
@@ -1273,7 +1454,7 @@ private:
                 mouseAimActive_
                     ? currentMouseMotion_
                     : oag::MouseMotion {},
-                baseSlotZeroOutput()
+                basePrimaryOutput()
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
@@ -1322,7 +1503,12 @@ private:
                 continue;
             }
 
-            const auto slot = static_cast<oag::LogicalSlotId>(i);
+            if (!pcOutputRoutes_[i]) {
+                pendingRumbleValid_[i] = false;
+                continue;
+            }
+
+            const oag::LogicalSlotId slot = *pcOutputRoutes_[i];
             const oag::DeviceId source = slots_.deviceFor(slot);
             const oag::DeviceRecord* record = registry_.find(source);
 
@@ -1439,9 +1625,9 @@ private:
             }
 
             if (record->protocol == oag::ProtocolKind::XgipXboxOne) {
-                if (i >= xgipPhases_.size() ||
-                    xgipPhases_[i] != XgipInitPhase::Ready ||
-                    xgipTxPending_[i]) {
+                if (slot >= xgipPhases_.size() ||
+                    xgipPhases_[slot] != XgipInitPhase::Ready ||
+                    xgipTxPending_[slot]) {
                     continue;
                 }
 
@@ -1493,6 +1679,13 @@ private:
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
     oag::firmware::PcXinputPlatformDriver platformOutput_;
+
+    std::array<
+        std::optional<oag::LogicalSlotId>,
+        oag::firmware::PcXinputDevice::kOutputSlots
+    > pcOutputRoutes_ {};
+
+    oag::DeviceId primaryBluetoothGamepad_ {};
 
     std::array<
         oag::UniversalGamepadState,
