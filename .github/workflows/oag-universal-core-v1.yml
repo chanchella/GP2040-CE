@@ -67,6 +67,7 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
           import subprocess
 
           baseline = subprocess.check_output(
@@ -75,18 +76,22 @@ jobs:
           )
           current = Path("oag/firmware/src/main.cpp").read_text()
 
-          hook = """        bluetoothHost_.notifyWiredGamepadDetached(
-              record->vid,
-              record->pid
-          );
+          pattern = re.compile(
+              r"\n\s*bluetoothHost_\.notifyWiredGamepadDetached\(\s*"
+              r"record->vid,\s*record->pid\s*\);\n"
+          )
 
-          """
+          matches = pattern.findall(current)
+          if len(matches) != 2:
+              raise SystemExit(
+                  f"expected exactly two detach-only pairing hooks, found {len(matches)}"
+              )
 
-          if current.count(hook) != 2:
-              raise SystemExit("expected exactly two detach-only pairing hooks")
-
-          if current.replace(hook, "") != baseline:
-              raise SystemExit("main.cpp changed beyond detach-only pairing hooks")
+          normalized = pattern.sub("\n", current)
+          if normalized != baseline:
+              raise SystemExit(
+                  "main.cpp changed beyond detach-only pairing hooks"
+              )
 
           print("U10J_MAIN_U10F_PLUS_DETACH_ONLY=PASS")
           PY
