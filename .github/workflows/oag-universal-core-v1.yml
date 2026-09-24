@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u6c:
+  firmware-u6d:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U6C firmware
+      - name: Configure Pico 2 W U6D firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -94,7 +94,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U6C firmware
+      - name: Build Pico 2 W U6D firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -140,7 +140,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U6C"
+          assert manifest["phase"] == "U6D"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -159,6 +159,7 @@ jobs:
           assert manifest["features"]["keyboard_boot_host"] is True
           assert manifest["features"]["keyboard_lock_led_output"] is True
           assert manifest["features"]["keyboard_default_numlock_led"] is True
+          assert manifest["features"]["g808_skip_set_idle_golden_quirk"] is True
           assert manifest["features"]["mouse_boot_host"] is True
           assert manifest["features"]["generic_hid_gamepad_host"] is True
           assert manifest["features"]["platform_profile_registry"] is True
@@ -180,17 +181,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6C_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6D_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6C_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6D_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6C_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6D_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U6C firmware bundle
+      - name: Upload U6D firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U6C-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U6D-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
