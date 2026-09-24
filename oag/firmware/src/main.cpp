@@ -20,6 +20,7 @@
 #include "oag/mapping/pass_through_mapping.h"
 #include "oag/protocol/hid/boot_keyboard_input_driver.h"
 #include "oag/protocol/hid/boot_mouse_input_driver.h"
+#include "oag/protocol/hid/generic_hid_gamepad_driver.h"
 #include "oag/protocol/xusb/xusb_input_driver.h"
 #include "oag/transport/host_root_reconciler.h"
 
@@ -139,20 +140,12 @@ public:
 
     void onHidMounted(
         std::uint8_t devAddr,
-        std::uint8_t instance
+        std::uint8_t instance,
+        const std::uint8_t* reportDescriptor,
+        std::uint16_t reportDescriptorLength
     ) {
         const std::uint8_t protocol =
             tuh_hid_interface_protocol(devAddr, instance);
-
-        oag::ProtocolKind kind = oag::ProtocolKind::Unknown;
-
-        if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
-            kind = oag::ProtocolKind::HidKeyboard;
-        } else if (protocol == HID_ITF_PROTOCOL_MOUSE) {
-            kind = oag::ProtocolKind::HidMouse;
-        } else {
-            return;
-        }
 
         std::uint16_t vid = 0;
         std::uint16_t pid = 0;
@@ -165,26 +158,85 @@ public:
             instance,
         };
 
+        if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+            const auto id = registry_.connectUsb(
+                handle,
+                vid,
+                pid,
+                oag::ProtocolKind::HidKeyboard
+            );
+
+            if (!id || id->index >= oag::DeviceRegistry::kCapacity) {
+                return;
+            }
+
+            keyboardStates_[id->index] = {};
+            keyboardStates_[id->index].source = *id;
+            keyboardStates_[id->index].connected = true;
+            return;
+        }
+
+        if (protocol == HID_ITF_PROTOCOL_MOUSE) {
+            const auto id = registry_.connectUsb(
+                handle,
+                vid,
+                pid,
+                oag::ProtocolKind::HidMouse
+            );
+
+            if (!id || id->index >= oag::DeviceRegistry::kCapacity) {
+                return;
+            }
+
+            mouseStates_[id->index] = {};
+            mouseStates_[id->index].source = *id;
+            mouseStates_[id->index].connected = true;
+            return;
+        }
+
+        if (
+            reportDescriptor == nullptr ||
+            reportDescriptorLength == 0
+        ) {
+            return;
+        }
+
+        const oag::GenericHidGamepadQuirks quirks =
+            genericHidQuirksFor(vid, pid);
+
+        oag::GenericHidGamepadDescriptor descriptor {};
+        if (!genericHid_.parseDescriptor(
+                reportDescriptor,
+                reportDescriptorLength,
+                quirks,
+                descriptor
+            )) {
+            return;
+        }
+
         const auto id = registry_.connectUsb(
             handle,
             vid,
             pid,
-            kind
+            oag::ProtocolKind::HidGamepad
         );
 
         if (!id || id->index >= oag::DeviceRegistry::kCapacity) {
             return;
         }
 
-        if (kind == oag::ProtocolKind::HidKeyboard) {
-            keyboardStates_[id->index] = {};
-            keyboardStates_[id->index].source = *id;
-            keyboardStates_[id->index].connected = true;
-        } else {
-            mouseStates_[id->index] = {};
-            mouseStates_[id->index].source = *id;
-            mouseStates_[id->index].connected = true;
+        const auto slot = slots_.bindFirstFree(*id);
+        if (!slot) {
+            registry_.disconnect(*id);
+            return;
         }
+
+        genericHidDescriptors_[id->index] = descriptor;
+        genericHidQuirks_[id->index] = quirks;
+
+        states_[*slot] = {};
+        states_[*slot].source = *id;
+        states_[*slot].connected = true;
     }
 
     void onHidUnmounted(
@@ -208,13 +260,35 @@ public:
 
         if (record->protocol == oag::ProtocolKind::HidKeyboard) {
             keyboardStates_[id->index] = {};
-        } else if (record->protocol == oag::ProtocolKind::HidMouse) {
-            mouseStates_[id->index] = {};
-        } else {
+            registry_.disconnect(*id);
             return;
         }
 
+        if (record->protocol == oag::ProtocolKind::HidMouse) {
+            mouseStates_[id->index] = {};
+            registry_.disconnect(*id);
+            return;
+        }
+
+        if (record->protocol != oag::ProtocolKind::HidGamepad) {
+            return;
+        }
+
+        const auto primaryBefore = primaryPcSlot();
+        const auto slot = slots_.slotFor(*id);
+
+        if (slot && *slot < states_.size()) {
+            states_[*slot] = {};
+        }
+
+        slots_.release(*id);
+        genericHidDescriptors_[id->index] = {};
+        genericHidQuirks_[id->index] = {};
         registry_.disconnect(*id);
+
+        if (slot && primaryBefore && *slot == *primaryBefore) {
+            pcOutput_.sendNeutral();
+        }
     }
 
     void onHidReport(
@@ -246,7 +320,10 @@ public:
                 time_us_64(),
                 keyboardStates_[id->index]
             );
-        } else if (record->protocol == oag::ProtocolKind::HidMouse) {
+            return;
+        }
+
+        if (record->protocol == oag::ProtocolKind::HidMouse) {
             mouse_.parse(
                 *id,
                 report,
@@ -254,6 +331,33 @@ public:
                 time_us_64(),
                 mouseStates_[id->index]
             );
+            return;
+        }
+
+        if (record->protocol != oag::ProtocolKind::HidGamepad) {
+            return;
+        }
+
+        const auto slot = slots_.slotFor(*id);
+        if (!slot || *slot >= states_.size()) {
+            return;
+        }
+
+        if (!genericHid_.parseReport(
+                *id,
+                genericHidDescriptors_[id->index],
+                genericHidQuirks_[id->index],
+                report,
+                length,
+                time_us_64(),
+                states_[*slot]
+            )) {
+            return;
+        }
+
+        const auto primary = primaryPcSlot();
+        if (primary && *slot == *primary) {
+            pcOutput_.send(mapping_.process(states_[*slot]));
         }
     }
 
@@ -312,6 +416,32 @@ public:
 
 private:
     static constexpr std::uint8_t kRootCount = 3;
+
+    static oag::GenericHidGamepadQuirks genericHidQuirksFor(
+        std::uint16_t vid,
+        std::uint16_t pid
+    ) {
+        oag::GenericHidGamepadQuirks quirks {};
+
+        // Golden-known DirectInput layouts expose Z/Rz as the right stick.
+        if (
+            (vid == 0x2563 && pid == 0x0575) ||
+            (vid == 0x0079 && pid == 0x0006)
+        ) {
+            quirks.zRzAsRightStick = true;
+        }
+
+        // Known Shanwan fallback identities can expose gamepad fields without
+        // a conventional top-level Game Pad usage.
+        if (
+            (vid == 0x20BC && pid == 0x0055) ||
+            (vid == 0x20BC && pid == 0x5500)
+        ) {
+            quirks.forceGamepad = true;
+        }
+
+        return quirks;
+    }
 
     void rememberMountedRoot(std::uint8_t devAddr) {
         if (devAddr >= rootByDevice_.size()) {
@@ -447,6 +577,7 @@ private:
     oag::XusbInputDriver xusb_;
     oag::BootKeyboardInputDriver keyboard_;
     oag::BootMouseInputDriver mouse_;
+    oag::GenericHidGamepadDriver genericHid_;
     oag::PassThroughMapping mapping_;
     oag::firmware::PcXinputDevice pcOutput_;
 
@@ -464,6 +595,16 @@ private:
         oag::MouseState,
         oag::DeviceRegistry::kCapacity
     > mouseStates_ {};
+
+    std::array<
+        oag::GenericHidGamepadDescriptor,
+        oag::DeviceRegistry::kCapacity
+    > genericHidDescriptors_ {};
+
+    std::array<
+        oag::GenericHidGamepadQuirks,
+        oag::DeviceRegistry::kCapacity
+    > genericHidQuirks_ {};
 
     std::array<
         std::uint8_t,
@@ -494,10 +635,12 @@ extern "C" void tuh_hid_mount_cb(
     std::uint8_t const* desc_report,
     std::uint16_t desc_len
 ) {
-    (void)desc_report;
-    (void)desc_len;
-
-    gCore.onHidMounted(dev_addr, instance);
+    gCore.onHidMounted(
+        dev_addr,
+        instance,
+        desc_report,
+        desc_len
+    );
     tuh_hid_receive_report(dev_addr, instance);
 }
 
