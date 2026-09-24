@@ -709,6 +709,12 @@ public:
                 states_[*slot] = {};
                 states_[*slot].source = *id;
                 states_[*slot].connected = true;
+
+                if (*slot < pendingRumbleValid_.size()) {
+                    pendingRumble_[*slot] = {};
+                    pendingRumbleValid_[*slot] = false;
+                    bluetoothRumbleRetryNotBeforeUs_[*slot] = 0;
+                }
             }
         }
 
@@ -857,6 +863,13 @@ public:
 
         if (slot && *slot < states_.size()) {
             states_[*slot] = {};
+
+            if (*slot < pendingRumbleValid_.size()) {
+                pendingRumble_[*slot] = {};
+                pendingRumbleValid_[*slot] = false;
+                bluetoothRumbleRetryNotBeforeUs_[*slot] = 0;
+            }
+
             slots_.release(*id);
         }
 
@@ -884,6 +897,7 @@ public:
 private:
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 6000;
+    static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
 
     void serviceBluetoothHostV2() {
         const std::uint64_t nowUs =
@@ -1317,6 +1331,89 @@ private:
                 continue;
             }
 
+            if (
+                record->transport == oag::TransportType::BluetoothLe &&
+                record->protocol == oag::ProtocolKind::HidGamepad &&
+                source.index < bluetoothHidDescriptors_.size() &&
+                bluetoothHidDescriptors_[source.index].profile ==
+                    oag::firmware::BluetoothGamepadProfileV2::XboxBle
+            ) {
+                const std::uint64_t nowUs = time_us_64();
+
+                if (nowUs < bluetoothRumbleRetryNotBeforeUs_[i]) {
+                    continue;
+                }
+
+                const auto scaleToPercent =
+                    [](std::uint8_t value) -> std::uint8_t {
+                        return static_cast<std::uint8_t>(
+                            (
+                                static_cast<std::uint16_t>(value) *
+                                100u
+                            ) /
+                            255u
+                        );
+                    };
+
+                std::uint8_t rumblePacket[8] {};
+
+                if (
+                    pendingRumble_[i].leftMotor == 0 &&
+                    pendingRumble_[i].rightMotor == 0
+                ) {
+                    // Enable all actuator fields and send zero magnitudes to
+                    // guarantee a stop, matching the historical working path.
+                    rumblePacket[0] = 0x0F;
+                } else {
+                    std::uint8_t actuatorMask = 0;
+
+                    if (pendingRumble_[i].rightMotor != 0) {
+                        actuatorMask |= 0x01; // weak motor
+                    }
+
+                    if (pendingRumble_[i].leftMotor != 0) {
+                        actuatorMask |= 0x02; // strong motor
+                    }
+
+                    rumblePacket[0] = actuatorMask;
+                    rumblePacket[3] =
+                        scaleToPercent(pendingRumble_[i].leftMotor);
+                    rumblePacket[4] =
+                        scaleToPercent(pendingRumble_[i].rightMotor);
+                    rumblePacket[5] = 0xFF;
+                    rumblePacket[6] = 0x00;
+                    rumblePacket[7] = 25;
+                }
+
+                const auto result =
+                    bluetoothHost_.sendLeOutputReport(
+                        record->bluetooth.connectionHandle,
+                        record->bluetooth.serviceInstance,
+                        0x03,
+                        rumblePacket,
+                        sizeof(rumblePacket)
+                    );
+
+                if (
+                    result ==
+                    oag::firmware::BluetoothHidOutputResult::Accepted
+                ) {
+                    pendingRumbleValid_[i] = false;
+                    bluetoothRumbleRetryNotBeforeUs_[i] = 0;
+                } else if (
+                    result ==
+                    oag::firmware::BluetoothHidOutputResult::Busy
+                ) {
+                    bluetoothRumbleRetryNotBeforeUs_[i] =
+                        nowUs + kBluetoothRumbleRetryUs;
+                } else {
+                    pendingRumbleValid_[i] = false;
+                    bluetoothRumbleRetryNotBeforeUs_[i] = 0;
+                }
+
+                continue;
+            }
+
             if (record->protocol == oag::ProtocolKind::XusbXbox360) {
                 const std::uint8_t rumblePacket[8] = {
                     0x00,
@@ -1492,6 +1589,11 @@ private:
         bool,
         oag::firmware::PcXinputDevice::kOutputSlots
     > pendingRumbleValid_ {};
+
+    std::array<
+        std::uint64_t,
+        oag::firmware::PcXinputDevice::kOutputSlots
+    > bluetoothRumbleRetryNotBeforeUs_ {};
 };
 
 FirmwareCore gCore;

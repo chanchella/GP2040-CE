@@ -8,6 +8,12 @@
 
 namespace oag::firmware {
 
+enum class BluetoothHidOutputResult : std::uint8_t {
+    Accepted = 0,
+    Busy,
+    Failed,
+};
+
 class BluetoothHostV2Observer {
 public:
     virtual ~BluetoothHostV2Observer() = default;
@@ -51,6 +57,14 @@ public:
     }
 
     std::size_t connectedPeerCount() const;
+
+    BluetoothHidOutputResult sendLeOutputReport(
+        std::uint16_t connectionHandle,
+        std::uint8_t serviceInstance,
+        std::uint8_t reportId,
+        const std::uint8_t* report,
+        std::size_t reportLength
+    );
 
     void handlePacket(
         std::uint8_t packetType,

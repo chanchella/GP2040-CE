@@ -38,6 +38,7 @@ constexpr std::uint16_t kUsageDpadLeft = 0x93;
 
 constexpr std::uint16_t kUsageAccelerator = 0xC4;
 constexpr std::uint16_t kUsageBrake = 0xC5;
+constexpr std::uint16_t kUsageConsumerHome = 0x0223;
 constexpr std::uint16_t kUsageConsumerAcPan = 0x0238;
 
 void classifyTopLevelApplications(
@@ -704,6 +705,8 @@ bool BluetoothHidParserV2::parseGamepad(
 
     bool sawUseful = false;
     bool sawButtonPage = false;
+    bool sawConsumerGuide = false;
+    bool consumerGuidePressed = false;
     std::uint64_t reportButtons = 0;
     bool digitalLeftTrigger = false;
     bool digitalRightTrigger = false;
@@ -781,6 +784,20 @@ bool BluetoothHidParserV2::parseGamepad(
                 brakeMax = logicalMax;
                 sawUseful = true;
             }
+            continue;
+        }
+
+        // Xbox BLE exposes the Home/Guide control as Consumer AC Home
+        // (usage 0x0223) on a separate HID input report. This mirrors the
+        // historical BluetoothHIDMaster path that was hardware-proven on the
+        // same controller.
+        if (
+            usagePage == kUsagePageConsumer &&
+            usage == kUsageConsumerHome
+        ) {
+            sawConsumerGuide = true;
+            consumerGuidePressed = value != 0;
+            sawUseful = true;
             continue;
         }
 
@@ -879,7 +896,36 @@ bool BluetoothHidParserV2::parseGamepad(
     }
 
     if (sawButtonPage) {
-        next.buttons = reportButtons;
+        // Guide may live on a separate Consumer report. Preserve that state
+        // across ordinary button reports unless this exact report itself
+        // carries Button usage 13.
+        std::int32_t guideLogicalMin = 0;
+        std::int32_t guideLogicalMax = 0;
+        const bool reportCarriesGuideButton =
+            findFieldRange(
+                info,
+                reportId,
+                kUsagePageButton,
+                13,
+                guideLogicalMin,
+                guideLogicalMax
+            );
+
+        const std::uint64_t preservedGuide =
+            reportCarriesGuideButton
+                ? 0
+                : (next.buttons & ButtonGuide);
+
+        next.buttons =
+            reportButtons | preservedGuide;
+    }
+
+    if (sawConsumerGuide) {
+        if (consumerGuidePressed) {
+            next.buttons |= ButtonGuide;
+        } else {
+            next.buttons &= ~ButtonGuide;
+        }
     }
 
     if (

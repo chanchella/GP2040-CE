@@ -29,13 +29,26 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
 
-      - name: Verify U9F functional source is frozen to hardware-verified U9E
+      - name: Verify U9G functional scope against hardware-verified U9F
         shell: bash
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor aed44da64f668553e24eb8f4a60a991725318932 HEAD
-          git diff --exit-code aed44da64f668553e24eb8f4a60a991725318932 -- oag/firmware/src oag/src
-          echo "U9F_U9E_FUNCTIONAL_SOURCE_FREEZE=PASS"
+          U9F_BASELINE="4bcb0b21f848d2f7cd324e873bc55272dab46ad7"
+          git merge-base --is-ancestor "${U9F_BASELINE}" HEAD
+
+          EXPECTED="$(printf '%s\n' \
+            'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
+            'oag/firmware/src/bluetooth_hid_parser_v2.cpp' \
+            'oag/firmware/src/bluetooth_host_v2.cpp' \
+            'oag/firmware/src/main.cpp' | sort)"
+
+          ACTUAL="$(git diff --name-only "${U9F_BASELINE}" -- \
+            oag/firmware/include \
+            oag/firmware/src \
+            oag/src | sort)"
+
+          test "${ACTUAL}" = "${EXPECTED}"
+          echo "U9G_U9F_FUNCTIONAL_SCOPE=PASS"
 
       - name: Verify no Antigravity coupling
         shell: bash
@@ -69,7 +82,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u9f:
+  firmware-u9g:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -97,7 +110,7 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Verify exact U9F SDK and Bluetooth dependencies
+      - name: Verify exact U9G SDK and Bluetooth dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -105,8 +118,8 @@ jobs:
           test "$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
           test "$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
           echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-u9d" >> "${GITHUB_ENV}"
-          echo "U9F_PICO_SDK_230=PASS"
-          echo "U9F_BTSTACK_HIDS_HOST=PASS"
+          echo "U9G_PICO_SDK_230=PASS"
+          echo "U9G_BTSTACK_HIDS_HOST=PASS"
 
       - name: Verify and prepare pinned dependencies
         shell: bash
@@ -114,7 +127,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U9F firmware
+      - name: Configure Pico 2 W U9G firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -124,7 +137,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U9F firmware
+      - name: Build Pico 2 W U9G firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -170,7 +183,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U9F"
+          assert manifest["phase"] == "U9G"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -227,10 +240,15 @@ jobs:
           assert manifest["features"]["bluetooth_hids_host_accepts_gattservice_packet_type"] is True
           assert manifest["features"]["bluetooth_u9f_baseline_freeze"] is True
           assert manifest["features"]["u9f_functional_source_frozen_to_u9e"] is True
+          assert manifest["features"]["bluetooth_u9g_consumer_home_0223_guide"] is True
+          assert manifest["features"]["bluetooth_u9g_xbox_ble_rumble_report_id"] == 3
+          assert manifest["features"]["bluetooth_u9g_xbox_ble_rumble_retry_ms"] == 50
+          assert manifest["features"]["bluetooth_u9g_family_scoped_feedback"] is True
           assert manifest["verification"]["hardware_verified"] is False
-          assert manifest["verification"]["hardware_verified_baseline_phase"] == "U9E"
-          assert manifest["verification"]["hardware_verified_baseline_sha"] == "aed44da64f668553e24eb8f4a60a991725318932"
-          assert manifest["verification"]["u9f_simultaneous_wired_bluetooth_regression"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["hardware_verified_baseline_phase"] == "U9F"
+          assert manifest["verification"]["hardware_verified_baseline_sha"] == "4bcb0b21f848d2f7cd324e873bc55272dab46ad7"
+          assert manifest["verification"]["u9f_simultaneous_wired_bluetooth_regression"] == "HARDWARE_VERIFIED"
+          assert manifest["verification"]["u9g_xbox_ble_guide_rumble"] == "PENDING_HARDWARE"
           assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
           assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
           assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
@@ -250,17 +268,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9F_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9G_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9F_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9G_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9F_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9G_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U9F firmware bundle
+      - name: Upload U9G firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U9F-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U9G-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 
 #include "pico/cyw43_arch.h"
 
@@ -212,6 +213,67 @@ std::size_t BluetoothHostV2::connectedPeerCount() const {
     }
 
     return count;
+}
+
+BluetoothHidOutputResult BluetoothHostV2::sendLeOutputReport(
+    std::uint16_t connectionHandle,
+    std::uint8_t serviceInstance,
+    std::uint8_t reportId,
+    const std::uint8_t* report,
+    std::size_t reportLength
+) {
+    if (
+        report == nullptr ||
+        reportLength == 0 ||
+        reportLength > std::numeric_limits<std::uint16_t>::max()
+    ) {
+        return BluetoothHidOutputResult::Failed;
+    }
+
+    Peer* peer =
+        findBleByHandle(connectionHandle);
+
+    if (
+        peer == nullptr ||
+        peer->hidCid == 0 ||
+        serviceInstance >= peer->serviceCount
+    ) {
+        return BluetoothHidOutputResult::Failed;
+    }
+
+    // Avoid the TinyUSB/BTstack hid_report_type_t name collision. The BTstack
+    // HIDS Host contract uses numeric report type 2 for Output reports; this
+    // is the same approach used by the historical hardware-working
+    // BluetoothHIDMaster implementation.
+    using BtReportType =
+        decltype(
+            (
+                (hids_host_report_t*)
+                nullptr
+            )->report_type
+        );
+
+    const auto outputReportType =
+        static_cast<BtReportType>(2);
+
+    const std::uint8_t status =
+        hids_host_send_write_report(
+            peer->hidCid,
+            reportId,
+            outputReportType,
+            report,
+            static_cast<std::uint16_t>(reportLength)
+        );
+
+    if (status == ERROR_CODE_SUCCESS) {
+        return BluetoothHidOutputResult::Accepted;
+    }
+
+    if (status == ERROR_CODE_COMMAND_DISALLOWED) {
+        return BluetoothHidOutputResult::Busy;
+    }
+
+    return BluetoothHidOutputResult::Failed;
 }
 
 bool BluetoothHostV2::hasCapacity() const {

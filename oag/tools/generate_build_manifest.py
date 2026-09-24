@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U9F",
+    "phase": "U9G",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -130,6 +130,10 @@ manifest = {
         "bluetooth_hids_host_accepts_gattservice_packet_type": True,
         "bluetooth_u9f_baseline_freeze": True,
         "u9f_functional_source_frozen_to_u9e": True,
+        "bluetooth_u9g_consumer_home_0223_guide": True,
+        "bluetooth_u9g_xbox_ble_rumble_report_id": 3,
+        "bluetooth_u9g_xbox_ble_rumble_retry_ms": 50,
+        "bluetooth_u9g_family_scoped_feedback": True,
         "authentication": False,
     },
     "pc_xinput_profile": {
@@ -168,9 +172,10 @@ manifest = {
         "software_verified": True,
         "ci_verified": True,
         "hardware_verified": False,
-        "hardware_verified_baseline_phase": "U9E",
-        "hardware_verified_baseline_sha": "aed44da64f668553e24eb8f4a60a991725318932",
-        "u9f_simultaneous_wired_bluetooth_regression": "PENDING_HARDWARE",
+        "hardware_verified_baseline_phase": "U9F",
+        "hardware_verified_baseline_sha": "4bcb0b21f848d2f7cd324e873bc55272dab46ad7",
+        "u9f_simultaneous_wired_bluetooth_regression": "HARDWARE_VERIFIED",
+        "u9g_xbox_ble_guide_rumble": "PENDING_HARDWARE",
     },
 }
 
