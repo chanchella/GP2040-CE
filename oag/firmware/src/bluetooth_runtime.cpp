@@ -342,6 +342,7 @@ void BluetoothRuntime::connectGoldenStoredBleRemote() {
     gap_inquiry_stop();
     gap_connect_cancel();
     discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+    setDiagnosticStage(2);
 
     const std::uint8_t status = gap_connect(
         goldenBleRemote_.address.data(),
@@ -352,9 +353,11 @@ void BluetoothRuntime::connectGoldenStoredBleRemote() {
 
     if (status == ERROR_CODE_SUCCESS) {
         leConnectPending_ = true;
+        setDiagnosticStage(3);
         return;
     }
 
+    setDiagnosticStage(2, true);
     goldenBleRemoteKnown_ = false;
     startLeScan();
 }
@@ -370,6 +373,7 @@ void BluetoothRuntime::connectGoldenStoredClassicRemote() {
     gap_inquiry_stop();
     gap_connect_cancel();
     discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+    setDiagnosticStage(2);
 
     std::uint16_t hidCid = 0;
     const std::uint8_t status = hid_host_connect(
@@ -380,9 +384,11 @@ void BluetoothRuntime::connectGoldenStoredClassicRemote() {
 
     if (status == ERROR_CODE_SUCCESS) {
         classicConnectPending_ = true;
+        setDiagnosticStage(3);
         return;
     }
 
+    setDiagnosticStage(2, true);
     goldenClassicRemoteKnown_ = false;
     startLeScan();
 }
@@ -644,6 +650,7 @@ void BluetoothRuntime::startLeHids(
     );
 
     if (status != ERROR_CODE_SUCCESS) {
+        setDiagnosticStage(5, true);
         gap_disconnect(connectionHandle);
         return;
     }
@@ -710,35 +717,69 @@ void BluetoothRuntime::disconnectLeServices(LeLink& link) {
     link = {};
 }
 
+void BluetoothRuntime::setDiagnosticStage(
+    std::uint8_t stage,
+    bool failed
+) {
+    diagnosticStage_ = stage;
+    diagnosticFailed_ = failed;
+    diagnosticCycleStartUs_ = time_us_64();
+}
+
 void BluetoothRuntime::serviceDiagnosticLed() {
-    if (!hciWorking_) return;
+    if (!hciWorking_) {
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+        return;
+    }
 
-    const std::uint64_t nowUs = time_us_64();
-
-    if (activeConnectionCount() != 0) {
-        diagnosticLedState_ = true;
+    if (diagnosticReportSeen_) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
         return;
     }
 
-    const std::uint64_t intervalUs =
-        (classicConnectPending_ || leConnectPending_)
-            ? 120000ull
-            : (
-                discoveryPhase_ == DiscoveryPhase::ClassicInquiry ||
-                discoveryPhase_ == DiscoveryPhase::LeScan
-            )
-                ? 500000ull
-                : 250000ull;
-
-    if (nowUs - diagnosticLastToggleUs_ >= intervalUs) {
-        diagnosticLastToggleUs_ = nowUs;
-        diagnosticLedState_ = !diagnosticLedState_;
-        cyw43_arch_gpio_put(
-            CYW43_WL_GPIO_LED_PIN,
-            diagnosticLedState_ ? 1 : 0
-        );
+    if (diagnosticStage_ == 0) {
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+        return;
     }
+
+    const std::uint64_t nowUs = time_us_64();
+
+    if (
+        diagnosticCycleStartUs_ == 0 ||
+        nowUs - diagnosticCycleStartUs_ >= 3000000ull
+    ) {
+        diagnosticCycleStartUs_ = nowUs;
+    }
+
+    const std::uint64_t elapsedUs =
+        nowUs - diagnosticCycleStartUs_;
+    const std::uint64_t shortSlotUs = 300000ull;
+    const std::uint64_t shortOnUs = 120000ull;
+    const std::uint64_t shortRegionUs =
+        static_cast<std::uint64_t>(diagnosticStage_) *
+        shortSlotUs;
+
+    bool ledOn = false;
+
+    if (elapsedUs < shortRegionUs) {
+        ledOn = (elapsedUs % shortSlotUs) < shortOnUs;
+    } else if (diagnosticFailed_) {
+        const std::uint64_t longStartUs =
+            shortRegionUs + 150000ull;
+        const std::uint64_t longEndUs =
+            longStartUs + 700000ull;
+
+        ledOn =
+            elapsedUs >= longStartUs &&
+            elapsedUs < longEndUs;
+    }
+
+    diagnosticLedState_ = ledOn;
+
+    cyw43_arch_gpio_put(
+        CYW43_WL_GPIO_LED_PIN,
+        ledOn ? 1 : 0
+    );
 }
 
 void BluetoothRuntime::handleHciPacket(
@@ -763,6 +804,7 @@ void BluetoothRuntime::handleHciPacket(
                 HCI_STATE_WORKING
             ) {
                 hciWorking_ = true;
+                setDiagnosticStage(1);
 
                 if (goldenBleRemoteKnown_) {
                     connectGoldenStoredBleRemote();
@@ -800,6 +842,7 @@ void BluetoothRuntime::handleHciPacket(
             stopDiscoveryTimer();
             gap_inquiry_stop();
             discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+            setDiagnosticStage(2);
 
             std::copy(
                 address,
@@ -817,7 +860,9 @@ void BluetoothRuntime::handleHciPacket(
 
             if (status == ERROR_CODE_SUCCESS) {
                 classicConnectPending_ = true;
+                setDiagnosticStage(3);
             } else {
+                setDiagnosticStage(2, true);
                 discoveryPhase_ = DiscoveryPhase::Idle;
                 startLeScan();
             }
@@ -865,6 +910,7 @@ void BluetoothRuntime::handleHciPacket(
             stopDiscoveryTimer();
             gap_stop_scan();
             discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+            setDiagnosticStage(2);
 
             std::copy(
                 address,
@@ -880,7 +926,9 @@ void BluetoothRuntime::handleHciPacket(
 
             if (status == ERROR_CODE_SUCCESS) {
                 leConnectPending_ = true;
+                setDiagnosticStage(3);
             } else {
+                setDiagnosticStage(2, true);
                 discoveryPhase_ = DiscoveryPhase::Idle;
                 startLeScan();
             }
@@ -902,10 +950,13 @@ void BluetoothRuntime::handleHciPacket(
                     );
 
                 if (status != ERROR_CODE_SUCCESS) {
+                    setDiagnosticStage(3, true);
                     goldenBleRemoteKnown_ = false;
                     resumeDiscovery();
                     break;
                 }
+
+                setDiagnosticStage(4);
 
                 const std::uint16_t connectionHandle =
                     gap_subevent_le_connection_complete_get_connection_handle(
@@ -974,6 +1025,17 @@ void BluetoothRuntime::handleHciPacket(
         }
 
         case HCI_EVENT_DISCONNECTION_COMPLETE: {
+            if (
+                !diagnosticReportSeen_ &&
+                diagnosticStage_ > 1 &&
+                diagnosticStage_ < 6
+            ) {
+                setDiagnosticStage(
+                    diagnosticStage_,
+                    true
+                );
+            }
+
             const std::uint16_t handle =
                 hci_event_disconnection_complete_get_connection_handle(
                     packet
@@ -1049,9 +1111,12 @@ void BluetoothRuntime::handleClassicHidPacket(
                 hid_subevent_connection_opened_get_status(packet);
 
             if (status != ERROR_CODE_SUCCESS) {
+                setDiagnosticStage(3, true);
                 resumeDiscovery();
                 break;
             }
+
+            setDiagnosticStage(4);
 
             ClassicLink* link = allocateClassic();
             if (link == nullptr) {
@@ -1095,6 +1160,7 @@ void BluetoothRuntime::handleClassicHidPacket(
                 hid_subevent_descriptor_available_get_status(packet) !=
                     ERROR_CODE_SUCCESS
             ) {
+                setDiagnosticStage(4, true);
                 hid_host_disconnect(cid);
                 break;
             }
@@ -1115,6 +1181,8 @@ void BluetoothRuntime::handleClassicHidPacket(
                     );
                 }
             }
+
+            setDiagnosticStage(6);
 
             // Only now continue searching for additional controllers.
             resumeDiscovery();
@@ -1151,6 +1219,7 @@ void BluetoothRuntime::handleClassicHidPacket(
             }
 
             if (report != nullptr && reportLength != 0) {
+                diagnosticReportSeen_ = true;
                 observer_->onBluetoothHidReport(
                     TransportType::BluetoothClassic,
                     link->connectionHandle,
@@ -1220,8 +1289,10 @@ void BluetoothRuntime::handleSmPacket(
                 sm_event_pairing_complete_get_status(packet);
 
             if (status == ERROR_CODE_SUCCESS) {
+                setDiagnosticStage(5);
                 startLeHids(handle);
             } else {
+                setDiagnosticStage(4, true);
                 gap_disconnect(handle);
             }
             break;
@@ -1234,8 +1305,10 @@ void BluetoothRuntime::handleSmPacket(
                 sm_event_reencryption_complete_get_status(packet);
 
             if (status == ERROR_CODE_SUCCESS) {
+                setDiagnosticStage(5);
                 startLeHids(handle);
             } else {
+                setDiagnosticStage(4, true);
                 gap_disconnect(handle);
             }
             break;
@@ -1281,6 +1354,7 @@ void BluetoothRuntime::handleLeHidPacket(
                 );
 
             if (status != ERROR_CODE_SUCCESS) {
+                setDiagnosticStage(5, true);
                 gap_disconnect(link->connectionHandle);
                 break;
             }
@@ -1295,6 +1369,7 @@ void BluetoothRuntime::handleLeHidPacket(
             );
 
             notifyLeDescriptors(*link);
+            setDiagnosticStage(6);
             resumeDiscovery();
             break;
         }
@@ -1350,6 +1425,7 @@ void BluetoothRuntime::handleLeHidPacket(
                     static_cast<std::size_t>(reportLength) + 1u;
             }
 
+            diagnosticReportSeen_ = true;
             observer_->onBluetoothHidReport(
                 TransportType::BluetoothLe,
                 link->connectionHandle,

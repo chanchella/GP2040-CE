@@ -144,6 +144,10 @@ private:
     void stopDiscoveryTimer();
     void scheduleDiscoveryTimer(std::uint32_t timeoutMs);
     void serviceDiagnosticLed();
+    void setDiagnosticStage(
+        std::uint8_t stage,
+        bool failed = false
+    );
 
     bool loadGoldenStoredBleRemote();
     bool loadGoldenStoredClassicRemote();
@@ -172,7 +176,11 @@ private:
     bool goldenClassicRemoteKnown_ = false;
 
     std::uint64_t diagnosticLastToggleUs_ = 0;
+    std::uint64_t diagnosticCycleStartUs_ = 0;
     bool diagnosticLedState_ = false;
+    std::uint8_t diagnosticStage_ = 0;
+    bool diagnosticFailed_ = false;
+    bool diagnosticReportSeen_ = false;
 
     std::array<ClassicLink, kConnectionBudget> classicLinks_ {};
     std::array<LeLink, kConnectionBudget> leLinks_ {};
