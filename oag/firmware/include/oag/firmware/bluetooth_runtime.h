@@ -94,6 +94,9 @@ public:
         std::uint16_t size
     );
 
+    void handleDiscoveryTimer();
+    void handlePeripheralSendRequest();
+
 private:
     struct ClassicLink {
         bool active = false;
@@ -136,7 +139,10 @@ private:
     void startClassicInquiry();
     void startLeScan();
     void resumeDiscovery();
+    void stopDiscoveryTimer();
+    void scheduleDiscoveryTimer(std::uint32_t timeoutMs);
     void serviceDiagnosticLed();
+    void migrateBondStateOnce();
 
     void startLeHids(std::uint16_t connectionHandle);
     void notifyLeDescriptors(LeLink& link);
@@ -152,8 +158,6 @@ private:
     bool hciWorking_ = false;
 
     DiscoveryPhase discoveryPhase_ = DiscoveryPhase::Idle;
-    std::uint64_t leScanDeadlineUs_ = 0;
-    std::uint64_t nextDiscoveryRetryUs_ = 0;
 
     bool classicConnectPending_ = false;
     bool leConnectPending_ = false;

@@ -1,9 +1,9 @@
 #ifndef OAG_BTSTACK_CONFIG_H
 #define OAG_BTSTACK_CONFIG_H
 
-// OAG U8A: dual-mode Bluetooth HID host budget for Pico 2 W / CYW43.
-// The runtime is intentionally polled from the main firmware loop so USB Host
-// remains initialized first and keeps deterministic ownership of its timing.
+// OAG U8D: dual-mode Bluetooth HID host/peripheral budget for Pico 2 W.
+// USB Host still initializes first, but Bluetooth runtime servicing is restored
+// to the hardware-proven Golden G2E3 pico_cyw43_arch_none async context.
 
 #define ENABLE_LOG_ERROR
 #define ENABLE_PRINTF_HEXDUMP

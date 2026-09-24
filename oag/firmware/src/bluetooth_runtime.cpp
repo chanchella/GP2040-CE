@@ -9,6 +9,7 @@
 #include "pico/time.h"
 
 #include "btstack.h"
+#include "btstack_tlv.h"
 #include "ble/gatt-service/hids_client.h"
 #include "ble/gatt-service/hids_device.h"
 
@@ -100,6 +101,22 @@ void peripheralHidPacketThunk(
 
 btstack_packet_callback_registration_t gHciRegistration {};
 btstack_packet_callback_registration_t gSmRegistration {};
+btstack_timer_source_t gDiscoveryTimer {};
+btstack_context_callback_registration_t gPeripheralSendRegistration {};
+
+void discoveryTimerThunk(btstack_timer_source_t* timer) {
+    (void)timer;
+    if (gBluetoothRuntime != nullptr) {
+        gBluetoothRuntime->handleDiscoveryTimer();
+    }
+}
+
+void peripheralSendRequestThunk(void* context) {
+    (void)context;
+    if (gBluetoothRuntime != nullptr) {
+        gBluetoothRuntime->handlePeripheralSendRequest();
+    }
+}
 
 bool looksLikeClassicPeripheral(std::uint32_t classOfDevice) {
     return (classOfDevice & 0x1F00u) == 0x0500u;
@@ -262,6 +279,16 @@ bool advertisementLooksLikeHid(const std::uint8_t* packet) {
     return false;
 }
 
+constexpr std::uint32_t kU8dBondMigrationTag = 0x4F38444Du; // "O8DM"
+constexpr std::uint32_t kU8dBondMigrationValue = 0x00080004u;
+
+void clearLeBondDatabase() {
+    const int count = le_device_db_max_count();
+    for (int i = 0; i < count; ++i) {
+        le_device_db_remove(i);
+    }
+}
+
 } // namespace
 
 namespace oag::firmware {
@@ -274,7 +301,8 @@ bool BluetoothRuntime::initialize(
     }
 
     // USB Host is intentionally initialized by FirmwareCore before this call.
-    // Poll architecture keeps CYW43/BTstack servicing in the same main loop.
+    // U8D restores the Golden G2E3 async-context architecture:
+    // pico_cyw43_arch_none services BTstack in the SDK background context.
     if (cyw43_arch_init() != PICO_OK) {
         return false;
     }
@@ -287,6 +315,8 @@ bool BluetoothRuntime::initialize(
     sm_init();
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
     sm_set_authentication_requirements(SM_AUTHREQ_BONDING);
+
+    migrateBondStateOnce();
 
     gatt_client_init();
 
@@ -336,9 +366,51 @@ bool BluetoothRuntime::initialize(
     gSmRegistration.callback = &smPacketThunk;
     sm_add_event_handler(&gSmRegistration);
 
+    gPeripheralSendRegistration.callback =
+        &peripheralSendRequestThunk;
+    gPeripheralSendRegistration.context = nullptr;
+
     initialized_ = true;
     hci_power_control(HCI_POWER_ON);
     return true;
+}
+
+void BluetoothRuntime::migrateBondStateOnce() {
+    const btstack_tlv_t* tlv = nullptr;
+    void* context = nullptr;
+    btstack_tlv_get_instance(&tlv, &context);
+
+    if (tlv == nullptr) {
+        return;
+    }
+
+    std::uint32_t marker = 0;
+    const int markerLength = tlv->get_tag(
+        context,
+        kU8dBondMigrationTag,
+        reinterpret_cast<std::uint8_t*>(&marker),
+        sizeof(marker)
+    );
+
+    if (
+        markerLength == static_cast<int>(sizeof(marker)) &&
+        marker == kU8dBondMigrationValue
+    ) {
+        return;
+    }
+
+    // One-time cleanup when entering the Golden-compatible U8D engine.
+    // This removes stale U8A/B/C link keys without wiping bonds every boot.
+    gap_delete_all_link_keys();
+    clearLeBondDatabase();
+
+    marker = kU8dBondMigrationValue;
+    tlv->store_tag(
+        context,
+        kU8dBondMigrationTag,
+        reinterpret_cast<const std::uint8_t*>(&marker),
+        sizeof(marker)
+    );
 }
 
 void BluetoothRuntime::configurePeripheralAdvertising() {
@@ -369,6 +441,17 @@ void BluetoothRuntime::submitPeripheralGamepad(
     const LogicalGamepadState& state
 ) {
     peripheralGamepadState_ = state;
+
+    if (!initialized_) {
+        return;
+    }
+
+    btstack_run_loop_execute_on_main_thread(
+        &gPeripheralSendRegistration
+    );
+}
+
+void BluetoothRuntime::handlePeripheralSendRequest() {
     requestPeripheralSend();
 }
 
@@ -514,33 +597,12 @@ void BluetoothRuntime::handlePeripheralHidPacket(
 }
 
 void BluetoothRuntime::poll() {
-    if (!initialized_) return;
-
-    cyw43_arch_poll();
-
-    const std::uint64_t nowUs = time_us_64();
-
-    if (
-        hciWorking_ &&
-        discoveryPhase_ == DiscoveryPhase::LeScan &&
-        !leConnectPending_ &&
-        nowUs >= leScanDeadlineUs_
-    ) {
-        gap_stop_scan();
-        startClassicInquiry();
+    if (!initialized_) {
+        return;
     }
 
-    if (
-        hciWorking_ &&
-        hasFreeConnectionBudget() &&
-        discoveryPhase_ == DiscoveryPhase::Idle &&
-        !classicConnectPending_ &&
-        !leConnectPending_ &&
-        nowUs >= nextDiscoveryRetryUs_
-    ) {
-        resumeDiscovery();
-    }
-
+    // Bluetooth transport/timers are serviced by pico_cyw43_arch_none's
+    // async-context, matching the hardware-proven Golden G2E3 firmware.
     serviceDiagnosticLed();
 }
 
@@ -675,6 +737,41 @@ bool BluetoothRuntime::addressAlreadyConnected(
     return false;
 }
 
+void BluetoothRuntime::stopDiscoveryTimer() {
+    btstack_run_loop_remove_timer(&gDiscoveryTimer);
+}
+
+void BluetoothRuntime::scheduleDiscoveryTimer(
+    std::uint32_t timeoutMs
+) {
+    stopDiscoveryTimer();
+    btstack_run_loop_set_timer_handler(
+        &gDiscoveryTimer,
+        discoveryTimerThunk
+    );
+    btstack_run_loop_set_timer(
+        &gDiscoveryTimer,
+        timeoutMs
+    );
+    btstack_run_loop_add_timer(&gDiscoveryTimer);
+}
+
+void BluetoothRuntime::handleDiscoveryTimer() {
+    if (
+        !hciWorking_ ||
+        !hasFreeConnectionBudget() ||
+        classicConnectPending_ ||
+        leConnectPending_
+    ) {
+        return;
+    }
+
+    if (discoveryPhase_ == DiscoveryPhase::LeScan) {
+        gap_stop_scan();
+        startClassicInquiry();
+    }
+}
+
 void BluetoothRuntime::startClassicInquiry() {
     if (
         !hciWorking_ ||
@@ -686,12 +783,14 @@ void BluetoothRuntime::startClassicInquiry() {
         return;
     }
 
+    stopDiscoveryTimer();
     gap_stop_scan();
+    gap_connect_cancel();
+
     discoveryPhase_ = DiscoveryPhase::ClassicInquiry;
 
-    // Golden cadence: 4 * 1.28 s ~= 5.1 s.
+    // Exact Golden cadence: 4 * 1.28 s ~= 5.1 s.
     gap_inquiry_start(4);
-    nextDiscoveryRetryUs_ = time_us_64() + 5500000ull;
 }
 
 void BluetoothRuntime::startLeScan() {
@@ -705,25 +804,29 @@ void BluetoothRuntime::startLeScan() {
         return;
     }
 
+    stopDiscoveryTimer();
+    gap_inquiry_stop();
+    gap_connect_cancel();
+
+    // Golden G2E3 active scan. Some HID devices expose 0x1812 only in the
+    // scan response, so passive scan is insufficient.
     gap_set_scan_parameters(1, 0x0030, 0x0030);
     gap_start_scan();
 
     discoveryPhase_ = DiscoveryPhase::LeScan;
-    leScanDeadlineUs_ = time_us_64() + 5000000ull;
-    nextDiscoveryRetryUs_ = leScanDeadlineUs_ + 250000ull;
+    scheduleDiscoveryTimer(5000);
 }
 
 void BluetoothRuntime::resumeDiscovery() {
     if (!hciWorking_ || !hasFreeConnectionBudget()) {
+        stopDiscoveryTimer();
         discoveryPhase_ = DiscoveryPhase::Idle;
         return;
     }
 
-    if (discoveryPhase_ == DiscoveryPhase::LeScan) {
-        startClassicInquiry();
-    } else {
-        startLeScan();
-    }
+    // Golden always returns to BLE first; the BTstack timer rotates to
+    // Classic after five seconds.
+    startLeScan();
 }
 
 void BluetoothRuntime::startLeHids(
@@ -892,28 +995,32 @@ void BluetoothRuntime::handleHciPacket(
                 break;
             }
 
+            stopDiscoveryTimer();
             gap_inquiry_stop();
+            discoveryPhase_ = DiscoveryPhase::PausedForConnection;
 
             std::uint16_t hidCid = 0;
             const std::uint8_t status = hid_host_connect(
                 address,
-                HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT,
+                HID_PROTOCOL_MODE_REPORT,
                 &hidCid
             );
 
             if (status == ERROR_CODE_SUCCESS) {
                 classicConnectPending_ = true;
-                discoveryPhase_ =
-                    DiscoveryPhase::PausedForConnection;
             } else {
                 discoveryPhase_ = DiscoveryPhase::Idle;
-                nextDiscoveryRetryUs_ = time_us_64() + 250000ull;
+                startLeScan();
             }
             break;
         }
 
         case GAP_EVENT_INQUIRY_COMPLETE:
-            if (!classicConnectPending_) {
+            if (
+                discoveryPhase_ == DiscoveryPhase::ClassicInquiry &&
+                !classicConnectPending_ &&
+                hasFreeConnectionBudget()
+            ) {
                 startLeScan();
             }
             break;
@@ -946,18 +1053,18 @@ void BluetoothRuntime::handleHciPacket(
                     gap_event_advertising_report_get_address_type(packet)
                 );
 
+            stopDiscoveryTimer();
             gap_stop_scan();
+            discoveryPhase_ = DiscoveryPhase::PausedForConnection;
 
             const std::uint8_t status =
                 gap_connect(address, addressType);
 
             if (status == ERROR_CODE_SUCCESS) {
                 leConnectPending_ = true;
-                discoveryPhase_ =
-                    DiscoveryPhase::PausedForConnection;
             } else {
                 discoveryPhase_ = DiscoveryPhase::Idle;
-                nextDiscoveryRetryUs_ = time_us_64() + 250000ull;
+                startLeScan();
             }
             break;
         }
@@ -1032,7 +1139,9 @@ void BluetoothRuntime::handleHciPacket(
                 packet,
                 address
             );
-            gap_pin_code_response(address, "0000");
+            // Golden G2E3 behavior: do not force a legacy 0000 PIN onto
+            // modern HID controllers. Let SSP/HID pairing proceed instead.
+            gap_pin_code_negative(address);
             break;
         }
 
@@ -1075,7 +1184,7 @@ void BluetoothRuntime::handleHciPacket(
             }
 
             discoveryPhase_ = DiscoveryPhase::Idle;
-            nextDiscoveryRetryUs_ = time_us_64() + 100000ull;
+            resumeDiscovery();
             break;
         }
 
@@ -1111,7 +1220,7 @@ void BluetoothRuntime::handleClassicHidPacket(
                     hid_subevent_incoming_connection_get_hid_cid(
                         packet
                     ),
-                    HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT
+                    HID_PROTOCOL_MODE_REPORT
                 );
             } else {
                 hid_host_decline_connection(
