@@ -32,6 +32,10 @@ int main() {
         series.wireProtocol ==
         PlatformWireProtocol::XgipXboxOneSeries
     );
+    assert(
+        series.implementation ==
+        PlatformImplementationStatus::SoftwareFoundation
+    );
     assert(series.auth.required());
     assert(
         series.auth.kind ==
@@ -42,6 +46,17 @@ int main() {
         AuthDonorFamily::XboxOneSeries
     );
     assert(!series.hardwareVerified);
+
+    const PlatformProfile& xboxOne =
+        PlatformProfileRegistry::profile(
+            PlatformId::XboxOneConsole
+        );
+
+    assert(
+        xboxOne.implementation ==
+        PlatformImplementationStatus::SoftwareFoundation
+    );
+    assert(xboxOne.auth.required());
 
     const PlatformProfile& ps4 =
         PlatformProfileRegistry::profile(

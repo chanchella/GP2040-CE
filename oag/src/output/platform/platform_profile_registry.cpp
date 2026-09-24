@@ -158,7 +158,7 @@ constexpr std::array<PlatformProfile, 11> kProfiles {{
     makeProfile(
         PlatformId::XboxOneConsole,
         PlatformWireProtocol::XgipXboxOneSeries,
-        PlatformImplementationStatus::Planned,
+        PlatformImplementationStatus::SoftwareFoundation,
         {
             AuthRequirementKind::LiveOfficialDonorPassthrough,
             AuthDonorFamily::XboxOneSeries,
@@ -173,7 +173,7 @@ constexpr std::array<PlatformProfile, 11> kProfiles {{
     makeProfile(
         PlatformId::XboxSeriesConsole,
         PlatformWireProtocol::XgipXboxOneSeries,
-        PlatformImplementationStatus::Planned,
+        PlatformImplementationStatus::SoftwareFoundation,
         {
             AuthRequirementKind::LiveOfficialDonorPassthrough,
             AuthDonorFamily::XboxOneSeries,
