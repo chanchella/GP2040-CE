@@ -37,6 +37,9 @@ add_executable(OAG_Abo_Gemi_Ultra_Gaming_U3B_Pico2W
     ../src/protocol/hid/generic_hid_gamepad_driver.cpp
     ../src/mapping/logical_slot_manager.cpp
     ../src/mapping/pass_through_mapping.cpp
+    ../src/mapping/digital_binding_engine.cpp
+    ../src/mapping/mouse_to_stick_mapper.cpp
+    ../src/mapping/keyboard_mouse_gamepad_mapper.cpp
     ../src/output/xinput/xinput_report_encoder.cpp
     ../src/output/xinput/xinput_feedback_decoder.cpp
 )

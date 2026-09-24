@@ -17,6 +17,7 @@ add_library(oag_core STATIC
     src/mapping/digital_binding_engine.cpp
     src/output/platform/platform_profile_registry.cpp
     src/protocol/hid/generic_hid_gamepad_driver.cpp
+    src/mapping/keyboard_mouse_gamepad_mapper.cpp
 )
 
 target_include_directories(oag_core
@@ -89,4 +90,11 @@ if(OAG_BUILD_HOST_TESTS)
     target_compile_features(oag_generic_hid_gamepad_tests PRIVATE cxx_std_17)
 
     add_test(NAME oag_generic_hid_gamepad_tests COMMAND oag_generic_hid_gamepad_tests)
+
+    add_executable(oag_keyboard_mouse_gamepad_tests
+        tests/host/test_keyboard_mouse_gamepad_mapper.cpp
+    )
+    target_link_libraries(oag_keyboard_mouse_gamepad_tests PRIVATE oag_core)
+    target_compile_features(oag_keyboard_mouse_gamepad_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_keyboard_mouse_gamepad_tests COMMAND oag_keyboard_mouse_gamepad_tests)
 endif()

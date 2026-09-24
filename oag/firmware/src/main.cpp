@@ -16,6 +16,7 @@
 #include "oag/input/gamepad_state.h"
 #include "oag/input/keyboard_state.h"
 #include "oag/input/mouse_state.h"
+#include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/pass_through_mapping.h"
 #include "oag/protocol/hid/boot_keyboard_input_driver.h"
@@ -54,6 +55,7 @@ public:
         usbHost_.task();
 
         maintainXusbInput();
+        serviceMouseAimRelease();
         servicePcFeedback();
     }
 
@@ -130,7 +132,7 @@ public:
         registry_.disconnect(*id);
 
         if (slot && primaryBefore && *slot == *primaryBefore) {
-            pcOutput_.sendNeutral();
+            sendComposedOutput();
         }
 
         if (!primaryPcSlot()) {
@@ -261,12 +263,17 @@ public:
         if (record->protocol == oag::ProtocolKind::HidKeyboard) {
             keyboardStates_[id->index] = {};
             registry_.disconnect(*id);
+            sendComposedOutput();
             return;
         }
 
         if (record->protocol == oag::ProtocolKind::HidMouse) {
             mouseStates_[id->index] = {};
             registry_.disconnect(*id);
+
+            currentMouseMotion_ = {};
+            mouseAimActive_ = false;
+            sendComposedOutput();
             return;
         }
 
@@ -287,7 +294,7 @@ public:
         registry_.disconnect(*id);
 
         if (slot && primaryBefore && *slot == *primaryBefore) {
-            pcOutput_.sendNeutral();
+            sendComposedOutput();
         }
     }
 
@@ -313,24 +320,45 @@ public:
         }
 
         if (record->protocol == oag::ProtocolKind::HidKeyboard) {
-            keyboard_.parse(
-                *id,
-                report,
-                length,
-                time_us_64(),
-                keyboardStates_[id->index]
-            );
+            if (keyboard_.parse(
+                    *id,
+                    report,
+                    length,
+                    time_us_64(),
+                    keyboardStates_[id->index]
+                )) {
+                sendComposedOutput();
+            }
             return;
         }
 
         if (record->protocol == oag::ProtocolKind::HidMouse) {
-            mouse_.parse(
-                *id,
-                report,
-                length,
-                time_us_64(),
-                mouseStates_[id->index]
-            );
+            if (mouse_.parse(
+                    *id,
+                    report,
+                    length,
+                    time_us_64(),
+                    mouseStates_[id->index]
+                )) {
+                const oag::MouseState& mouseState =
+                    mouseStates_[id->index];
+
+                currentMouseMotion_ = {
+                    mouseState.dx,
+                    mouseState.dy,
+                };
+
+                mouseAimActive_ =
+                    currentMouseMotion_.dx != 0 ||
+                    currentMouseMotion_.dy != 0;
+
+                if (mouseAimActive_) {
+                    mouseAimExpiresUs_ =
+                        time_us_64() + kMouseAimHoldUs;
+                }
+
+                sendComposedOutput();
+            }
             return;
         }
 
@@ -357,7 +385,7 @@ public:
 
         const auto primary = primaryPcSlot();
         if (primary && *slot == *primary) {
-            pcOutput_.send(mapping_.process(states_[*slot]));
+            sendComposedOutput();
         }
     }
 
@@ -410,12 +438,13 @@ public:
 
         const auto primary = primaryPcSlot();
         if (primary && *slot == *primary) {
-            pcOutput_.send(mapping_.process(states_[*slot]));
+            sendComposedOutput();
         }
     }
 
 private:
     static constexpr std::uint8_t kRootCount = 3;
+    static constexpr std::uint64_t kMouseAimHoldUs = 6000;
 
     static oag::GenericHidGamepadQuirks genericHidQuirksFor(
         std::uint16_t vid,
@@ -511,6 +540,101 @@ private:
         }
     }
 
+    oag::KeyboardState combinedKeyboard() const {
+        oag::KeyboardState combined {};
+
+        for (const oag::KeyboardState& state : keyboardStates_) {
+            if (!state.connected) {
+                continue;
+            }
+
+            combined.connected = true;
+            combined.modifiers |= state.modifiers;
+
+            for (std::size_t i = 0;
+                 i < oag::KeyboardState::kWordCount;
+                 ++i) {
+                combined.usages[i] |= state.usages[i];
+            }
+
+            if (state.timestampUs > combined.timestampUs) {
+                combined.timestampUs = state.timestampUs;
+            }
+        }
+
+        return combined;
+    }
+
+    oag::MouseState combinedMouse() const {
+        oag::MouseState combined {};
+
+        for (const oag::MouseState& state : mouseStates_) {
+            if (!state.connected) {
+                continue;
+            }
+
+            combined.connected = true;
+            combined.buttons |= state.buttons;
+
+            if (state.timestampUs > combined.timestampUs) {
+                combined.timestampUs = state.timestampUs;
+            }
+        }
+
+        return combined;
+    }
+
+    oag::LogicalGamepadState basePrimaryOutput() const {
+        const auto primary = primaryPcSlot();
+
+        if (!primary ||
+            *primary >= states_.size() ||
+            !states_[*primary].connected) {
+            return {};
+        }
+
+        return mapping_.process(states_[*primary]);
+    }
+
+    void sendComposedOutput() {
+        const oag::KeyboardState keyboard = combinedKeyboard();
+        const oag::MouseState mouse = combinedMouse();
+
+        const bool hasKeyboard = keyboard.connected;
+        const bool hasMouse = mouse.connected;
+
+        oag::LogicalGamepadState output =
+            keyboardMouse_.apply(
+                hasKeyboard ? &keyboard : nullptr,
+                hasMouse ? &mouse : nullptr,
+                mouseAimActive_
+                    ? currentMouseMotion_
+                    : oag::MouseMotion {},
+                basePrimaryOutput()
+            );
+
+        if (!output.connected && !hasKeyboard && !hasMouse) {
+            pcOutput_.sendNeutral();
+            return;
+        }
+
+        pcOutput_.send(output);
+    }
+
+    void serviceMouseAimRelease() {
+        if (!mouseAimActive_) {
+            return;
+        }
+
+        if (time_us_64() < mouseAimExpiresUs_) {
+            return;
+        }
+
+        currentMouseMotion_ = {};
+        mouseAimActive_ = false;
+        sendComposedOutput();
+    }
+
     void servicePcFeedback() {
         oag::RumbleCommand newest {};
         if (pcOutput_.takeRumble(newest)) {
@@ -579,6 +703,7 @@ private:
     oag::BootMouseInputDriver mouse_;
     oag::GenericHidGamepadDriver genericHid_;
     oag::PassThroughMapping mapping_;
+    oag::KeyboardMouseGamepadMapper keyboardMouse_;
     oag::firmware::PcXinputDevice pcOutput_;
 
     std::array<
@@ -612,6 +737,10 @@ private:
     > rootByDevice_ {};
 
     std::uint8_t mountedRootMask_ = 0;
+
+    oag::MouseMotion currentMouseMotion_ {};
+    std::uint64_t mouseAimExpiresUs_ = 0;
+    bool mouseAimActive_ = false;
 
     oag::RumbleCommand pendingRumble_ {};
     bool pendingRumbleValid_ = false;
