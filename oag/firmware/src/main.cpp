@@ -168,12 +168,10 @@ public:
         xgipTxPending_[*slot] = false;
         xgipGuidePressed_[*slot] = false;
 
-        if (protocol == oag::ProtocolKind::XgipXboxOne) {
-            bluetoothHost_.notifyWiredGamepadAttached(
-                vid,
-                pid
-            );
-        }
+        bluetoothHost_.notifyWiredGamepadAttached(
+            vid,
+            pid
+        );
 
         rebuildPcOutputRouting();
     }
@@ -214,6 +212,11 @@ public:
                 pendingRumbleValid_[*slot] = false;
             }
         }
+
+        bluetoothHost_.notifyWiredGamepadDetached(
+            record->vid,
+            record->pid
+        );
 
         slots_.release(*id);
         registry_.disconnect(*id);
@@ -354,6 +357,11 @@ public:
             pendingRumbleValid_[*slot] = false;
         }
 
+        bluetoothHost_.notifyWiredGamepadAttached(
+            vid,
+            pid
+        );
+
         rebuildPcOutputRouting();
     }
 
@@ -413,6 +421,11 @@ public:
                 pendingRumbleValid_[*slot] = false;
             }
         }
+
+        bluetoothHost_.notifyWiredGamepadDetached(
+            record->vid,
+            record->pid
+        );
 
         slots_.release(*id);
         genericHidDescriptors_[id->index] = {};

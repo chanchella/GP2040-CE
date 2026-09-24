@@ -78,7 +78,7 @@ void discoveryTimerThunk(btstack_timer_source_t* timer) {
 constexpr std::uint32_t kU9FreshBondTag = 0x4F394252u;
 constexpr std::uint32_t kU9FreshBondVersion = 3u; // U9D SDK 2.3 / HIDS Host reset
 constexpr std::uint32_t kLeScanWindowMs = 5000u;
-constexpr std::uint64_t kBleRecoveryPriorityUs = 30000000ull;
+constexpr std::uint64_t kPairingAssistWindowUs = 30000000ull;
 
 // Minimal GAP Device Name ATT database. This mirrors the historical
 // BluetoothHCI behavior where the Pico exposes a local GAP service even while
@@ -203,28 +203,7 @@ void BluetoothHostV2::poll() {
     // event callback, matching the historical BluetoothHIDMaster flow:
     // scan -> stop -> connect.
     serviceDeferredBleConnect();
-    serviceWiredPairingAssist();
-
-    if (
-        bleRecoveryPriorityActive_ &&
-        time_us_64() >= bleRecoveryPriorityUntilUs_
-    ) {
-        bleRecoveryPriorityActive_ = false;
-        bleRecoveryPriorityUntilUs_ = 0;
-    }
-
-    // During recovery, never spend the window in Classic inquiry. Keep BLE
-    // first so a controller that starts advertising after USB unplug / Pair
-    // button is caught immediately.
-    if (
-        bleRecoveryPriorityActive_ &&
-        pendingKind_ == PendingKind::None &&
-        !deferredBleCandidateValid_ &&
-        discoveryPhase_ == DiscoveryPhase::ClassicInquiry
-    ) {
-        gap_inquiry_stop();
-        startLeScan();
-    }
+    servicePairingAssist();
 
     // U10A continuous-discovery guard. Normal BLE -> Classic -> BLE cadence
     // remains unchanged; this only recovers an unexpected idle state while
@@ -323,154 +302,111 @@ bool BluetoothHostV2::isKnownBluetoothCapableUsbGamepad(
     std::uint16_t vid,
     std::uint16_t pid
 ) {
-    // Microsoft pads that are known to have Bluetooth-capable revisions while
-    // using XGIP/XInput over USB. Keep this deliberately narrow so plugging a
-    // random wired controller can never erase unrelated Bluetooth bonds.
-    if (vid != 0x045E) {
-        return false;
+    // Cable-assist is deliberately allow-listed. A false positive only changes
+    // discovery cadence for 30 seconds, but keeping this narrow avoids
+    // unnecessary BLE-only windows for ordinary wired controllers.
+    if (vid == 0x045E) {
+        switch (pid) {
+            case 0x02D1: // Xbox One
+            case 0x02DD: // Xbox One (2015)
+            case 0x02E3: // Elite
+            case 0x02EA: // Xbox One S
+            case 0x0B00: // Elite Series 2
+            case 0x0B0A: // Adaptive Controller
+            case 0x0B12: // Xbox Series S|X
+                return true;
+
+            default:
+                break;
+        }
     }
 
-    switch (pid) {
-        case 0x02D1: // Xbox One
-        case 0x02DD: // Xbox One (2015)
-        case 0x02E3: // Elite
-        case 0x02EA: // Xbox One S
-        case 0x0B00: // Elite Series 2
-        case 0x0B0A: // Adaptive Controller
-        case 0x0B12: // Xbox Series S|X
-            return true;
+    if (vid == 0x054C) {
+        switch (pid) {
+            case 0x05C4: // DualShock 4
+            case 0x09CC: // DualShock 4 v2
+            case 0x0CE6: // DualSense
+            case 0x0DF2: // DualSense Edge
+                return true;
 
-        default:
-            return false;
+            default:
+                break;
+        }
     }
+
+    return vid == 0x057E && pid == 0x2009; // Nintendo Switch Pro
+}
+
+void BluetoothHostV2::requestPairingAssist() {
+    pairingAssistRequested_ = true;
 }
 
 void BluetoothHostV2::notifyWiredGamepadAttached(
     std::uint16_t vid,
     std::uint16_t pid
 ) {
-    if (!isKnownBluetoothCapableUsbGamepad(vid, pid)) {
-        return;
+    if (isKnownBluetoothCapableUsbGamepad(vid, pid)) {
+        requestPairingAssist();
     }
-
-    // A cable attachment is treated as an explicit pairing-recovery gesture.
-    // If Bluetooth is not initialized yet, poll() will service it immediately
-    // after HCI becomes operational.
-    wiredPairingAssistPending_ = true;
 }
 
-void BluetoothHostV2::rememberStaleLeBond(
-    const std::uint8_t* address,
-    std::uint8_t addressType
+void BluetoothHostV2::notifyWiredGamepadDetached(
+    std::uint16_t vid,
+    std::uint16_t pid
 ) {
-    if (address == nullptr) {
+    if (isKnownBluetoothCapableUsbGamepad(vid, pid)) {
+        // Detach refreshes the full window because several controllers do not
+        // advertise BLE while their USB data connection is active.
+        requestPairingAssist();
+    }
+}
+
+void BluetoothHostV2::servicePairingAssist() {
+    const std::uint64_t nowUs = time_us_64();
+
+    if (
+        pairingAssistActive_ &&
+        nowUs >= pairingAssistUntilUs_
+    ) {
+        pairingAssistActive_ = false;
+        pairingAssistUntilUs_ = 0;
+    }
+
+    if (!pairingAssistRequested_) {
         return;
     }
 
-    std::copy(
-        address,
-        address + staleLeBondAddress_.size(),
-        staleLeBondAddress_.begin()
-    );
-
-    staleLeBondAddressType_ = addressType;
-    staleLeBondValid_ = true;
-}
-
-bool BluetoothHostV2::deleteRememberedStaleLeBond() {
-    if (!staleLeBondValid_) {
-        return false;
-    }
-
-    gap_delete_bonding(
-        static_cast<bd_addr_type_t>(staleLeBondAddressType_),
-        staleLeBondAddress_.data()
-    );
-
-    staleLeBondValid_ = false;
-    staleLeBondAddress_ = {};
-    staleLeBondAddressType_ = 0;
-    return true;
-}
-
-bool BluetoothHostV2::deleteSingleStoredLeBondForAssist() {
-    // If no exact stale identity has been learned yet, a wired recovery
-    // gesture may safely repair a single stored LE bond when there are no
-    // active Bluetooth peers. Never bulk-delete when multiple bonds exist.
-    if (connectedPeerCount() != 0) {
-        return false;
-    }
-
-    int foundIndex = -1;
-    int foundCount = 0;
-    int foundAddressType = static_cast<int>(BD_ADDR_TYPE_UNKNOWN);
-    bd_addr_t foundAddress {};
-
-    const int maxEntries = le_device_db_max_count();
-
-    for (int index = 0; index < maxEntries; ++index) {
-        int addressType = static_cast<int>(BD_ADDR_TYPE_UNKNOWN);
-        bd_addr_t address {};
-        le_device_db_info(index, &addressType, address, nullptr);
-
-        if (addressType == static_cast<int>(BD_ADDR_TYPE_UNKNOWN)) {
-            continue;
-        }
-
-        ++foundCount;
-
-        if (foundCount == 1) {
-            foundIndex = index;
-            foundAddressType = addressType;
-            std::copy(
-                address,
-                address + sizeof(bd_addr_t),
-                foundAddress
-            );
-        } else {
-            break;
-        }
-    }
-
-    (void)foundIndex;
-
-    if (foundCount != 1) {
-        return false;
-    }
-
-    gap_delete_bonding(
-        static_cast<bd_addr_type_t>(foundAddressType),
-        foundAddress
-    );
-
-    return true;
-}
-
-void BluetoothHostV2::serviceWiredPairingAssist() {
     if (
-        !wiredPairingAssistPending_ ||
         !initialized_ ||
         !hciWorking_ ||
-        !hasCapacity() ||
-        pendingKind_ != PendingKind::None
+        !hasCapacity()
     ) {
         return;
     }
 
-    if (!deleteRememberedStaleLeBond()) {
-        deleteSingleStoredLeBondForAssist();
+    // Never disturb a candidate connection, SMP transaction, or HIDS setup.
+    // The request stays armed and will be serviced on a later poll.
+    if (
+        pendingKind_ != PendingKind::None ||
+        deferredBleCandidateValid_ ||
+        discoveryPhase_ == DiscoveryPhase::PausedForConnection
+    ) {
+        return;
     }
 
-    // Give BLE exclusive priority for a recovery window. The controller still
-    // has to expose its Bluetooth radio/advertisement; USB cannot generically
-    // force that on every controller family.
-    bleRecoveryPriorityActive_ = true;
-    bleRecoveryPriorityUntilUs_ =
-        time_us_64() + kBleRecoveryPriorityUs;
+    pairingAssistRequested_ = false;
+    pairingAssistActive_ = true;
+    pairingAssistUntilUs_ =
+        nowUs + kPairingAssistWindowUs;
 
-    stopDiscovery();
+    // Restart only discovery. Existing Bluetooth peers are untouched.
+    stopDiscoveryTimer();
+    gap_stop_scan();
+    gap_inquiry_stop();
+    gap_connect_cancel();
+    discoveryPhase_ = DiscoveryPhase::Idle;
+
     startLeScan();
-    wiredPairingAssistPending_ = false;
 }
 
 BluetoothHostV2::Peer* BluetoothHostV2::allocatePeer() {
@@ -714,10 +650,11 @@ void BluetoothHostV2::startLeScan() {
 
     deferredBleCandidateValid_ = false;
 
-    // Historical BluetoothHCI::scanBLE() used passive scan, interval 75,
-    // window 50. Keep the same cadence for the compatibility bootstrap.
+    // U10F default remains byte-for-byte behaviorally passive. Pairing Assist
+    // temporarily uses active scanning so scan responses are requested and a
+    // controller entering Pairing Mode after cable detach is discovered faster.
     gap_set_scan_params(
-        0,
+        pairingAssistActive_ ? 1 : 0,
         75,
         50,
         0
@@ -787,16 +724,20 @@ void BluetoothHostV2::handleDiscoveryTimer() {
 
     gap_stop_scan();
 
+    const std::uint64_t nowUs = time_us_64();
+
     if (
-        bleRecoveryPriorityActive_ &&
-        time_us_64() < bleRecoveryPriorityUntilUs_
+        pairingAssistActive_ &&
+        nowUs < pairingAssistUntilUs_
     ) {
+        // Pairing Mode is primarily BLE for modern Xbox/PlayStation/Switch
+        // pads. Stay BLE-only during the short explicit assist window.
         startLeScan();
         return;
     }
 
-    bleRecoveryPriorityActive_ = false;
-    bleRecoveryPriorityUntilUs_ = 0;
+    pairingAssistActive_ = false;
+    pairingAssistUntilUs_ = 0;
     startClassicInquiry();
 }
 
@@ -1022,53 +963,45 @@ void BluetoothHostV2::handleSmPacket(
                 sm_event_reencryption_complete_get_status(packet);
 
             if (status == ERROR_CODE_SUCCESS) {
-                staleLeBondValid_ = false;
                 startLeHids(handle);
                 break;
             }
 
-            // The remote controller was paired to another host and our stored
-            // key is stale. U10G attempted fresh SMP inside the same failed
-            // encrypted link; on real hardware that could leave the ACL link
-            // solid while HIDS never became ready. U10H deliberately tears
-            // down that link and lets the next connection start clean.
-            if (
-                status == ERROR_CODE_PIN_OR_KEY_MISSING ||
-                status == ERROR_CODE_AUTHENTICATION_FAILURE
-            ) {
+            if (status == ERROR_CODE_PIN_OR_KEY_MISSING) {
+                // Follow BTstack's official central recovery path exactly:
+                // remote lost/replaced its LTK -> delete only this identity
+                // bond, then start fresh SMP on the same live connection.
+                // Do not broaden this to generic AUTHENTICATION_FAILURE:
+                // U10G showed that over-aggressive recovery can leave a solid
+                // ACL link without usable HIDS on real controller hardware.
                 bd_addr_t identityAddress {};
-
                 sm_event_reencryption_complete_get_address(
                     packet,
                     identityAddress
                 );
 
-                const std::uint8_t addressType =
-                    sm_event_reencryption_started_get_addr_type(packet);
-
-                rememberStaleLeBond(
-                    identityAddress,
-                    addressType
-                );
+                const bd_addr_type_t identityAddressType =
+                    static_cast<bd_addr_type_t>(
+                        sm_event_reencryption_started_get_addr_type(
+                            packet
+                        )
+                    );
 
                 gap_delete_bonding(
-                    static_cast<bd_addr_type_t>(addressType),
+                    identityAddressType,
                     identityAddress
                 );
 
-                staleLeBondValid_ = false;
+                pairingAssistActive_ = true;
+                pairingAssistUntilUs_ =
+                    time_us_64() + kPairingAssistWindowUs;
 
-                bleRecoveryPriorityActive_ = true;
-                bleRecoveryPriorityUntilUs_ =
-                    time_us_64() + kBleRecoveryPriorityUs;
-
-                if (findBleByHandle(handle) != nullptr) {
-                    gap_disconnect(handle);
-                }
-
+                sm_request_pairing(handle);
                 break;
             }
 
+            // For all other errors, preserve U10F's conservative behavior:
+            // disconnect and let normal/assist discovery retry later.
             if (findBleByHandle(handle) != nullptr) {
                 gap_disconnect(handle);
             }
@@ -1133,10 +1066,10 @@ void BluetoothHostV2::handleLeHidPacket(
                 break;
             }
 
-            // HIDS-ready is the real success criterion. A solid controller LED
-            // alone only proves the Bluetooth ACL link exists.
-            bleRecoveryPriorityActive_ = false;
-            bleRecoveryPriorityUntilUs_ = 0;
+            // HIDS-ready, not merely a solid controller LED, is the success
+            // boundary for Pairing Assist.
+            pairingAssistActive_ = false;
+            pairingAssistUntilUs_ = 0;
 
             peer->serviceCount =
                 std::min<std::uint8_t>(

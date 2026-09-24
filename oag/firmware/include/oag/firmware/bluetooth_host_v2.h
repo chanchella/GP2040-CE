@@ -52,11 +52,16 @@ public:
     void poll();
     bool beginDiscovery();
 
-    // Physical USB attachment of a known Bluetooth-capable controller is an
-    // explicit recovery gesture. It never fabricates a Bluetooth identity;
-    // instead it repairs stale bonding state and immediately prioritizes BLE
-    // discovery so the same controller can re-pair as soon as it advertises.
+    // Pairing Assist is intentionally transport-only. Plugging a known
+    // Bluetooth-capable controller over USB does not alter controller routing,
+    // output slots, keyboard/mouse composition, or stored bonds. It only opens
+    // a temporary high-priority BLE discovery window.
     void notifyWiredGamepadAttached(
+        std::uint16_t vid,
+        std::uint16_t pid
+    );
+
+    void notifyWiredGamepadDetached(
         std::uint16_t vid,
         std::uint16_t pid
     );
@@ -148,13 +153,8 @@ private:
     void clearLegacyBondsOnce();
     void clearBleBondDatabase();
 
-    void serviceWiredPairingAssist();
-    bool deleteRememberedStaleLeBond();
-    bool deleteSingleStoredLeBondForAssist();
-    void rememberStaleLeBond(
-        const std::uint8_t* address,
-        std::uint8_t addressType
-    );
+    void servicePairingAssist();
+    void requestPairingAssist();
     static bool isKnownBluetoothCapableUsbGamepad(
         std::uint16_t vid,
         std::uint16_t pid
@@ -186,13 +186,9 @@ private:
     std::array<std::uint8_t, 6> deferredBleAddress_ {};
     std::uint8_t deferredBleAddressType_ = 0;
 
-    bool wiredPairingAssistPending_ = false;
-    bool bleRecoveryPriorityActive_ = false;
-    std::uint64_t bleRecoveryPriorityUntilUs_ = 0;
-
-    bool staleLeBondValid_ = false;
-    std::array<std::uint8_t, 6> staleLeBondAddress_ {};
-    std::uint8_t staleLeBondAddressType_ = 0;
+    bool pairingAssistRequested_ = false;
+    bool pairingAssistActive_ = false;
+    std::uint64_t pairingAssistUntilUs_ = 0;
 
     std::array<Peer, kMaxPeers> peers_ {};
 
