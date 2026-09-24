@@ -13,6 +13,7 @@ add_library(oag_core STATIC
     src/mapping/pass_through_mapping.cpp
     src/output/xinput/xinput_report_encoder.cpp
     src/output/xinput/xinput_feedback_decoder.cpp
+    src/feedback/keyboard_led_state.cpp
     src/mapping/mouse_to_stick_mapper.cpp
     src/protocol/hid/boot_keyboard_input_driver.cpp
     src/protocol/hid/boot_mouse_input_driver.cpp
@@ -150,4 +151,11 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_usb_classifier_xgip_tests PRIVATE oag_core)
     target_compile_features(oag_usb_classifier_xgip_tests PRIVATE cxx_std_17)
     add_test(NAME oag_usb_classifier_xgip_tests COMMAND oag_usb_classifier_xgip_tests)
+
+    add_executable(oag_keyboard_led_tests
+        tests/host/test_keyboard_led_state.cpp
+    )
+    target_link_libraries(oag_keyboard_led_tests PRIVATE oag_core)
+    target_compile_features(oag_keyboard_led_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_keyboard_led_tests COMMAND oag_keyboard_led_tests)
 endif()

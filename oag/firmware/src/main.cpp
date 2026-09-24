@@ -11,6 +11,7 @@
 #include "oag/device/device_registry.h"
 #include "oag/device/usb_device_classifier.h"
 #include "oag/feedback/rumble_command.h"
+#include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
@@ -90,6 +91,7 @@ public:
 
         usbHost_.task();
 
+        serviceKeyboardLeds();
         maintainXinputTransport();
         serviceXgipInit();
         serviceMouseAimRelease();
@@ -231,6 +233,13 @@ public:
             keyboardStates_[id->index] = {};
             keyboardStates_[id->index].source = *id;
             keyboardStates_[id->index].connected = true;
+
+            keyboardLedStates_[id->index].reset();
+            keyboardLedDesired_[id->index] =
+                keyboardLedStates_[id->index].reportByte();
+            keyboardLedApplied_[id->index] = 0xFF;
+            keyboardLedInFlight_[id->index] = 0;
+            keyboardLedTxPending_[id->index] = false;
             return;
         }
 
@@ -339,6 +348,12 @@ public:
 
         if (record->protocol == oag::ProtocolKind::HidKeyboard) {
             keyboardStates_[id->index] = {};
+            keyboardLedStates_[id->index].reset();
+            keyboardLedDesired_[id->index] = 0;
+            keyboardLedApplied_[id->index] = 0;
+            keyboardLedInFlight_[id->index] = 0;
+            keyboardLedTxPending_[id->index] = false;
+
             registry_.disconnect(*id);
             sendComposedOutput();
             return;
@@ -397,6 +412,9 @@ public:
         }
 
         if (record->protocol == oag::ProtocolKind::HidKeyboard) {
+            const oag::KeyboardState previous =
+                keyboardStates_[id->index];
+
             if (keyboard_.parse(
                     *id,
                     report,
@@ -404,6 +422,14 @@ public:
                     time_us_64(),
                     keyboardStates_[id->index]
                 )) {
+                if (keyboardLedStates_[id->index].updateFromKeyEdges(
+                        previous,
+                        keyboardStates_[id->index]
+                    )) {
+                    keyboardLedDesired_[id->index] =
+                        keyboardLedStates_[id->index].reportByte();
+                }
+
                 sendComposedOutput();
             }
             return;
@@ -561,6 +587,33 @@ public:
         handleXinputReportSent(devAddr, instance);
     }
 
+    void onHidSetReportComplete(
+        std::uint8_t devAddr,
+        std::uint8_t instance,
+        std::uint16_t length
+    ) {
+        const auto id = registry_.findUsb(
+            oag::UsbTransportHandle {devAddr, instance}
+        );
+
+        if (!id || id->index >= oag::DeviceRegistry::kCapacity) {
+            return;
+        }
+
+        const oag::DeviceRecord* record = registry_.find(*id);
+        if (record == nullptr ||
+            record->protocol != oag::ProtocolKind::HidKeyboard) {
+            return;
+        }
+
+        keyboardLedTxPending_[id->index] = false;
+
+        if (length != 0) {
+            keyboardLedApplied_[id->index] =
+                keyboardLedInFlight_[id->index];
+        }
+    }
+
 private:
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 6000;
@@ -625,6 +678,39 @@ private:
         }
 
         mountedRootMask_ = mask;
+    }
+
+    void serviceKeyboardLeds() {
+        for (std::size_t i = 0;
+             i < keyboardStates_.size();
+             ++i) {
+            if (!keyboardStates_[i].connected ||
+                keyboardLedTxPending_[i] ||
+                keyboardLedDesired_[i] == keyboardLedApplied_[i]) {
+                continue;
+            }
+
+            const oag::DeviceRecord* record =
+                registry_.find(keyboardStates_[i].source);
+
+            if (record == nullptr ||
+                record->protocol != oag::ProtocolKind::HidKeyboard) {
+                continue;
+            }
+
+            keyboardLedInFlight_[i] = keyboardLedDesired_[i];
+
+            if (tuh_hid_set_report(
+                    record->usb.deviceAddress,
+                    record->usb.interfaceInstance,
+                    0,
+                    HID_REPORT_TYPE_OUTPUT,
+                    &keyboardLedInFlight_[i],
+                    1
+                )) {
+                keyboardLedTxPending_[i] = true;
+            }
+        }
     }
 
     void maintainXinputTransport() {
@@ -1010,6 +1096,31 @@ private:
     > mouseStates_ {};
 
     std::array<
+        oag::KeyboardLedState,
+        oag::DeviceRegistry::kCapacity
+    > keyboardLedStates_ {};
+
+    std::array<
+        std::uint8_t,
+        oag::DeviceRegistry::kCapacity
+    > keyboardLedDesired_ {};
+
+    std::array<
+        std::uint8_t,
+        oag::DeviceRegistry::kCapacity
+    > keyboardLedApplied_ {};
+
+    std::array<
+        std::uint8_t,
+        oag::DeviceRegistry::kCapacity
+    > keyboardLedInFlight_ {};
+
+    std::array<
+        bool,
+        oag::DeviceRegistry::kCapacity
+    > keyboardLedTxPending_ {};
+
+    std::array<
         oag::GenericHidGamepadDescriptor,
         oag::DeviceRegistry::kCapacity
     > genericHidDescriptors_ {};
@@ -1093,6 +1204,24 @@ extern "C" void tuh_hid_report_received_cb(
 ) {
     gCore.onHidReport(dev_addr, instance, report, len);
     tuh_hid_receive_report(dev_addr, instance);
+}
+
+extern "C" void tuh_hid_set_report_complete_cb(
+    std::uint8_t dev_addr,
+    std::uint8_t instance,
+    std::uint8_t report_id,
+    std::uint8_t report_type,
+    std::uint16_t len
+) {
+    (void)report_id;
+
+    if (report_type == HID_REPORT_TYPE_OUTPUT) {
+        gCore.onHidSetReportComplete(
+            dev_addr,
+            instance,
+            len
+        );
+    }
 }
 
 extern "C" void tuh_xinput_mount_cb(
