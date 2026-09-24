@@ -106,6 +106,16 @@ private:
         std::array<std::uint8_t, 6> address {};
     };
 
+    struct StoredBleRemote {
+        std::array<std::uint8_t, 6> address {};
+        std::uint8_t addressType = 0;
+    };
+
+    struct StoredClassicRemote {
+        std::array<std::uint8_t, 6> address {};
+        std::uint8_t profile = 0;
+    };
+
     enum class DiscoveryPhase : std::uint8_t {
         Idle = 0,
         ClassicInquiry,
@@ -134,7 +144,11 @@ private:
     void stopDiscoveryTimer();
     void scheduleDiscoveryTimer(std::uint32_t timeoutMs);
     void serviceDiagnosticLed();
-    void migrateBondStateOnce();
+
+    bool loadGoldenStoredBleRemote();
+    bool loadGoldenStoredClassicRemote();
+    void connectGoldenStoredBleRemote();
+    void connectGoldenStoredClassicRemote();
 
     void startLeHids(std::uint16_t connectionHandle);
     void notifyLeDescriptors(LeLink& link);
@@ -151,6 +165,11 @@ private:
 
     bool classicConnectPending_ = false;
     bool leConnectPending_ = false;
+
+    StoredBleRemote goldenBleRemote_ {};
+    StoredClassicRemote goldenClassicRemote_ {};
+    bool goldenBleRemoteKnown_ = false;
+    bool goldenClassicRemoteKnown_ = false;
 
     std::uint64_t diagnosticLastToggleUs_ = 0;
     bool diagnosticLedState_ = false;

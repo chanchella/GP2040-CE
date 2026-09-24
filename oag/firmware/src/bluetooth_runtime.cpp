@@ -188,15 +188,8 @@ bool advertisementLooksLikeHid(const std::uint8_t* packet) {
     return false;
 }
 
-constexpr std::uint32_t kU8eBondMigrationTag = 0x4F38454Du; // "O8EM"
-constexpr std::uint32_t kU8eBondMigrationValue = 0x00080005u;
-
-void clearLeBondDatabase() {
-    const int count = le_device_db_max_count();
-    for (int i = 0; i < count; ++i) {
-        le_device_db_remove(i);
-    }
-}
+constexpr std::uint32_t kGoldenBleRemoteTag = 0x4F414742u; // "OAGB"
+constexpr std::uint32_t kGoldenClassicRemoteTag = 0x4F414743u; // "OAGC"
 
 } // namespace
 
@@ -224,8 +217,6 @@ bool BluetoothRuntime::initialize(
     sm_init();
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
     sm_set_authentication_requirements(SM_AUTHREQ_BONDING);
-
-    migrateBondStateOnce();
 
     gatt_client_init();
 
@@ -263,47 +254,137 @@ bool BluetoothRuntime::initialize(
     gSmRegistration.callback = &smPacketThunk;
     sm_add_event_handler(&gSmRegistration);
 
+    // Preserve and reuse the exact Golden G2E3 remembered-device tags.
+    goldenBleRemoteKnown_ = loadGoldenStoredBleRemote();
+    goldenClassicRemoteKnown_ = loadGoldenStoredClassicRemote();
+
     initialized_ = true;
     hci_power_control(HCI_POWER_ON);
     return true;
 }
 
-void BluetoothRuntime::migrateBondStateOnce() {
+bool BluetoothRuntime::loadGoldenStoredBleRemote() {
     const btstack_tlv_t* tlv = nullptr;
     void* context = nullptr;
     btstack_tlv_get_instance(&tlv, &context);
 
     if (tlv == nullptr) {
+        return false;
+    }
+
+    struct GoldenBleLayout {
+        std::uint8_t address[6];
+        std::uint8_t addressType;
+    } stored {};
+
+    const int length = tlv->get_tag(
+        context,
+        kGoldenBleRemoteTag,
+        reinterpret_cast<std::uint8_t*>(&stored),
+        sizeof(stored)
+    );
+
+    if (length != static_cast<int>(sizeof(stored))) {
+        return false;
+    }
+
+    std::copy(
+        stored.address,
+        stored.address + 6,
+        goldenBleRemote_.address.begin()
+    );
+    goldenBleRemote_.addressType = stored.addressType;
+    return true;
+}
+
+bool BluetoothRuntime::loadGoldenStoredClassicRemote() {
+    const btstack_tlv_t* tlv = nullptr;
+    void* context = nullptr;
+    btstack_tlv_get_instance(&tlv, &context);
+
+    if (tlv == nullptr) {
+        return false;
+    }
+
+    struct GoldenClassicLayout {
+        std::uint8_t address[6];
+        std::uint8_t profile;
+    } stored {};
+
+    const int length = tlv->get_tag(
+        context,
+        kGoldenClassicRemoteTag,
+        reinterpret_cast<std::uint8_t*>(&stored),
+        sizeof(stored)
+    );
+
+    if (length != static_cast<int>(sizeof(stored))) {
+        return false;
+    }
+
+    std::copy(
+        stored.address,
+        stored.address + 6,
+        goldenClassicRemote_.address.begin()
+    );
+    goldenClassicRemote_.profile = stored.profile;
+    return true;
+}
+
+void BluetoothRuntime::connectGoldenStoredBleRemote() {
+    if (!goldenBleRemoteKnown_ || !hasFreeConnectionBudget()) {
+        startLeScan();
         return;
     }
 
-    std::uint32_t marker = 0;
-    const int markerLength = tlv->get_tag(
-        context,
-        kU8eBondMigrationTag,
-        reinterpret_cast<std::uint8_t*>(&marker),
-        sizeof(marker)
+    stopDiscoveryTimer();
+    gap_stop_scan();
+    gap_inquiry_stop();
+    gap_connect_cancel();
+    discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+
+    const std::uint8_t status = gap_connect(
+        goldenBleRemote_.address.data(),
+        static_cast<bd_addr_type_t>(
+            goldenBleRemote_.addressType
+        )
     );
 
-    if (
-        markerLength == static_cast<int>(sizeof(marker)) &&
-        marker == kU8eBondMigrationValue
-    ) {
+    if (status == ERROR_CODE_SUCCESS) {
+        leConnectPending_ = true;
         return;
     }
 
-    // One-time cleanup when entering the Golden-compatible U8E Host-only engine.
-    // This removes stale U8A/B/C link keys without wiping bonds every boot.
-    gap_delete_all_link_keys();
-    clearLeBondDatabase();
+    goldenBleRemoteKnown_ = false;
+    startLeScan();
+}
 
-    marker = kU8eBondMigrationValue;
-    tlv->store_tag(
-        context,
-        kU8eBondMigrationTag,
-        reinterpret_cast<const std::uint8_t*>(&marker),
-        sizeof(marker)
+void BluetoothRuntime::connectGoldenStoredClassicRemote() {
+    if (!goldenClassicRemoteKnown_ || !hasFreeConnectionBudget()) {
+        startLeScan();
+        return;
+    }
+
+    stopDiscoveryTimer();
+    gap_stop_scan();
+    gap_inquiry_stop();
+    gap_connect_cancel();
+    discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+
+    std::uint16_t hidCid = 0;
+    const std::uint8_t status = hid_host_connect(
+        goldenClassicRemote_.address.data(),
+        HID_PROTOCOL_MODE_REPORT,
+        &hidCid
     );
+
+    if (status == ERROR_CODE_SUCCESS) {
+        classicConnectPending_ = true;
+        return;
+    }
+
+    goldenClassicRemoteKnown_ = false;
+    startLeScan();
 }
 
 void BluetoothRuntime::submitPeripheralGamepad(
@@ -682,7 +763,14 @@ void BluetoothRuntime::handleHciPacket(
                 HCI_STATE_WORKING
             ) {
                 hciWorking_ = true;
-                startLeScan();
+
+                if (goldenBleRemoteKnown_) {
+                    connectGoldenStoredBleRemote();
+                } else if (goldenClassicRemoteKnown_) {
+                    connectGoldenStoredClassicRemote();
+                } else {
+                    startLeScan();
+                }
             }
             break;
 
@@ -712,6 +800,13 @@ void BluetoothRuntime::handleHciPacket(
             stopDiscoveryTimer();
             gap_inquiry_stop();
             discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+
+            std::copy(
+                address,
+                address + 6,
+                goldenClassicRemote_.address.begin()
+            );
+            goldenClassicRemoteKnown_ = true;
 
             std::uint16_t hidCid = 0;
             const std::uint8_t status = hid_host_connect(
@@ -771,6 +866,15 @@ void BluetoothRuntime::handleHciPacket(
             gap_stop_scan();
             discoveryPhase_ = DiscoveryPhase::PausedForConnection;
 
+            std::copy(
+                address,
+                address + 6,
+                goldenBleRemote_.address.begin()
+            );
+            goldenBleRemote_.addressType =
+                static_cast<std::uint8_t>(addressType);
+            goldenBleRemoteKnown_ = true;
+
             const std::uint8_t status =
                 gap_connect(address, addressType);
 
@@ -798,6 +902,7 @@ void BluetoothRuntime::handleHciPacket(
                     );
 
                 if (status != ERROR_CODE_SUCCESS) {
+                    goldenBleRemoteKnown_ = false;
                     resumeDiscovery();
                     break;
                 }

@@ -1,9 +1,9 @@
 #ifndef OAG_BTSTACK_CONFIG_H
 #define OAG_BTSTACK_CONFIG_H
 
-// OAG U8D: dual-mode Bluetooth HID host/peripheral budget for Pico 2 W.
-// USB Host still initializes first, but Bluetooth runtime servicing is restored
-// to the hardware-proven Golden G2E3 pico_cyw43_arch_none async context.
+// OAG U8F: Golden first-link bootstrap for Pico 2 W.
+// Host-only, pico_cyw43_arch_none, reconnects the exact G2E3 stored remote
+// before discovery. First-link resource limits match Golden for isolation.
 
 #define ENABLE_LOG_ERROR
 #define ENABLE_PRINTF_HEXDUMP
@@ -32,15 +32,15 @@
 
 // Software budget. The actual simultaneous-device ceiling is still subject to
 // CYW43 controller/radio scheduling and must be established by hardware tests.
-#define MAX_NR_HCI_CONNECTIONS 6
-#define MAX_NR_HID_HOST_CONNECTIONS 6
-#define MAX_NR_HIDS_HOSTS 6
-#define MAX_NR_HIDS_CLIENTS 6
-#define MAX_NR_GATT_CLIENTS 6
-#define MAX_NR_L2CAP_CHANNELS 20
-#define MAX_NR_L2CAP_SERVICES 6
-#define MAX_NR_SERVICE_RECORD_ITEMS 8
-#define MAX_NR_SM_LOOKUP_ENTRIES 8
+#define MAX_NR_HCI_CONNECTIONS 3
+#define MAX_NR_HID_HOST_CONNECTIONS 2
+#define MAX_NR_HIDS_HOSTS 2
+#define MAX_NR_HIDS_CLIENTS 2
+#define MAX_NR_GATT_CLIENTS 2
+#define MAX_NR_L2CAP_CHANNELS 8
+#define MAX_NR_L2CAP_SERVICES 4
+#define MAX_NR_SERVICE_RECORD_ITEMS 6
+#define MAX_NR_SM_LOOKUP_ENTRIES 6
 #define MAX_NR_WHITELIST_ENTRIES 16
 #define MAX_NR_LE_DEVICE_DB_ENTRIES 16
 
