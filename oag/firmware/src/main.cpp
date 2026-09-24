@@ -4,6 +4,7 @@
 
 #include "pico/stdlib.h"
 #include "pico/time.h"
+#include "hardware/clocks.h"
 #include "tusb.h"
 #include "host/usbh_pvt.h"
 
@@ -27,6 +28,12 @@ namespace {
 class FirmwareCore {
 public:
     bool start() {
+        // Golden baseline transport invariant: USB Host runs at 120 MHz to
+        // avoid marginal PIO USB timing on the Pico 2 W / RP2350.
+        if (!set_sys_clock_khz(120000, true)) {
+            return false;
+        }
+
         if (!tud_init(0)) {
             return false;
         }
@@ -36,7 +43,6 @@ public:
             return false;
         }
 
-        nextHostHealthCheckUs_ = time_us_64() + kHostHealthPeriodUs;
         return true;
     }
 
@@ -46,7 +52,7 @@ public:
 
         usbHost_.task();
 
-        serviceHostHealthWatchdog();
+        maintainXusbInput();
         servicePcFeedback();
     }
 
@@ -305,7 +311,6 @@ public:
     }
 
 private:
-    static constexpr std::uint64_t kHostHealthPeriodUs = 2000000;
     static constexpr std::uint8_t kRootCount = 3;
 
     void rememberMountedRoot(std::uint8_t devAddr) {
@@ -345,25 +350,34 @@ private:
         mountedRootMask_ = mask;
     }
 
-    void serviceHostHealthWatchdog() {
-        const std::uint64_t now = time_us_64();
-        if (now < nextHostHealthCheckUs_) {
-            return;
-        }
+    void maintainXusbInput() {
+        // Port the proven Golden maintenance behavior: continuously make
+        // sure each mounted gameplay IN endpoint stays armed. This recovers
+        // idle/busy transitions without synthesizing root REMOVE/ATTACH
+        // events or mutating PIO endpoint internals.
+        for (std::size_t i = 0;
+             i < oag::LogicalSlotManager::kGamepadSlots;
+             ++i) {
+            const auto slot = static_cast<oag::LogicalSlotId>(i);
+            const oag::DeviceId source = slots_.deviceFor(slot);
 
-        nextHostHealthCheckUs_ = now + kHostHealthPeriodUs;
+            if (!source.valid()) {
+                continue;
+            }
 
-        const std::uint8_t physicalMask = usbHost_.physicalRootMask();
-        const auto plan = oag::planHostRootReconcile(
-            physicalMask,
-            mountedRootMask_
-        );
+            const oag::DeviceRecord* record = registry_.find(source);
+            if (record == nullptr ||
+                record->protocol != oag::ProtocolKind::XusbXbox360) {
+                continue;
+            }
 
-        if (!plan.healthy()) {
-            usbHost_.reconcileRootEvents(
-                plan.removeMask,
-                plan.attachMask
-            );
+            const std::uint8_t devAddr = record->usb.deviceAddress;
+            const std::uint8_t instance = record->usb.interfaceInstance;
+
+            if (tuh_xinput_mounted(devAddr, instance) &&
+                tuh_xinput_ready(devAddr, instance)) {
+                tuh_xinput_receive_report(devAddr, instance);
+            }
         }
     }
 
@@ -457,7 +471,6 @@ private:
     > rootByDevice_ {};
 
     std::uint8_t mountedRootMask_ = 0;
-    std::uint64_t nextHostHealthCheckUs_ = 0;
 
     oag::RumbleCommand pendingRumble_ {};
     bool pendingRumbleValid_ = false;

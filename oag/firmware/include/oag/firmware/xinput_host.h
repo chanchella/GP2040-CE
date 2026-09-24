@@ -16,6 +16,7 @@ enum : std::uint8_t {
 
 std::uint8_t tuh_xinput_instance_count(std::uint8_t dev_addr);
 bool tuh_xinput_mounted(std::uint8_t dev_addr, std::uint8_t instance);
+bool tuh_xinput_ready(std::uint8_t dev_addr, std::uint8_t instance);
 bool tuh_xinput_receive_report(std::uint8_t dev_addr, std::uint8_t instance);
 bool tuh_xinput_send_report(
     std::uint8_t dev_addr,

@@ -146,6 +146,20 @@ extern "C" bool tuh_xinput_mounted(
     return iface != nullptr && (iface->epIn != 0 || iface->epOut != 0);
 }
 
+extern "C" bool tuh_xinput_ready(
+    std::uint8_t dev_addr,
+    std::uint8_t instance
+) {
+    XinputInterface* iface = getInstance(dev_addr, instance);
+
+    return iface != nullptr &&
+        iface->gameplay &&
+        iface->epIn != 0 &&
+        iface->epInSize != 0 &&
+        tuh_ready(dev_addr) &&
+        !usbh_edpt_busy(dev_addr, iface->epIn);
+}
+
 extern "C" bool tuh_xinput_receive_report(
     std::uint8_t dev_addr,
     std::uint8_t instance
