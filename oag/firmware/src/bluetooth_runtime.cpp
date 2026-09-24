@@ -9,7 +9,7 @@
 #include "pico/time.h"
 
 #include "btstack.h"
-#include "ble/gatt-service/hids_host.h"
+#include "ble/gatt-service/hids_client.h"
 
 namespace {
 
@@ -125,7 +125,7 @@ bool BluetoothRuntime::initialize(
     );
     hid_host_register_packet_handler(classicHidPacketThunk);
 
-    hids_host_init(
+    hids_client_init(
         leDescriptorStorage_.data(),
         static_cast<std::uint16_t>(
             leDescriptorStorage_.size()
@@ -361,7 +361,7 @@ void BluetoothRuntime::startLeHids(
     }
 
     std::uint16_t cid = 0;
-    const std::uint8_t status = hids_host_connect(
+    const std::uint8_t status = hids_client_connect(
         connectionHandle,
         leHidPacketThunk,
         HID_PROTOCOL_MODE_REPORT,
@@ -387,13 +387,13 @@ void BluetoothRuntime::notifyLeDescriptors(LeLink& link) {
         ++service
     ) {
         const std::uint8_t* descriptor =
-            hids_host_descriptor_storage_get_descriptor_data(
+            hids_client_descriptor_storage_get_descriptor_data(
                 link.hidsCid,
                 service
             );
 
         const std::uint16_t descriptorLength =
-            hids_host_descriptor_storage_get_descriptor_len(
+            hids_client_descriptor_storage_get_descriptor_len(
                 link.hidsCid,
                 service
             );

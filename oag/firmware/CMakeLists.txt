@@ -67,6 +67,7 @@ target_include_directories(OAG_Abo_Gemi_Ultra_Gaming_U8A_Pico2W PRIVATE
 target_compile_definitions(OAG_Abo_Gemi_Ultra_Gaming_U8A_Pico2W PRIVATE
     PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64
     PICO_STACK_SIZE=0x1000
+    CYW43_LWIP=0
 )
 
 target_compile_options(OAG_Abo_Gemi_Ultra_Gaming_U8A_Pico2W PRIVATE
