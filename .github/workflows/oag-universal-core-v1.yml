@@ -29,7 +29,7 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
 
-      - name: Verify U10D output-only scope against hardware-verified U10C
+      - name: Verify U10E receiver scope against hardware-verified U10C
         shell: bash
         run: |
           set -euo pipefail
@@ -37,25 +37,27 @@ jobs:
           git merge-base --is-ancestor "${U10C_BASELINE}" HEAD
 
           EXPECTED="$(printf '%s\n' \
+            'oag/firmware/src/main.cpp' \
             'oag/firmware/src/pc_xinput_device.cpp' \
-            'oag/firmware/src/usb_descriptors.cpp' | sort)"
+            'oag/firmware/src/usb_descriptors.cpp' \
+            'oag/firmware/tusb_config.h' | sort)"
 
           ACTUAL="$(git diff --name-only "${U10C_BASELINE}" -- \
             oag/firmware/include \
             oag/firmware/src \
+            oag/firmware/tusb_config.h \
             oag/include \
             oag/src | sort)"
 
           test "${ACTUAL}" = "${EXPECTED}"
 
           git diff --exit-code "${U10C_BASELINE}" -- \
-            oag/firmware/src/main.cpp \
             oag/firmware/src/bluetooth_host_v2.cpp \
             oag/firmware/src/bluetooth_hid_parser_v2.cpp \
             oag/include/oag/input/gamepad_state.h
 
-          echo "U10D_U10C_RUNTIME_FREEZE=PASS"
-          echo "U10D_OUTPUT_ONLY_SCOPE=PASS"
+          echo "U10E_U10C_INPUT_RUNTIME_FREEZE=PASS"
+          echo "U10E_TRUE_RECEIVER_SCOPE=PASS"
 
       - name: Verify no Antigravity coupling
         shell: bash
@@ -89,7 +91,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u10d:
+  firmware-u10e:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -117,7 +119,7 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Verify exact U10D SDK and Bluetooth dependencies
+      - name: Verify exact U10E SDK and Bluetooth dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -125,8 +127,8 @@ jobs:
           test "$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
           test "$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
           echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-u9d" >> "${GITHUB_ENV}"
-          echo "U10D_PICO_SDK_230=PASS"
-          echo "U10D_BTSTACK_HIDS_HOST=PASS"
+          echo "U10E_PICO_SDK_230=PASS"
+          echo "U10E_BTSTACK_HIDS_HOST=PASS"
 
       - name: Verify and prepare pinned dependencies
         shell: bash
@@ -134,7 +136,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U10D firmware
+      - name: Configure Pico 2 W U10E firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -144,7 +146,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U10D firmware
+      - name: Build Pico 2 W U10E firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -190,7 +192,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U10D"
+          assert manifest["phase"] == "U10E"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -266,6 +268,19 @@ jobs:
           assert manifest["features"]["u10d_sequential_endpoint_pairs"] == ["81/01", "82/02", "83/03", "84/04"]
           assert manifest["features"]["u10d_fresh_windows_serial_namespace"] == "OAG-IND"
           assert manifest["features"]["u10d_u10c_runtime_routing_frozen"] is True
+          assert manifest["features"]["u10e_receiver_vid"] == "0x045E"
+          assert manifest["features"]["u10e_receiver_pid"] == "0x0719"
+          assert manifest["features"]["u10e_true_receiver_interfaces"] == 8
+          assert manifest["features"]["u10e_gamepad_protocol"] == "0x81"
+          assert manifest["features"]["u10e_aux_protocol"] == "0x82"
+          assert manifest["features"]["u10e_gamepad_endpoint_pairs"] == ["81/01", "83/03", "85/05", "87/07"]
+          assert manifest["features"]["u10e_aux_endpoint_pairs"] == ["82/02", "84/04", "86/06", "88/08"]
+          assert manifest["features"]["u10e_presence_heartbeat_ms"] == 1000
+          assert manifest["features"]["u10e_wireless_input_packet_size"] == 29
+          assert manifest["features"]["u10e_receiver_rumble_decode"] is True
+          assert manifest["features"]["u10e_receiver_battery_reply"] is True
+          assert manifest["features"]["u10e_unique_vendor_serial_reply"] is True
+          assert manifest["features"]["u10e_u10c_primary_keyboard_mouse_routing_preserved"] is True
           assert manifest["verification"]["hardware_verified"] is False
           assert manifest["verification"]["hardware_verified_baseline_phase"] == "U9G"
           assert manifest["verification"]["hardware_verified_baseline_sha"] == "3fffa9484f159df6cfbeb807c3acbdf46bdbe52e"
@@ -275,7 +290,8 @@ jobs:
           assert manifest["verification"]["u10a_multibluetooth_2_to_4_peers"] == "PENDING_HARDWARE"
           assert manifest["verification"]["u10b_receiver_descriptor_experiment"] == "REJECTED_RETURNED_TO_U10A"
           assert manifest["verification"]["u10c_primary_selection_chord"] == "HARDWARE_VERIFIED"
-          assert manifest["verification"]["u10d_independent_controller_output"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10d_independent_controller_output"] == "REJECTED_HARDWARE"
+          assert manifest["verification"]["u10e_true_xbox360_wireless_receiver"] == "PENDING_HARDWARE"
           assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
           assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
           assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
@@ -295,17 +311,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10D_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10E_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10D_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10E_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10D_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10E_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U10D firmware bundle
+      - name: Upload U10E firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U10D-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U10E-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

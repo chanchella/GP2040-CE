@@ -1442,7 +1442,6 @@ private:
              pcSlot < pcOutputRoutes_.size();
              ++pcSlot) {
             oag::LogicalGamepadState output {};
-            output.connected = true;
 
             if (pcOutputRoutes_[pcSlot]) {
                 const oag::LogicalSlotId internalSlot =
@@ -1499,7 +1498,6 @@ private:
             }
 
             oag::LogicalGamepadState output {};
-            output.connected = true;
 
             if (states_[slot].connected) {
                 output = mapping_.process(states_[slot]);
@@ -1531,9 +1529,9 @@ private:
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
-            oag::LogicalGamepadState neutral {};
-            neutral.connected = true;
-            platformOutput_.submit(0, neutral);
+            // A true wireless receiver must report Player 1 absent when there
+            // is no routed gamepad and no keyboard/mouse virtual input.
+            platformOutput_.submit(0, oag::LogicalGamepadState {});
             return;
         }
 

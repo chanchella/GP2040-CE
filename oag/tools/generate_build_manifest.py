@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10D",
+    "phase": "U10E",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -149,6 +149,19 @@ manifest = {
         "u10d_sequential_endpoint_pairs": ["81/01", "82/02", "83/03", "84/04"],
         "u10d_fresh_windows_serial_namespace": "OAG-IND",
         "u10d_u10c_runtime_routing_frozen": True,
+        "u10e_receiver_vid": "0x045E",
+        "u10e_receiver_pid": "0x0719",
+        "u10e_true_receiver_interfaces": 8,
+        "u10e_gamepad_protocol": "0x81",
+        "u10e_aux_protocol": "0x82",
+        "u10e_gamepad_endpoint_pairs": ["81/01", "83/03", "85/05", "87/07"],
+        "u10e_aux_endpoint_pairs": ["82/02", "84/04", "86/06", "88/08"],
+        "u10e_presence_heartbeat_ms": 1000,
+        "u10e_wireless_input_packet_size": 29,
+        "u10e_receiver_rumble_decode": True,
+        "u10e_receiver_battery_reply": True,
+        "u10e_unique_vendor_serial_reply": True,
+        "u10e_u10c_primary_keyboard_mouse_routing_preserved": True,
         "authentication": False,
     },
     "pc_xinput_profile": {
@@ -195,7 +208,8 @@ manifest = {
         "u10a_multibluetooth_2_to_4_peers": "PENDING_HARDWARE",
         "u10b_receiver_descriptor_experiment": "REJECTED_RETURNED_TO_U10A",
         "u10c_primary_selection_chord": "HARDWARE_VERIFIED",
-        "u10d_independent_controller_output": "PENDING_HARDWARE",
+        "u10d_independent_controller_output": "REJECTED_HARDWARE",
+        "u10e_true_xbox360_wireless_receiver": "PENDING_HARDWARE",
     },
 }
 
