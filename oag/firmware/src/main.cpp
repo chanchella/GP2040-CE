@@ -12,6 +12,7 @@
 #include "oag/device/usb_device_classifier.h"
 #include "oag/feedback/rumble_command.h"
 #include "oag/feedback/keyboard_led_state.h"
+#include "oag/firmware/bluetooth_runtime.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
@@ -21,6 +22,10 @@
 #include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/pass_through_mapping.h"
+#include "oag/mapping/pen_tablet_mapper.h"
+#include "oag/mapping/touchscreen_mapper.h"
+#include "oag/output/digitizer/digitizer_state.h"
+#include "oag/output/universal_output_mode.h"
 #include "oag/protocol/hid/boot_keyboard_input_driver.h"
 #include "oag/protocol/hid/boot_mouse_input_driver.h"
 #include "oag/protocol/hid/generic_hid_gamepad_driver.h"
@@ -60,7 +65,8 @@ static constexpr std::uint8_t kXoneAuthDone[] = {
     0x06, 0x20, 0x00, 0x02, 0x01, 0x00
 };
 
-class FirmwareCore {
+class FirmwareCore final
+    : public oag::firmware::BluetoothRuntimeObserver {
 public:
     bool start() {
         // Golden baseline transport invariant: USB Host runs at 120 MHz to
@@ -78,6 +84,11 @@ public:
             return false;
         }
 
+        // Preserve the proven Golden/U6E ordering invariant: PIO USB Host is
+        // live before CYW43/BTstack. Bluetooth failure is fail-soft so the
+        // hardware-verified USB path remains usable.
+        bluetoothAvailable_ = bluetooth_.initialize(*this);
+
         if (!platformOutput_.initialize()) {
             return false;
         }
@@ -90,6 +101,10 @@ public:
         platformOutput_.poll();
 
         usbHost_.task();
+
+        if (bluetoothAvailable_) {
+            bluetooth_.poll();
+        }
 
         serviceKeyboardLeds();
         maintainXinputTransport();
@@ -474,6 +489,23 @@ public:
                         time_us_64() + kMouseAimHoldUs;
                 }
 
+                const oag::UniversalOutputRouting routing =
+                    outputMode_.routing();
+
+                if (routing.touchscreen) {
+                    touchState_ = touchscreenMapper_.apply(
+                        mouseState,
+                        currentMouseMotion_
+                    );
+                }
+
+                if (routing.penTablet) {
+                    penState_ = penTabletMapper_.apply(
+                        mouseState,
+                        currentMouseMotion_
+                    );
+                }
+
                 sendComposedOutput();
             }
             return;
@@ -619,6 +651,179 @@ public:
         if (length != 0) {
             keyboardLedApplied_[id->index] =
                 keyboardLedInFlight_[id->index];
+        }
+    }
+
+    void onBluetoothHidDescriptor(
+        oag::TransportType transport,
+        std::uint16_t connectionHandle,
+        std::uint8_t serviceInstance,
+        const std::uint8_t* descriptor,
+        std::size_t descriptorLength
+    ) override {
+        if (
+            descriptor == nullptr ||
+            descriptorLength == 0
+        ) {
+            return;
+        }
+
+        const oag::BluetoothTransportHandle handle {
+            transport,
+            connectionHandle,
+            serviceInstance,
+        };
+
+        if (registry_.findBluetooth(handle)) {
+            return;
+        }
+
+        oag::GenericHidGamepadQuirks quirks {};
+        oag::GenericHidGamepadDescriptor parsed {};
+
+        bool isGamepad = genericHid_.parseDescriptor(
+            descriptor,
+            descriptorLength,
+            quirks,
+            parsed
+        );
+
+        if (
+            !isGamepad &&
+            genericHid_.looksLikeGamepadDescriptor(
+                descriptor,
+                descriptorLength
+            )
+        ) {
+            quirks.forceGamepad = true;
+            isGamepad = genericHid_.parseDescriptor(
+                descriptor,
+                descriptorLength,
+                quirks,
+                parsed
+            );
+        }
+
+        // U8A live path intentionally binds only descriptors that prove
+        // gamepad structure. BT keyboard/mouse canonical parsing is a
+        // separate driver gate so they cannot be misclassified as pads.
+        if (!isGamepad) {
+            return;
+        }
+
+        const auto id = registry_.connectBluetooth(
+            handle,
+            0,
+            0,
+            oag::ProtocolKind::HidGamepad
+        );
+
+        if (
+            !id ||
+            id->index >= oag::DeviceRegistry::kCapacity
+        ) {
+            return;
+        }
+
+        const auto slot = slots_.bindFirstFree(*id);
+        if (!slot) {
+            registry_.disconnect(*id);
+            return;
+        }
+
+        genericHidDescriptors_[id->index] = parsed;
+        genericHidQuirks_[id->index] = quirks;
+
+        states_[*slot] = {};
+        states_[*slot].source = *id;
+        states_[*slot].connected = true;
+
+        if (*slot < pendingRumbleValid_.size()) {
+            pendingRumble_[*slot] = {};
+            pendingRumbleValid_[*slot] = false;
+        }
+
+        sendSlotOutput(*slot);
+    }
+
+    void onBluetoothHidReport(
+        oag::TransportType transport,
+        std::uint16_t connectionHandle,
+        std::uint8_t serviceInstance,
+        const std::uint8_t* report,
+        std::size_t reportLength
+    ) override {
+        const oag::BluetoothTransportHandle handle {
+            transport,
+            connectionHandle,
+            serviceInstance,
+        };
+
+        const auto id = registry_.findBluetooth(handle);
+        if (
+            !id ||
+            id->index >= oag::DeviceRegistry::kCapacity
+        ) {
+            return;
+        }
+
+        const auto slot = slots_.slotFor(*id);
+        if (!slot || *slot >= states_.size()) {
+            return;
+        }
+
+        if (!genericHid_.parseReport(
+                *id,
+                genericHidDescriptors_[id->index],
+                genericHidQuirks_[id->index],
+                report,
+                reportLength,
+                time_us_64(),
+                states_[*slot]
+            )) {
+            return;
+        }
+
+        sendSlotOutput(*slot);
+    }
+
+    void onBluetoothHidDisconnected(
+        oag::TransportType transport,
+        std::uint16_t connectionHandle,
+        std::uint8_t serviceInstance
+    ) override {
+        const oag::BluetoothTransportHandle handle {
+            transport,
+            connectionHandle,
+            serviceInstance,
+        };
+
+        const auto id = registry_.findBluetooth(handle);
+        if (
+            !id ||
+            id->index >= oag::DeviceRegistry::kCapacity
+        ) {
+            return;
+        }
+
+        const auto slot = slots_.slotFor(*id);
+
+        if (slot && *slot < states_.size()) {
+            states_[*slot] = {};
+
+            if (*slot < pendingRumbleValid_.size()) {
+                pendingRumble_[*slot] = {};
+                pendingRumbleValid_[*slot] = false;
+            }
+        }
+
+        slots_.release(*id);
+        genericHidDescriptors_[id->index] = {};
+        genericHidQuirks_[id->index] = {};
+        registry_.disconnect(*id);
+
+        if (slot) {
+            sendSlotOutput(*slot);
         }
     }
 
@@ -1092,6 +1297,9 @@ private:
     }
 
     oag::firmware::UsbPioHost usbHost_;
+    oag::firmware::BluetoothRuntime bluetooth_;
+    bool bluetoothAvailable_ = false;
+
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;
     oag::XusbInputDriver xusb_;
@@ -1101,6 +1309,13 @@ private:
     oag::GenericHidGamepadDriver genericHid_;
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
+
+    oag::UniversalOutputModeRouter outputMode_;
+    oag::TouchscreenMapper touchscreenMapper_;
+    oag::PenTabletMapper penTabletMapper_;
+    oag::TouchDigitizerState touchState_ {};
+    oag::PenDigitizerState penState_ {};
+
     oag::firmware::PcXinputPlatformDriver platformOutput_;
 
     std::array<

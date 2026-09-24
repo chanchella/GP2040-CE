@@ -50,7 +50,10 @@ struct DeviceRecord {
 
 class DeviceRegistry {
 public:
-    static constexpr std::size_t kCapacity = 12;
+    // Shared registry for USB + Bluetooth transports. USB host still has
+    // its own 12-device budget; the larger shared registry prevents BT HID
+    // devices from consuming USB bookkeeping capacity.
+    static constexpr std::size_t kCapacity = 20;
 
     std::optional<DeviceId> connectUsb(
         UsbTransportHandle handle,
