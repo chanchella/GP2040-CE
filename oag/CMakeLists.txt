@@ -15,6 +15,8 @@ add_library(oag_core STATIC
     src/protocol/hid/boot_keyboard_input_driver.cpp
     src/protocol/hid/boot_mouse_input_driver.cpp
     src/mapping/digital_binding_engine.cpp
+    src/output/platform/platform_profile_registry.cpp
+    src/protocol/hid/generic_hid_gamepad_driver.cpp
 )
 
 target_include_directories(oag_core
@@ -69,4 +71,22 @@ if(OAG_BUILD_HOST_TESTS)
     target_compile_features(oag_digital_binding_tests PRIVATE cxx_std_17)
 
     add_test(NAME oag_digital_binding_tests COMMAND oag_digital_binding_tests)
+
+    add_executable(oag_platform_profile_tests
+        tests/host/test_platform_profiles.cpp
+    )
+
+    target_link_libraries(oag_platform_profile_tests PRIVATE oag_core)
+    target_compile_features(oag_platform_profile_tests PRIVATE cxx_std_17)
+
+    add_test(NAME oag_platform_profile_tests COMMAND oag_platform_profile_tests)
+
+    add_executable(oag_generic_hid_gamepad_tests
+        tests/host/test_generic_hid_gamepad.cpp
+    )
+
+    target_link_libraries(oag_generic_hid_gamepad_tests PRIVATE oag_core)
+    target_compile_features(oag_generic_hid_gamepad_tests PRIVATE cxx_std_17)
+
+    add_test(NAME oag_generic_hid_gamepad_tests COMMAND oag_generic_hid_gamepad_tests)
 endif()
