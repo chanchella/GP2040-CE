@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "oag/device/device_id.h"
+
 namespace oag {
 
 enum MouseButton : std::uint16_t {
@@ -18,6 +20,7 @@ struct MouseMotion {
 };
 
 struct MouseState {
+    DeviceId source {};
     bool connected = false;
     std::uint16_t buttons = 0;
     std::int32_t dx = 0;

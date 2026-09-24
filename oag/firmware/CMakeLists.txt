@@ -32,6 +32,8 @@ add_executable(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W
 
     ../src/device/device_registry.cpp
     ../src/protocol/xusb/xusb_input_driver.cpp
+    ../src/protocol/hid/boot_keyboard_input_driver.cpp
+    ../src/protocol/hid/boot_mouse_input_driver.cpp
     ../src/mapping/logical_slot_manager.cpp
     ../src/mapping/pass_through_mapping.cpp
 )

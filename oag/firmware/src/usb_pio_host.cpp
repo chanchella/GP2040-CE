@@ -90,8 +90,6 @@ void UsbPioHost::reconcileRootEvents(
     removeMask &= validMask;
     attachMask &= validMask;
 
-    // Remove stale logical devices first. TinyUSB then closes the class
-    // drivers/endpoints through its normal path.
     for (std::uint8_t rootIndex = 0;
          rootIndex < kRootCount;
          ++rootIndex) {
@@ -106,8 +104,6 @@ void UsbPioHost::reconcileRootEvents(
         }
     }
 
-    // Queue ordinary attach events for physically present roots that TinyUSB
-    // has not mounted. No PIO/root/endpoint internals are mutated here.
     for (std::uint8_t rootIndex = 0;
          rootIndex < kRootCount;
          ++rootIndex) {
@@ -143,16 +139,4 @@ extern "C" usbh_class_driver_t const* usbh_app_driver_get_cb(
 
     *driver_count = 1;
     return drivers;
-}
-
-extern "C" void tuh_hid_report_received_cb(
-    std::uint8_t dev_addr,
-    std::uint8_t instance,
-    std::uint8_t const* report,
-    std::uint16_t len
-) {
-    (void)dev_addr;
-    (void)instance;
-    (void)report;
-    (void)len;
 }

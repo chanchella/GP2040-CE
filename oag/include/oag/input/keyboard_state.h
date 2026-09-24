@@ -4,12 +4,15 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "oag/device/device_id.h"
+
 namespace oag {
 
 struct KeyboardState {
     static constexpr std::size_t kUsageCount = 256;
     static constexpr std::size_t kWordCount = kUsageCount / 64;
 
+    DeviceId source {};
     bool connected = false;
     std::array<std::uint64_t, kWordCount> usages {};
     std::uint8_t modifiers = 0;

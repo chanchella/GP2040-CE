@@ -12,8 +12,12 @@
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
 #include "oag/input/gamepad_state.h"
+#include "oag/input/keyboard_state.h"
+#include "oag/input/mouse_state.h"
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/pass_through_mapping.h"
+#include "oag/protocol/hid/boot_keyboard_input_driver.h"
+#include "oag/protocol/hid/boot_mouse_input_driver.h"
 #include "oag/protocol/xusb/xusb_input_driver.h"
 #include "oag/transport/host_root_reconciler.h"
 
@@ -26,8 +30,7 @@ public:
             return false;
         }
 
-        // U1 has Bluetooth disabled. The product invariant remains:
-        // PIO USB Host must be initialized before any future CYW43/BT start.
+        // PIO USB Host must remain initialized before future CYW43/BT start.
         if (!usbHost_.start()) {
             return false;
         }
@@ -42,12 +45,14 @@ public:
         serviceHostHealthWatchdog();
     }
 
+    void onUsbDeviceMounted(std::uint8_t devAddr) {
+        rememberMountedRoot(devAddr);
+    }
+
     void onXusbMounted(
         std::uint8_t devAddr,
         std::uint8_t instance
     ) {
-        rememberMountedRoot(devAddr);
-
         std::uint16_t vid = 0;
         std::uint16_t pid = 0;
 
@@ -86,8 +91,6 @@ public:
         std::uint8_t devAddr,
         std::uint8_t instance
     ) {
-        forgetMountedRoot(devAddr);
-
         const oag::UsbTransportHandle handle {
             devAddr,
             instance,
@@ -95,6 +98,12 @@ public:
 
         const auto id = registry_.findUsb(handle);
         if (!id) {
+            return;
+        }
+
+        const oag::DeviceRecord* record = registry_.find(*id);
+        if (record == nullptr ||
+            record->protocol != oag::ProtocolKind::XusbXbox360) {
             return;
         }
 
@@ -113,13 +122,135 @@ public:
         }
     }
 
+    void onHidMounted(
+        std::uint8_t devAddr,
+        std::uint8_t instance
+    ) {
+        const std::uint8_t protocol =
+            tuh_hid_interface_protocol(devAddr, instance);
+
+        oag::ProtocolKind kind = oag::ProtocolKind::Unknown;
+
+        if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+            kind = oag::ProtocolKind::HidKeyboard;
+        } else if (protocol == HID_ITF_PROTOCOL_MOUSE) {
+            kind = oag::ProtocolKind::HidMouse;
+        } else {
+            return;
+        }
+
+        std::uint16_t vid = 0;
+        std::uint16_t pid = 0;
+        if (!tuh_vid_pid_get(devAddr, &vid, &pid)) {
+            return;
+        }
+
+        const oag::UsbTransportHandle handle {
+            devAddr,
+            instance,
+        };
+
+        const auto id = registry_.connectUsb(
+            handle,
+            vid,
+            pid,
+            kind
+        );
+
+        if (!id || id->index >= oag::DeviceRegistry::kCapacity) {
+            return;
+        }
+
+        if (kind == oag::ProtocolKind::HidKeyboard) {
+            keyboardStates_[id->index] = {};
+            keyboardStates_[id->index].source = *id;
+            keyboardStates_[id->index].connected = true;
+        } else {
+            mouseStates_[id->index] = {};
+            mouseStates_[id->index].source = *id;
+            mouseStates_[id->index].connected = true;
+        }
+    }
+
+    void onHidUnmounted(
+        std::uint8_t devAddr,
+        std::uint8_t instance
+    ) {
+        const oag::UsbTransportHandle handle {
+            devAddr,
+            instance,
+        };
+
+        const auto id = registry_.findUsb(handle);
+        if (!id || id->index >= oag::DeviceRegistry::kCapacity) {
+            return;
+        }
+
+        const oag::DeviceRecord* record = registry_.find(*id);
+        if (record == nullptr) {
+            return;
+        }
+
+        if (record->protocol == oag::ProtocolKind::HidKeyboard) {
+            keyboardStates_[id->index] = {};
+        } else if (record->protocol == oag::ProtocolKind::HidMouse) {
+            mouseStates_[id->index] = {};
+        } else {
+            return;
+        }
+
+        registry_.disconnect(*id);
+    }
+
+    void onHidReport(
+        std::uint8_t devAddr,
+        std::uint8_t instance,
+        const std::uint8_t* report,
+        std::uint16_t length
+    ) {
+        const oag::UsbTransportHandle handle {
+            devAddr,
+            instance,
+        };
+
+        const auto id = registry_.findUsb(handle);
+        if (!id || id->index >= oag::DeviceRegistry::kCapacity) {
+            return;
+        }
+
+        const oag::DeviceRecord* record = registry_.find(*id);
+        if (record == nullptr) {
+            return;
+        }
+
+        if (record->protocol == oag::ProtocolKind::HidKeyboard) {
+            keyboard_.parse(
+                *id,
+                report,
+                length,
+                time_us_64(),
+                keyboardStates_[id->index]
+            );
+        } else if (record->protocol == oag::ProtocolKind::HidMouse) {
+            mouse_.parse(
+                *id,
+                report,
+                length,
+                time_us_64(),
+                mouseStates_[id->index]
+            );
+        }
+    }
+
     void onUsbDeviceUnmounted(std::uint8_t devAddr) {
         forgetMountedRoot(devAddr);
 
-        // TinyUSB calls the generic device-unmount callback before closing
-        // class drivers. Clean every possible U1 XUSB interface here as a
-        // transport-level safety net; the later class callback is idempotent.
-        for (std::uint8_t instance = 0; instance < CFG_TUH_XINPUT; ++instance) {
+        // TinyUSB invokes the generic device callback before class close.
+        // Clean stale XUSB logical slots here; class-specific callbacks remain
+        // idempotent. HID records are released by tuh_hid_umount_cb.
+        for (std::uint8_t instance = 0;
+             instance < CFG_TUH_XINPUT;
+             ++instance) {
             onXusbUnmounted(devAddr, instance);
         }
     }
@@ -137,6 +268,12 @@ public:
 
         const auto id = registry_.findUsb(handle);
         if (!id) {
+            return;
+        }
+
+        const oag::DeviceRecord* record = registry_.find(*id);
+        if (record == nullptr ||
+            record->protocol != oag::ProtocolKind::XusbXbox360) {
             return;
         }
 
@@ -225,7 +362,9 @@ private:
     }
 
     std::optional<oag::LogicalSlotId> primaryPcSlot() const {
-        for (std::size_t i = 0; i < oag::LogicalSlotManager::kGamepadSlots; ++i) {
+        for (std::size_t i = 0;
+             i < oag::LogicalSlotManager::kGamepadSlots;
+             ++i) {
             const auto slot = static_cast<oag::LogicalSlotId>(i);
             if (slots_.deviceFor(slot).valid()) {
                 return slot;
@@ -252,6 +391,8 @@ private:
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;
     oag::XusbInputDriver xusb_;
+    oag::BootKeyboardInputDriver keyboard_;
+    oag::BootMouseInputDriver mouse_;
     oag::PassThroughMapping mapping_;
     oag::firmware::PcHidOutput pcOutput_;
 
@@ -259,6 +400,16 @@ private:
         oag::UniversalGamepadState,
         oag::LogicalSlotManager::kGamepadSlots
     > states_ {};
+
+    std::array<
+        oag::KeyboardState,
+        oag::DeviceRegistry::kCapacity
+    > keyboardStates_ {};
+
+    std::array<
+        oag::MouseState,
+        oag::DeviceRegistry::kCapacity
+    > mouseStates_ {};
 
     std::array<
         std::uint8_t,
@@ -272,6 +423,44 @@ private:
 FirmwareCore gCore;
 
 } // namespace
+
+extern "C" void tuh_mount_cb(std::uint8_t dev_addr) {
+    gCore.onUsbDeviceMounted(dev_addr);
+}
+
+extern "C" void tuh_umount_cb(std::uint8_t dev_addr) {
+    gCore.onUsbDeviceUnmounted(dev_addr);
+}
+
+extern "C" void tuh_hid_mount_cb(
+    std::uint8_t dev_addr,
+    std::uint8_t instance,
+    std::uint8_t const* desc_report,
+    std::uint16_t desc_len
+) {
+    (void)desc_report;
+    (void)desc_len;
+
+    gCore.onHidMounted(dev_addr, instance);
+    tuh_hid_receive_report(dev_addr, instance);
+}
+
+extern "C" void tuh_hid_umount_cb(
+    std::uint8_t dev_addr,
+    std::uint8_t instance
+) {
+    gCore.onHidUnmounted(dev_addr, instance);
+}
+
+extern "C" void tuh_hid_report_received_cb(
+    std::uint8_t dev_addr,
+    std::uint8_t instance,
+    std::uint8_t const* report,
+    std::uint16_t len
+) {
+    gCore.onHidReport(dev_addr, instance, report, len);
+    tuh_hid_receive_report(dev_addr, instance);
+}
 
 extern "C" void tuh_xinput_mount_cb(
     std::uint8_t dev_addr,
@@ -289,10 +478,6 @@ extern "C" void tuh_xinput_umount_cb(
     std::uint8_t instance
 ) {
     gCore.onXusbUnmounted(dev_addr, instance);
-}
-
-extern "C" void tuh_umount_cb(std::uint8_t dev_addr) {
-    gCore.onUsbDeviceUnmounted(dev_addr);
 }
 
 extern "C" void tuh_xinput_report_received_cb(
