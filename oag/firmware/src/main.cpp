@@ -12,7 +12,6 @@
 #include "oag/device/usb_device_classifier.h"
 #include "oag/feedback/rumble_command.h"
 #include "oag/feedback/keyboard_led_state.h"
-#include "oag/firmware/bluetooth_runtime.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
@@ -22,10 +21,6 @@
 #include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/pass_through_mapping.h"
-#include "oag/mapping/pen_tablet_mapper.h"
-#include "oag/mapping/touchscreen_mapper.h"
-#include "oag/output/digitizer/digitizer_state.h"
-#include "oag/output/universal_output_mode.h"
 #include "oag/protocol/hid/boot_keyboard_input_driver.h"
 #include "oag/protocol/hid/boot_mouse_input_driver.h"
 #include "oag/protocol/hid/generic_hid_gamepad_driver.h"
@@ -65,8 +60,7 @@ static constexpr std::uint8_t kXoneAuthDone[] = {
     0x06, 0x20, 0x00, 0x02, 0x01, 0x00
 };
 
-class FirmwareCore final
-    : public oag::firmware::BluetoothRuntimeObserver {
+class FirmwareCore {
 public:
     bool start() {
         // Golden baseline transport invariant: USB Host runs at 120 MHz to
@@ -84,10 +78,6 @@ public:
             return false;
         }
 
-        // Golden hardware behavior: USB Host first, then 100 ms settle,
-        // then CYW43/BTstack. Keep this non-blocking.
-        bluetoothNextInitUs_ = time_us_64() + 100000ull;
-
         if (!platformOutput_.initialize()) {
             return false;
         }
@@ -100,9 +90,6 @@ public:
         platformOutput_.poll();
 
         usbHost_.task();
-
-        serviceBluetoothRuntime();
-        serviceBluetoothDiagnosticOutput();
 
         serviceKeyboardLeds();
         maintainXinputTransport();
@@ -487,23 +474,6 @@ public:
                         time_us_64() + kMouseAimHoldUs;
                 }
 
-                const oag::UniversalOutputRouting routing =
-                    outputMode_.routing();
-
-                if (routing.touchscreen) {
-                    touchState_ = touchscreenMapper_.apply(
-                        mouseState,
-                        currentMouseMotion_
-                    );
-                }
-
-                if (routing.penTablet) {
-                    penState_ = penTabletMapper_.apply(
-                        mouseState,
-                        currentMouseMotion_
-                    );
-                }
-
                 sendComposedOutput();
             }
             return;
@@ -652,309 +622,9 @@ public:
         }
     }
 
-    void onBluetoothHidDescriptor(
-        oag::TransportType transport,
-        std::uint16_t connectionHandle,
-        std::uint8_t serviceInstance,
-        const std::uint8_t* descriptor,
-        std::size_t descriptorLength
-    ) override {
-        if (
-            descriptor == nullptr ||
-            descriptorLength == 0
-        ) {
-            return;
-        }
-
-        const oag::BluetoothTransportHandle handle {
-            transport,
-            connectionHandle,
-            serviceInstance,
-        };
-
-        if (registry_.findBluetooth(handle)) {
-            return;
-        }
-
-        oag::GenericHidGamepadQuirks quirks {};
-        oag::GenericHidGamepadDescriptor parsed {};
-
-        bool isGamepad = genericHid_.parseDescriptor(
-            descriptor,
-            descriptorLength,
-            quirks,
-            parsed
-        );
-
-        if (
-            !isGamepad &&
-            genericHid_.looksLikeGamepadDescriptor(
-                descriptor,
-                descriptorLength
-            )
-        ) {
-            quirks.forceGamepad = true;
-            isGamepad = genericHid_.parseDescriptor(
-                descriptor,
-                descriptorLength,
-                quirks,
-                parsed
-            );
-        }
-
-        // U8A live path intentionally binds only descriptors that prove
-        // gamepad structure. BT keyboard/mouse canonical parsing is a
-        // separate driver gate so they cannot be misclassified as pads.
-        if (!isGamepad) {
-            return;
-        }
-
-        const auto id = registry_.connectBluetooth(
-            handle,
-            0,
-            0,
-            oag::ProtocolKind::HidGamepad
-        );
-
-        if (
-            !id ||
-            id->index >= oag::DeviceRegistry::kCapacity
-        ) {
-            return;
-        }
-
-        const auto slot = slots_.bindFirstFree(*id);
-        if (!slot) {
-            registry_.disconnect(*id);
-            return;
-        }
-
-        genericHidDescriptors_[id->index] = parsed;
-        genericHidQuirks_[id->index] = quirks;
-
-        states_[*slot] = {};
-        states_[*slot].source = *id;
-        states_[*slot].connected = true;
-
-        if (*slot < pendingRumbleValid_.size()) {
-            pendingRumble_[*slot] = {};
-            pendingRumbleValid_[*slot] = false;
-        }
-
-        sendSlotOutput(*slot);
-    }
-
-    void onBluetoothHidReport(
-        oag::TransportType transport,
-        std::uint16_t connectionHandle,
-        std::uint8_t serviceInstance,
-        const std::uint8_t* report,
-        std::size_t reportLength
-    ) override {
-        const oag::BluetoothTransportHandle handle {
-            transport,
-            connectionHandle,
-            serviceInstance,
-        };
-
-        const auto id = registry_.findBluetooth(handle);
-        if (
-            !id ||
-            id->index >= oag::DeviceRegistry::kCapacity
-        ) {
-            return;
-        }
-
-        const auto slot = slots_.slotFor(*id);
-        if (!slot || *slot >= states_.size()) {
-            return;
-        }
-
-        if (!genericHid_.parseReport(
-                *id,
-                genericHidDescriptors_[id->index],
-                genericHidQuirks_[id->index],
-                report,
-                reportLength,
-                time_us_64(),
-                states_[*slot]
-            )) {
-            return;
-        }
-
-        sendSlotOutput(*slot);
-    }
-
-    void onBluetoothHidDisconnected(
-        oag::TransportType transport,
-        std::uint16_t connectionHandle,
-        std::uint8_t serviceInstance
-    ) override {
-        const oag::BluetoothTransportHandle handle {
-            transport,
-            connectionHandle,
-            serviceInstance,
-        };
-
-        const auto id = registry_.findBluetooth(handle);
-        if (
-            !id ||
-            id->index >= oag::DeviceRegistry::kCapacity
-        ) {
-            return;
-        }
-
-        const auto slot = slots_.slotFor(*id);
-
-        if (slot && *slot < states_.size()) {
-            states_[*slot] = {};
-
-            if (*slot < pendingRumbleValid_.size()) {
-                pendingRumble_[*slot] = {};
-                pendingRumbleValid_[*slot] = false;
-            }
-        }
-
-        slots_.release(*id);
-        genericHidDescriptors_[id->index] = {};
-        genericHidQuirks_[id->index] = {};
-        registry_.disconnect(*id);
-
-        if (slot) {
-            sendSlotOutput(*slot);
-        }
-    }
-
 private:
-    void serviceBluetoothRuntime() {
-        const std::uint64_t nowUs = time_us_64();
-
-        if (!bluetoothAvailable_) {
-            if (
-                bluetoothNextInitUs_ == 0 ||
-                nowUs < bluetoothNextInitUs_
-            ) {
-                return;
-            }
-
-            if (bluetooth_.initialize(*this)) {
-                bluetoothAvailable_ = true;
-                bluetoothNextInitUs_ = 0;
-                return;
-            }
-
-            bluetoothNextInitUs_ = nowUs + 1000000ull;
-            return;
-        }
-
-        bluetooth_.poll();
-    }
-
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 6000;
-    static constexpr std::uint8_t kBluetoothDiagnosticOutputSlot = 3;
-    static constexpr std::uint64_t kBluetoothDiagnosticRefreshUs = 100000ull;
-
-    void serviceBluetoothDiagnosticOutput() {
-        if (!bluetoothAvailable_) {
-            return;
-        }
-
-        const std::uint64_t nowUs = time_us_64();
-        if (
-            nowUs - bluetoothDiagnosticLastSubmitUs_ <
-            kBluetoothDiagnosticRefreshUs
-        ) {
-            return;
-        }
-
-        bluetoothDiagnosticLastSubmitUs_ = nowUs;
-
-        oag::LogicalGamepadState diagnostic {};
-        diagnostic.connected = true;
-        diagnostic.timestampUs = nowUs;
-
-        const std::uint8_t stage =
-            bluetooth_.diagnosticStage();
-
-        if (bluetooth_.diagnosticReportSeen()) {
-            diagnostic.buttons =
-                oag::ButtonSouth |
-                oag::ButtonEast |
-                oag::ButtonWest |
-                oag::ButtonNorth |
-                oag::ButtonLeftBumper |
-                oag::ButtonRightBumper |
-                oag::ButtonGuide;
-        } else if (bluetooth_.diagnosticFailed()) {
-            diagnostic.buttons = oag::ButtonStart;
-
-            // Button 7 / Back marks Classic. If it is off, the failure is BLE.
-            if (bluetooth_.diagnosticTransport() == 2) {
-                diagnostic.buttons |= oag::ButtonBack;
-            }
-
-            const std::uint8_t code =
-                bluetooth_.diagnosticErrorCode();
-
-            if (code & 0x01u) diagnostic.buttons |= oag::ButtonSouth;
-            if (code & 0x02u) diagnostic.buttons |= oag::ButtonEast;
-            if (code & 0x04u) diagnostic.buttons |= oag::ButtonWest;
-            if (code & 0x08u) diagnostic.buttons |= oag::ButtonNorth;
-            if (code & 0x10u) diagnostic.buttons |= oag::ButtonLeftBumper;
-            if (code & 0x20u) diagnostic.buttons |= oag::ButtonRightBumper;
-            if (code & 0x40u) diagnostic.buttons |= oag::ButtonLeftStick;
-            if (code & 0x80u) diagnostic.buttons |= oag::ButtonRightStick;
-
-            switch (stage) {
-                case 1:
-                    diagnostic.dpad =
-                        static_cast<std::uint8_t>(oag::DpadBits::Up);
-                    break;
-                case 2:
-                    diagnostic.dpad =
-                        static_cast<std::uint8_t>(oag::DpadBits::Up) |
-                        static_cast<std::uint8_t>(oag::DpadBits::Right);
-                    break;
-                case 3:
-                    diagnostic.dpad =
-                        static_cast<std::uint8_t>(oag::DpadBits::Right);
-                    break;
-                case 4:
-                    diagnostic.dpad =
-                        static_cast<std::uint8_t>(oag::DpadBits::Down) |
-                        static_cast<std::uint8_t>(oag::DpadBits::Right);
-                    break;
-                case 5:
-                    diagnostic.dpad =
-                        static_cast<std::uint8_t>(oag::DpadBits::Down);
-                    break;
-                case 6:
-                    diagnostic.dpad =
-                        static_cast<std::uint8_t>(oag::DpadBits::Down) |
-                        static_cast<std::uint8_t>(oag::DpadBits::Left);
-                    break;
-                default:
-                    diagnostic.dpad = 0;
-                    break;
-            }
-        } else {
-            switch (stage) {
-                case 1: diagnostic.buttons = oag::ButtonSouth; break;
-                case 2: diagnostic.buttons = oag::ButtonEast; break;
-                case 3: diagnostic.buttons = oag::ButtonWest; break;
-                case 4: diagnostic.buttons = oag::ButtonNorth; break;
-                case 5: diagnostic.buttons = oag::ButtonLeftBumper; break;
-                case 6: diagnostic.buttons = oag::ButtonRightBumper; break;
-                default: diagnostic.buttons = 0; break;
-            }
-        }
-
-        platformOutput_.submit(
-            kBluetoothDiagnosticOutputSlot,
-            diagnostic
-        );
-    }
 
     static oag::GenericHidGamepadQuirks genericHidQuirksFor(
         std::uint16_t vid,
@@ -1308,12 +978,10 @@ private:
             oag::LogicalGamepadState neutral {};
             neutral.connected = true;
             platformOutput_.submit(0, neutral);
-
             return;
         }
 
         platformOutput_.submit(0, output);
-
     }
 
     void serviceMouseAimRelease() {
@@ -1424,11 +1092,6 @@ private:
     }
 
     oag::firmware::UsbPioHost usbHost_;
-    oag::firmware::BluetoothRuntime bluetooth_;
-    bool bluetoothAvailable_ = false;
-    std::uint64_t bluetoothNextInitUs_ = 0;
-    std::uint64_t bluetoothDiagnosticLastSubmitUs_ = 0;
-
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;
     oag::XusbInputDriver xusb_;
@@ -1438,13 +1101,6 @@ private:
     oag::GenericHidGamepadDriver genericHid_;
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
-
-    oag::UniversalOutputModeRouter outputMode_;
-    oag::TouchscreenMapper touchscreenMapper_;
-    oag::PenTabletMapper penTabletMapper_;
-    oag::TouchDigitizerState touchState_ {};
-    oag::PenDigitizerState penState_ {};
-
     oag::firmware::PcXinputPlatformDriver platformOutput_;
 
     std::array<

@@ -31,9 +31,6 @@ add_library(oag_core STATIC
     src/output/platform/platform_selector.cpp
     src/output/platform/platform_activation_gate.cpp
     src/bluetooth/bluetooth_device_classifier.cpp
-    src/output/universal_output_mode.cpp
-    src/mapping/touchscreen_mapper.cpp
-    src/mapping/pen_tablet_mapper.cpp
 )
 
 target_include_directories(oag_core
@@ -169,11 +166,4 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_keyboard_led_tests PRIVATE oag_core)
     target_compile_features(oag_keyboard_led_tests PRIVATE cxx_std_17)
     add_test(NAME oag_keyboard_led_tests COMMAND oag_keyboard_led_tests)
-
-    add_executable(oag_output_mode_tests
-        tests/host/test_output_modes.cpp
-    )
-    target_link_libraries(oag_output_mode_tests PRIVATE oag_core)
-    target_compile_features(oag_output_mode_tests PRIVATE cxx_std_17)
-    add_test(NAME oag_output_mode_tests COMMAND oag_output_mode_tests)
 endif()

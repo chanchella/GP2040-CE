@@ -50,9 +50,6 @@ struct DeviceRecord {
 
 class DeviceRegistry {
 public:
-    // Shared registry for USB + Bluetooth transports. U8A intentionally
-    // preserves the hardware-verified U6E capacity invariant; capacity
-    // expansion is a separate hardware/resource gate.
     static constexpr std::size_t kCapacity = 12;
 
     std::optional<DeviceId> connectUsb(

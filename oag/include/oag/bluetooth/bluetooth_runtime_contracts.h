@@ -11,9 +11,6 @@ enum class BluetoothOutputProfile : std::uint8_t {
     DualShock4Compatible,
     DualSenseCompatible,
     SwitchProCompatible,
-    GenericHidKeyboardMouse,
-    TouchDigitizer,
-    PenDigitizer,
 };
 
 class IBluetoothInputTransport {
