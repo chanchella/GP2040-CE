@@ -242,6 +242,78 @@ int main() {
     static_assert(p2ToP3.removeMask == 0x02);
     static_assert(p2ToP3.attachMask == 0x04);
 
+    // U7A: Bluetooth devices use the same generation-safe registry.
+    const BluetoothTransportHandle bleHandle {
+        TransportType::BluetoothLe,
+        0x0042,
+        1,
+    };
+
+    const auto ble = registry.connectBluetooth(
+        bleHandle,
+        0,
+        0,
+        ProtocolKind::HidGamepad
+    );
+
+    assert(ble.has_value());
+
+    const DeviceRecord* bleRecord = registry.find(*ble);
+    assert(bleRecord != nullptr);
+    assert(bleRecord->transport == TransportType::BluetoothLe);
+    assert(bleRecord->protocol == ProtocolKind::HidGamepad);
+    assert(
+        bleRecord->bluetooth.connectionHandle ==
+        bleHandle.connectionHandle
+    );
+    assert(registry.findBluetooth(bleHandle).has_value());
+
+    assert(registry.disconnectBluetooth(bleHandle));
+    assert(registry.find(*ble) == nullptr);
+
+    const auto bleReconnect = registry.connectBluetooth(
+        bleHandle,
+        0,
+        0,
+        ProtocolKind::HidGamepad
+    );
+
+    assert(bleReconnect.has_value());
+    assert(bleReconnect->generation != ble->generation);
+
+    const BluetoothTransportHandle classicHandle {
+        TransportType::BluetoothClassic,
+        0x0066,
+        0,
+    };
+
+    const auto classic = registry.connectBluetooth(
+        classicHandle,
+        0x054C,
+        0x09CC,
+        ProtocolKind::HidGamepad
+    );
+
+    assert(classic.has_value());
+
+    const DeviceRecord* classicRecord = registry.find(*classic);
+    assert(classicRecord != nullptr);
+    assert(
+        classicRecord->transport ==
+        TransportType::BluetoothClassic
+    );
+
+    assert(!registry.connectBluetooth(
+        BluetoothTransportHandle {
+            TransportType::UsbPioHost,
+            0x0001,
+            0,
+        },
+        0,
+        0,
+        ProtocolKind::HidGamepad
+    ).has_value());
+
     std::cout << "OAG_CORE_FOUNDATION_TESTS=PASS\n";
     return 0;
 }

@@ -29,12 +29,21 @@ struct UsbTransportHandle {
     std::uint8_t interfaceInstance = 0;
 };
 
+struct BluetoothTransportHandle {
+    TransportType transport = TransportType::BluetoothLe;
+    std::uint16_t connectionHandle = 0;
+    std::uint8_t serviceInstance = 0;
+};
+
 struct DeviceRecord {
     DeviceId id {};
     bool connected = false;
     TransportType transport = TransportType::UsbPioHost;
     ProtocolKind protocol = ProtocolKind::Unknown;
+
     UsbTransportHandle usb {};
+    BluetoothTransportHandle bluetooth {};
+
     std::uint16_t vid = 0;
     std::uint16_t pid = 0;
 };
@@ -50,17 +59,38 @@ public:
         ProtocolKind protocol
     );
 
+    std::optional<DeviceId> connectBluetooth(
+        BluetoothTransportHandle handle,
+        std::uint16_t vid,
+        std::uint16_t pid,
+        ProtocolKind protocol
+    );
+
     bool disconnect(DeviceId id);
     bool disconnectUsb(UsbTransportHandle handle);
+    bool disconnectBluetooth(BluetoothTransportHandle handle);
 
     const DeviceRecord* find(DeviceId id) const;
     DeviceRecord* find(DeviceId id);
 
-    std::optional<DeviceId> findUsb(UsbTransportHandle handle) const;
+    std::optional<DeviceId> findUsb(
+        UsbTransportHandle handle
+    ) const;
+
+    std::optional<DeviceId> findBluetooth(
+        BluetoothTransportHandle handle
+    ) const;
 
 private:
     std::array<DeviceRecord, kCapacity> records_ {};
     std::array<std::uint16_t, kCapacity> generations_ {};
+
+    std::optional<DeviceId> allocate(
+        TransportType transport,
+        ProtocolKind protocol,
+        std::uint16_t vid,
+        std::uint16_t pid
+    );
 };
 
 } // namespace oag
