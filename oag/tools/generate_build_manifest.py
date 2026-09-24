@@ -51,7 +51,7 @@ tinyusb_sha = git_in(root / "lib/tinyusb", "rev-parse", "HEAD")
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U3C",
+    "phase": "U5A",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -66,6 +66,7 @@ manifest = {
         "mouse_boot_host": True,
         "generic_hid_gamepad_host": True,
         "platform_profile_registry": True,
+        "platform_output_runtime_abstraction": True,
         "default_platform_profile": "PC_XINPUT_360",
         "mouse_to_stick_software_foundation": True,
         "digital_binding_engine_software_foundation": True,

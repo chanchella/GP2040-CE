@@ -10,7 +10,7 @@
 
 #include "oag/device/device_registry.h"
 #include "oag/feedback/rumble_command.h"
-#include "oag/firmware/pc_xinput_device.h"
+#include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
 #include "oag/input/gamepad_state.h"
@@ -45,18 +45,22 @@ public:
             return false;
         }
 
+        if (!platformOutput_.initialize()) {
+            return false;
+        }
+
         return true;
     }
 
     void task() {
         tud_task();
-        pcOutput_.task();
+        platformOutput_.poll();
 
         usbHost_.task();
 
         maintainXusbInput();
         serviceMouseAimRelease();
-        servicePcFeedback();
+        servicePlatformFeedback();
     }
 
     void onUsbDeviceMounted(std::uint8_t devAddr) {
@@ -121,7 +125,7 @@ public:
             return;
         }
 
-        const auto primaryBefore = primaryPcSlot();
+        const auto primaryBefore = primaryOutputSlot();
         const auto slot = slots_.slotFor(*id);
 
         if (slot) {
@@ -135,7 +139,7 @@ public:
             sendComposedOutput();
         }
 
-        if (!primaryPcSlot()) {
+        if (!primaryOutputSlot()) {
             pendingRumbleValid_ = false;
         }
     }
@@ -281,7 +285,7 @@ public:
             return;
         }
 
-        const auto primaryBefore = primaryPcSlot();
+        const auto primaryBefore = primaryOutputSlot();
         const auto slot = slots_.slotFor(*id);
 
         if (slot && *slot < states_.size()) {
@@ -383,7 +387,7 @@ public:
             return;
         }
 
-        const auto primary = primaryPcSlot();
+        const auto primary = primaryOutputSlot();
         if (primary && *slot == *primary) {
             sendComposedOutput();
         }
@@ -436,7 +440,7 @@ public:
             return;
         }
 
-        const auto primary = primaryPcSlot();
+        const auto primary = primaryOutputSlot();
         if (primary && *slot == *primary) {
             sendComposedOutput();
         }
@@ -585,7 +589,7 @@ private:
     }
 
     oag::LogicalGamepadState basePrimaryOutput() const {
-        const auto primary = primaryPcSlot();
+        const auto primary = primaryOutputSlot();
 
         if (!primary ||
             *primary >= states_.size() ||
@@ -614,11 +618,13 @@ private:
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
-            pcOutput_.sendNeutral();
+            oag::LogicalGamepadState neutral {};
+            neutral.connected = true;
+            platformOutput_.submit(0, neutral);
             return;
         }
 
-        pcOutput_.send(output);
+        platformOutput_.submit(0, output);
     }
 
     void serviceMouseAimRelease() {
@@ -635,9 +641,9 @@ private:
         sendComposedOutput();
     }
 
-    void servicePcFeedback() {
+    void servicePlatformFeedback() {
         oag::RumbleCommand newest {};
-        if (pcOutput_.takeRumble(newest)) {
+        if (platformOutput_.takeRumble(newest)) {
             pendingRumble_ = newest;
             pendingRumbleValid_ = true;
         }
@@ -646,7 +652,7 @@ private:
             return;
         }
 
-        const auto primary = primaryPcSlot();
+        const auto primary = primaryOutputSlot();
         if (!primary) {
             pendingRumbleValid_ = false;
             return;
@@ -682,7 +688,7 @@ private:
         }
     }
 
-    std::optional<oag::LogicalSlotId> primaryPcSlot() const {
+    std::optional<oag::LogicalSlotId> primaryOutputSlot() const {
         for (std::size_t i = 0;
              i < oag::LogicalSlotManager::kGamepadSlots;
              ++i) {
@@ -704,7 +710,7 @@ private:
     oag::GenericHidGamepadDriver genericHid_;
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
-    oag::firmware::PcXinputDevice pcOutput_;
+    oag::firmware::PcXinputPlatformDriver platformOutput_;
 
     std::array<
         oag::UniversalGamepadState,
