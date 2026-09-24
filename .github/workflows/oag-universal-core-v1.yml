@@ -29,24 +29,24 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
 
-      - name: Verify U10A functional scope against hardware-verified U9G
+      - name: Verify U10B output-only scope against U10A
         shell: bash
         run: |
           set -euo pipefail
-          U9G_BASELINE="3fffa9484f159df6cfbeb807c3acbdf46bdbe52e"
-          git merge-base --is-ancestor "${U9G_BASELINE}" HEAD
+          U10A_BASELINE="5cde8e6f5fb406efd9adf76cc2aa1c82988a3fb8"
+          git merge-base --is-ancestor "${U10A_BASELINE}" HEAD
 
           EXPECTED="$(printf '%s\n' \
-            'oag/firmware/src/bluetooth_host_v2.cpp' \
-            'oag/firmware/src/main.cpp' | sort)"
+            'oag/firmware/src/pc_xinput_device.cpp' \
+            'oag/firmware/src/usb_descriptors.cpp' | sort)"
 
-          ACTUAL="$(git diff --name-only "${U9G_BASELINE}" -- \
+          ACTUAL="$(git diff --name-only "${U10A_BASELINE}" -- \
             oag/firmware/include \
             oag/firmware/src \
             oag/src | sort)"
 
           test "${ACTUAL}" = "${EXPECTED}"
-          echo "U10A_U9G_FUNCTIONAL_SCOPE=PASS"
+          echo "U10B_U10A_OUTPUT_ONLY_SCOPE=PASS"
 
       - name: Verify no Antigravity coupling
         shell: bash
@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u10a:
+  firmware-u10b:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -108,7 +108,7 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Verify exact U10A SDK and Bluetooth dependencies
+      - name: Verify exact U10B SDK and Bluetooth dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -116,8 +116,8 @@ jobs:
           test "$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
           test "$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
           echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-u9d" >> "${GITHUB_ENV}"
-          echo "U10A_PICO_SDK_230=PASS"
-          echo "U10A_BTSTACK_HIDS_HOST=PASS"
+          echo "U10B_PICO_SDK_230=PASS"
+          echo "U10B_BTSTACK_HIDS_HOST=PASS"
 
       - name: Verify and prepare pinned dependencies
         shell: bash
@@ -125,7 +125,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U10A firmware
+      - name: Configure Pico 2 W U10B firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -135,7 +135,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U10A firmware
+      - name: Build Pico 2 W U10B firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -181,7 +181,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U10A"
+          assert manifest["phase"] == "U10B"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -246,12 +246,20 @@ jobs:
           assert manifest["features"]["bluetooth_u10a_bt_first_pc_output_routing"] is True
           assert manifest["features"]["bluetooth_u10a_primary_bt_gamepad_sticky"] is True
           assert manifest["features"]["bluetooth_u10a_max_peers"] == 4
+          assert manifest["features"]["pc_u10b_receiver_style_descriptor"] is True
+          assert manifest["features"]["pc_u10b_receiver_custom_descriptor_type"] == "0x22"
+          assert manifest["features"]["pc_u10b_receiver_endpoint_pairs"] == ["81/01", "83/03", "85/05", "87/07"]
+          assert manifest["features"]["pc_u10b_fresh_windows_serial_namespace"] == "OAG-RCV"
           assert manifest["verification"]["hardware_verified"] is False
           assert manifest["verification"]["hardware_verified_baseline_phase"] == "U9G"
           assert manifest["verification"]["hardware_verified_baseline_sha"] == "3fffa9484f159df6cfbeb807c3acbdf46bdbe52e"
           assert manifest["verification"]["u9f_simultaneous_wired_bluetooth_regression"] == "HARDWARE_VERIFIED"
           assert manifest["verification"]["u9g_xbox_ble_guide_rumble"] == "HARDWARE_VERIFIED"
-          assert manifest["verification"]["u10a_always_on_multibluetooth_bt_first_routing"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10a_single_bluetooth_primary_plus_wired_gamepad_keyboard_mouse"] == "HARDWARE_VERIFIED"
+          assert manifest["verification"]["u10a_multibluetooth_2_to_4_peers"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10b_steam_multi_controller_receiver_output"] == "PENDING_HARDWARE"
+          assert manifest["pc_xinput_profile"]["descriptor_style"] == "MULTI_CONTROLLER_RECEIVER"
+          assert manifest["pc_xinput_profile"]["serial_namespace"] == "OAG-RCV"
           assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
           assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
           assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
@@ -271,17 +279,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10A_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10B_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10A_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10B_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10A_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10B_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U10A firmware bundle
+      - name: Upload U10B firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U10A-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U10B-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
