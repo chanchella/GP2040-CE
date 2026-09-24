@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u2c:
+  firmware-u2e:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U2C firmware
+      - name: Configure Pico 2 W U2E firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -94,7 +94,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U2C firmware
+      - name: Build Pico 2 W U2E firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -140,10 +140,13 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U2C"
-          assert manifest["features"]["host_root_watchdog_2s"] is True
+          assert manifest["phase"] == "U2E"
+          assert manifest["features"]["pc_generic_hid_output"] is False
+          assert manifest["features"]["pc_xinput_output"] is True
+          assert manifest["features"]["rumble_reverse_runtime"] is True
           assert manifest["features"]["keyboard_boot_host"] is True
           assert manifest["features"]["mouse_boot_host"] is True
+          assert manifest["pc_xinput_profile"]["console_authentication"] is False
           assert manifest["dependencies"]["pico_pio_usb"] == "5a37a66dc5d3fbe0ef3cdbeda923a757440f984f"
           assert manifest["dependencies"]["tinyusb"] == "9865cba11ecbcdd25237ba9cf4ccbe3fd1fd821d"
           assert manifest["verification"]["ci_verified"] is True
@@ -157,17 +160,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U2C_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U2E_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U2C_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U2E_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U2C_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U2E_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U2C firmware bundle
+      - name: Upload U2E firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U2C-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U2E-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

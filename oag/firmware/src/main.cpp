@@ -8,7 +8,8 @@
 #include "host/usbh_pvt.h"
 
 #include "oag/device/device_registry.h"
-#include "oag/firmware/pc_hid_output.h"
+#include "oag/feedback/rumble_command.h"
+#include "oag/firmware/pc_xinput_device.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
 #include "oag/input/gamepad_state.h"
@@ -41,8 +42,12 @@ public:
 
     void task() {
         tud_task();
+        pcOutput_.task();
+
         usbHost_.task();
+
         serviceHostHealthWatchdog();
+        servicePcFeedback();
     }
 
     void onUsbDeviceMounted(std::uint8_t devAddr) {
@@ -118,7 +123,11 @@ public:
         registry_.disconnect(*id);
 
         if (slot && primaryBefore && *slot == *primaryBefore) {
-            sendPrimaryPcOutput();
+            pcOutput_.sendNeutral();
+        }
+
+        if (!primaryPcSlot()) {
+            pendingRumbleValid_ = false;
         }
     }
 
@@ -245,9 +254,6 @@ public:
     void onUsbDeviceUnmounted(std::uint8_t devAddr) {
         forgetMountedRoot(devAddr);
 
-        // TinyUSB invokes the generic device callback before class close.
-        // Clean stale XUSB logical slots here; class-specific callbacks remain
-        // idempotent. HID records are released by tuh_hid_umount_cb.
         for (std::uint8_t instance = 0;
              instance < CFG_TUH_XINPUT;
              ++instance) {
@@ -361,6 +367,53 @@ private:
         }
     }
 
+    void servicePcFeedback() {
+        oag::RumbleCommand newest {};
+        if (pcOutput_.takeRumble(newest)) {
+            pendingRumble_ = newest;
+            pendingRumbleValid_ = true;
+        }
+
+        if (!pendingRumbleValid_) {
+            return;
+        }
+
+        const auto primary = primaryPcSlot();
+        if (!primary) {
+            pendingRumbleValid_ = false;
+            return;
+        }
+
+        const oag::DeviceId source = slots_.deviceFor(*primary);
+        const oag::DeviceRecord* record = registry_.find(source);
+
+        if (record == nullptr ||
+            record->protocol != oag::ProtocolKind::XusbXbox360) {
+            pendingRumbleValid_ = false;
+            return;
+        }
+
+        const std::uint8_t rumblePacket[8] = {
+            0x00,
+            0x08,
+            0x00,
+            pendingRumble_.leftMotor,
+            pendingRumble_.rightMotor,
+            0x00,
+            0x00,
+            0x00,
+        };
+
+        if (tuh_xinput_send_report(
+                record->usb.deviceAddress,
+                record->usb.interfaceInstance,
+                rumblePacket,
+                sizeof(rumblePacket)
+            )) {
+            pendingRumbleValid_ = false;
+        }
+    }
+
     std::optional<oag::LogicalSlotId> primaryPcSlot() const {
         for (std::size_t i = 0;
              i < oag::LogicalSlotManager::kGamepadSlots;
@@ -374,19 +427,6 @@ private:
         return std::nullopt;
     }
 
-    void sendPrimaryPcOutput() {
-        const auto primary = primaryPcSlot();
-
-        if (!primary ||
-            *primary >= states_.size() ||
-            !states_[*primary].connected) {
-            pcOutput_.sendNeutral();
-            return;
-        }
-
-        pcOutput_.send(mapping_.process(states_[*primary]));
-    }
-
     oag::firmware::UsbPioHost usbHost_;
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;
@@ -394,7 +434,7 @@ private:
     oag::BootKeyboardInputDriver keyboard_;
     oag::BootMouseInputDriver mouse_;
     oag::PassThroughMapping mapping_;
-    oag::firmware::PcHidOutput pcOutput_;
+    oag::firmware::PcXinputDevice pcOutput_;
 
     std::array<
         oag::UniversalGamepadState,
@@ -418,6 +458,9 @@ private:
 
     std::uint8_t mountedRootMask_ = 0;
     std::uint64_t nextHostHealthCheckUs_ = 0;
+
+    oag::RumbleCommand pendingRumble_ {};
+    bool pendingRumbleValid_ = false;
 };
 
 FirmwareCore gCore;

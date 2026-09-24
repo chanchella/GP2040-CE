@@ -1,133 +1,178 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
+#include "pico/unique_id.h"
 #include "tusb.h"
 
 #include "oag/core/product_identity.h"
 
 namespace {
 
-constexpr std::uint16_t kLegacyDevelopmentVid = 0x10C4;
-constexpr std::uint16_t kLegacyDevelopmentPid = 0x82C0;
+constexpr std::uint16_t kXinputCompatibilityVid = 0x045E;
+constexpr std::uint16_t kXinputCompatibilityPid = 0x028E;
 
-constexpr std::uint8_t kInterfaceGamepad = 0;
-constexpr std::uint8_t kInterfaceCount = 1;
-constexpr std::uint8_t kEndpointGamepadIn = 0x81;
-constexpr std::uint16_t kEndpointSize = 64;
-constexpr std::uint8_t kGamepadReportId = 1;
-
-const tusb_desc_device_t kDeviceDescriptor = {
-    .bLength = sizeof(tusb_desc_device_t),
-    .bDescriptorType = TUSB_DESC_DEVICE,
-    .bcdUSB = 0x0200,
-    .bDeviceClass = 0x00,
-    .bDeviceSubClass = 0x00,
-    .bDeviceProtocol = 0x00,
-    .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
-    .idVendor = kLegacyDevelopmentVid,
-    .idProduct = kLegacyDevelopmentPid,
-    .bcdDevice = 0x0100,
-    .iManufacturer = 0x01,
-    .iProduct = 0x02,
-    .iSerialNumber = 0x03,
-    .bNumConfigurations = 0x01,
+const std::uint8_t kDeviceDescriptor[] = {
+    0x12,       // bLength
+    0x01,       // DEVICE
+    0x00, 0x02, // USB 2.00
+    0xFF,       // vendor-specific device class
+    0xFF,
+    0xFF,
+    0x40,       // EP0 = 64
+    0x5E, 0x04, // compatibility VID 045E
+    0x8E, 0x02, // compatibility PID 028E
+    0x14, 0x01, // bcdDevice 1.14
+    0x01,       // manufacturer
+    0x02,       // product
+    0x03,       // serial
+    0x01,       // one configuration
 };
 
-// U1 development HID profile:
-// 16 buttons, one hat, four signed 8-bit axes, two 8-bit triggers.
-// The legacy VID/PID above is retained only for continuity with the G2E3
-// development baseline. It is not a console-authentication identity.
-const std::uint8_t kHidReportDescriptor[] = {
-    0x05, 0x01,
-    0x09, 0x05,
-    0xA1, 0x01,
-    0x85, kGamepadReportId,
-
-    0x05, 0x09,
-    0x19, 0x01,
-    0x29, 0x10,
-    0x15, 0x00,
-    0x25, 0x01,
-    0x75, 0x01,
-    0x95, 0x10,
-    0x81, 0x02,
-
-    0x05, 0x01,
-    0x09, 0x39,
-    0x15, 0x00,
-    0x25, 0x07,
-    0x35, 0x00,
-    0x46, 0x3B, 0x01,
-    0x65, 0x14,
-    0x75, 0x04,
-    0x95, 0x01,
-    0x81, 0x42,
-    0x65, 0x00,
-    0x75, 0x04,
-    0x95, 0x01,
-    0x81, 0x03,
-
-    0x05, 0x01,
-    0x09, 0x30,
-    0x09, 0x31,
-    0x09, 0x33,
-    0x09, 0x34,
-    0x15, 0x81,
-    0x25, 0x7F,
-    0x75, 0x08,
-    0x95, 0x04,
-    0x81, 0x02,
-
-    0x09, 0x32,
-    0x09, 0x35,
-    0x15, 0x00,
-    0x26, 0xFF, 0x00,
-    0x75, 0x08,
-    0x95, 0x02,
-    0x81, 0x02,
-
-    0xC0,
-};
-
-constexpr std::uint16_t kConfigTotalLength =
-    TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN;
-
+// Xbox 360/XInput-compatible USB layout used by the project's Golden
+// XInput driver. Only the gameplay IN/OUT pair is actively used by OAG U2E.
+// Audio/plugin/security interfaces are described for Windows XInput binding;
+// OAG does not synthesize console authentication in this PC profile.
 const std::uint8_t kConfigurationDescriptor[] = {
-    TUD_CONFIG_DESCRIPTOR(
-        1,
-        kInterfaceCount,
-        0,
-        kConfigTotalLength,
-        0,
-        100
-    ),
+    // Configuration
+    0x09, 0x02,
+    0x99, 0x00,
+    0x04,
+    0x01,
+    0x00,
+    0xA0,
+    0xFA,
 
-    TUD_HID_DESCRIPTOR(
-        kInterfaceGamepad,
-        0,
-        HID_ITF_PROTOCOL_NONE,
-        sizeof(kHidReportDescriptor),
-        kEndpointGamepadIn,
-        kEndpointSize,
-        1
-    ),
+    // Interface 0: XInput gameplay/control
+    0x09, 0x04,
+    0x00, 0x00,
+    0x02,
+    0xFF, 0x5D, 0x01,
+    0x00,
+
+    // XInput gamepad descriptor
+    0x11, 0x21,
+    0x00, 0x01,
+    0x01,
+    0x25,
+    0x81,
+    0x14,
+    0x00, 0x00, 0x00, 0x00, 0x13,
+    0x02,
+    0x08,
+    0x00, 0x00,
+
+    // Gameplay IN
+    0x07, 0x05,
+    0x81,
+    0x03,
+    0x20, 0x00,
+    0x01,
+
+    // Gameplay OUT
+    0x07, 0x05,
+    0x02,
+    0x03,
+    0x20, 0x00,
+    0x08,
+
+    // Interface 1: XInput audio compatibility interface
+    0x09, 0x04,
+    0x01, 0x00,
+    0x04,
+    0xFF, 0x5D, 0x03,
+    0x00,
+
+    0x1B, 0x21,
+    0x00, 0x01, 0x01, 0x01,
+    0x83, 0x40, 0x01,
+    0x04, 0x20, 0x16,
+    0x85,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x16,
+    0x06,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x07, 0x05, 0x83, 0x03, 0x20, 0x00, 0x02,
+    0x07, 0x05, 0x04, 0x03, 0x20, 0x00, 0x04,
+    0x07, 0x05, 0x85, 0x03, 0x20, 0x00, 0x40,
+    0x07, 0x05, 0x06, 0x03, 0x20, 0x00, 0x10,
+
+    // Interface 2: XInput plugin module compatibility interface
+    0x09, 0x04,
+    0x02, 0x00,
+    0x01,
+    0xFF, 0x5D, 0x02,
+    0x00,
+
+    0x09, 0x21,
+    0x00, 0x01,
+    0x01,
+    0x22,
+    0x86,
+    0x03,
+    0x00,
+
+    0x07, 0x05,
+    0x86,
+    0x03,
+    0x20, 0x00,
+    0x10,
+
+    // Interface 3: security interface descriptor.
+    // No console authentication provider is active in U2E.
+    0x09, 0x04,
+    0x03, 0x00,
+    0x00,
+    0xFF, 0xFD, 0x13,
+    0x04,
+
+    0x06, 0x41,
+    0x00, 0x01, 0x01, 0x03,
 };
 
-const char* const kStrings[] = {
-    nullptr,
-    oag::product::kManufacturer,
-    oag::product::kProductName,
-    "U1-PICO2W",
-};
+static_assert(sizeof(kDeviceDescriptor) == 18);
+static_assert(sizeof(kConfigurationDescriptor) == 0x99);
 
 std::uint16_t gStringDescriptor[32] {};
+char gSerial[24] {};
+
+const char* stringValue(std::uint8_t index) {
+    switch (index) {
+        case 1:
+            return oag::product::kManufacturer;
+        case 2:
+            return oag::product::kProductName;
+        case 3: {
+            pico_unique_board_id_t id {};
+            pico_get_unique_board_id(&id);
+
+            std::snprintf(
+                gSerial,
+                sizeof(gSerial),
+                "OAG-%02X%02X%02X%02X%02X%02X",
+                id.id[2],
+                id.id[3],
+                id.id[4],
+                id.id[5],
+                id.id[6],
+                id.id[7]
+            );
+            return gSerial;
+        }
+        case 4:
+            return "OAG XInput Compatibility";
+        default:
+            return nullptr;
+    }
+}
 
 } // namespace
 
 extern "C" std::uint8_t const* tud_descriptor_device_cb(void) {
-    return reinterpret_cast<std::uint8_t const*>(&kDeviceDescriptor);
+    return kDeviceDescriptor;
 }
 
 extern "C" std::uint8_t const* tud_descriptor_configuration_cb(
@@ -135,13 +180,6 @@ extern "C" std::uint8_t const* tud_descriptor_configuration_cb(
 ) {
     (void)index;
     return kConfigurationDescriptor;
-}
-
-extern "C" std::uint8_t const* tud_hid_descriptor_report_cb(
-    std::uint8_t instance
-) {
-    (void)instance;
-    return kHidReportDescriptor;
 }
 
 extern "C" std::uint16_t const* tud_descriptor_string_cb(
@@ -157,11 +195,7 @@ extern "C" std::uint16_t const* tud_descriptor_string_cb(
         return gStringDescriptor;
     }
 
-    if (index >= (sizeof(kStrings) / sizeof(kStrings[0]))) {
-        return nullptr;
-    }
-
-    const char* text = kStrings[index];
+    const char* text = stringValue(index);
     if (text == nullptr) {
         return nullptr;
     }
@@ -170,13 +204,13 @@ extern "C" std::uint16_t const* tud_descriptor_string_cb(
         std::min<std::size_t>(std::strlen(text), 31);
 
     for (std::size_t i = 0; i < length; ++i) {
-        gStringDescriptor[1 + i] =
+        gStringDescriptor[i + 1] =
             static_cast<std::uint8_t>(text[i]);
     }
 
     gStringDescriptor[0] = static_cast<std::uint16_t>(
         (TUSB_DESC_STRING << 8) |
-        (2 * length + 2)
+        (2u * length + 2u)
     );
 
     return gStringDescriptor;

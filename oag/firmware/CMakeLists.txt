@@ -15,19 +15,19 @@ set(PICO_PIO_USB_PATH "${OAG_REPO_ROOT}/lib/pico_pio_usb" CACHE PATH "Pinned Pic
 
 include("${OAG_REPO_ROOT}/pico_sdk_import.cmake")
 
-project(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W LANGUAGES C CXX ASM)
+project(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W LANGUAGES C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
-add_executable(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W
+add_executable(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W
     src/main.cpp
     src/usb_pio_host.cpp
     src/usb_pio_probe.c
     src/xinput_host.cpp
-    src/pc_hid_output.cpp
+    src/pc_xinput_device.cpp
     src/usb_descriptors.cpp
 
     ../src/device/device_registry.cpp
@@ -36,43 +36,46 @@ add_executable(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W
     ../src/protocol/hid/boot_mouse_input_driver.cpp
     ../src/mapping/logical_slot_manager.cpp
     ../src/mapping/pass_through_mapping.cpp
+    ../src/output/xinput/xinput_report_encoder.cpp
+    ../src/output/xinput/xinput_feedback_decoder.cpp
 )
 
-target_include_directories(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W PRIVATE
+target_include_directories(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}"
     "${CMAKE_CURRENT_LIST_DIR}/include"
     "${CMAKE_CURRENT_LIST_DIR}/../include"
 )
 
-target_compile_definitions(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W PRIVATE
+target_compile_definitions(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W PRIVATE
     PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64
     PICO_STACK_SIZE=0x1000
 )
 
-target_compile_options(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W PRIVATE
+target_compile_options(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W PRIVATE
     -Wall
     -Wextra
     -Wpedantic
 )
 
-target_link_libraries(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W PRIVATE
+target_link_libraries(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W PRIVATE
     pico_stdlib
+    pico_unique_id
     tinyusb_device
     tinyusb_host
     tinyusb_pico_pio_usb
 )
 
-pico_enable_stdio_usb(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W 0)
-pico_enable_stdio_uart(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W 0)
+pico_enable_stdio_usb(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W 0)
+pico_enable_stdio_uart(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W 0)
 
 pico_set_program_name(
-    OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W
+    OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W
     "OAG Abo Gemi Ultra Gaming"
 )
-pico_set_program_version(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W "U1")
+pico_set_program_version(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W "U2E")
 
-target_link_options(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W PRIVATE
-    "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W.map"
+target_link_options(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W PRIVATE
+    "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W.map"
 )
 
-pico_add_extra_outputs(OAG_Abo_Gemi_Ultra_Gaming_U1_Pico2W)
+pico_add_extra_outputs(OAG_Abo_Gemi_Ultra_Gaming_U2E_Pico2W)

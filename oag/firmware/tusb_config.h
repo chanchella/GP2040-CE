@@ -23,15 +23,16 @@ extern "C" {
 #define CFG_TUD_MSC 0
 #define CFG_TUD_MIDI 0
 #define CFG_TUD_VENDOR 0
-#define CFG_TUD_HID 1
+
+// U2E device-side output is a custom Xbox 360/XInput-compatible vendor
+// interface. Generic HID device mode is intentionally disabled.
+#define CFG_TUD_HID 0
 
 #define CFG_TUH_ENABLED 1
 #define CFG_TUH_RPI_PIO_USB 1
 #define CFG_TUH_HUB 0
 #define CFG_TUH_DEVICE_MAX 4
 
-// Three physical roots can carry keyboard, mouse and additional HID
-// interfaces concurrently. Four host HID slots leave one spare interface.
 #define CFG_TUH_HID 4
 #define CFG_TUH_HID_EPIN_BUFSIZE 64
 #define CFG_TUH_HID_EPOUT_BUFSIZE 64
