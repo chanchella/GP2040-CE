@@ -89,7 +89,7 @@ constexpr std::array<PlatformProfile, 11> kProfiles {{
     makeProfile(
         PlatformId::NintendoSwitch,
         PlatformWireProtocol::NintendoSwitchHid,
-        PlatformImplementationStatus::Planned,
+        PlatformImplementationStatus::SoftwareFoundation,
         kNoAuth,
         1,
         true,

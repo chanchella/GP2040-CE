@@ -18,6 +18,7 @@ add_library(oag_core STATIC
     src/output/platform/platform_profile_registry.cpp
     src/protocol/hid/generic_hid_gamepad_driver.cpp
     src/mapping/keyboard_mouse_gamepad_mapper.cpp
+    src/output/platform/switch/switch_pro_report_encoder.cpp
 )
 
 target_include_directories(oag_core
@@ -97,4 +98,11 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_keyboard_mouse_gamepad_tests PRIVATE oag_core)
     target_compile_features(oag_keyboard_mouse_gamepad_tests PRIVATE cxx_std_17)
     add_test(NAME oag_keyboard_mouse_gamepad_tests COMMAND oag_keyboard_mouse_gamepad_tests)
+
+    add_executable(oag_switch_pro_encoder_tests
+        tests/host/test_switch_pro_report_encoder.cpp
+    )
+    target_link_libraries(oag_switch_pro_encoder_tests PRIVATE oag_core)
+    target_compile_features(oag_switch_pro_encoder_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_switch_pro_encoder_tests COMMAND oag_switch_pro_encoder_tests)
 endif()

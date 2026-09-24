@@ -59,7 +59,7 @@ int main() {
     assert(!switchProfile.auth.required());
     assert(
         switchProfile.implementation ==
-        PlatformImplementationStatus::Planned
+        PlatformImplementationStatus::SoftwareFoundation
     );
 
     return 0;
