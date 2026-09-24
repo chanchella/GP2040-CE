@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U9D",
+    "phase": "U9E",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -126,6 +126,8 @@ manifest = {
         "bluetooth_hids_api": "hids_host",
         "bluetooth_sdk_23_migration": True,
         "bluetooth_u9d_bond_reset_version": 3,
+        "bluetooth_u9e_live_hid_report_dispatch_fix": True,
+        "bluetooth_hids_host_accepts_gattservice_packet_type": True,
         "authentication": False,
     },
     "pc_xinput_profile": {

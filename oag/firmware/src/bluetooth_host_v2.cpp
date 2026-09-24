@@ -777,8 +777,15 @@ void BluetoothHostV2::handleLeHidPacket(
     (void)channel;
     (void)size;
 
+    // BTstack 075a078 / HIDS Host calls this handler with two packet_type
+    // forms: setup/connection events can arrive as HCI_EVENT_PACKET, while
+    // live HID notifications are dispatched as HCI_EVENT_GATTSERVICE_META.
+    // The historical BluetoothHIDMaster intentionally ignored packet_type
+    // and trusted the meta-event byte in the packet itself. Do the same here
+    // so live input reports are not dropped before parsing.
+    (void)packetType;
+
     if (
-        packetType != HCI_EVENT_PACKET ||
         packet == nullptr ||
         hci_event_packet_get_type(packet) !=
             HCI_EVENT_GATTSERVICE_META
