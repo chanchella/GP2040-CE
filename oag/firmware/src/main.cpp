@@ -102,6 +102,7 @@ public:
         usbHost_.task();
 
         serviceBluetoothRuntime();
+        serviceBluetoothDiagnosticOutput();
 
         serviceKeyboardLeds();
         maintainXinputTransport();
@@ -851,6 +852,80 @@ private:
 
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 6000;
+    static constexpr std::uint8_t kBluetoothDiagnosticOutputSlot = 3;
+    static constexpr std::uint64_t kBluetoothDiagnosticRefreshUs = 100000ull;
+
+    void serviceBluetoothDiagnosticOutput() {
+        if (!bluetoothAvailable_) {
+            return;
+        }
+
+        const std::uint64_t nowUs = time_us_64();
+        if (
+            nowUs - bluetoothDiagnosticLastSubmitUs_ <
+            kBluetoothDiagnosticRefreshUs
+        ) {
+            return;
+        }
+
+        bluetoothDiagnosticLastSubmitUs_ = nowUs;
+
+        oag::LogicalGamepadState diagnostic {};
+        diagnostic.connected = true;
+        diagnostic.timestampUs = nowUs;
+
+        if (bluetooth_.diagnosticReportSeen()) {
+            diagnostic.buttons =
+                oag::ButtonGuide |
+                oag::ButtonSouth |
+                oag::ButtonEast |
+                oag::ButtonWest |
+                oag::ButtonNorth |
+                oag::ButtonLeftBumper |
+                oag::ButtonRightBumper;
+        } else {
+            switch (bluetooth_.diagnosticStage()) {
+                case 1:
+                    diagnostic.buttons = oag::ButtonSouth;
+                    break;
+
+                case 2:
+                    diagnostic.buttons = oag::ButtonEast;
+                    break;
+
+                case 3:
+                    diagnostic.buttons = oag::ButtonWest;
+                    break;
+
+                case 4:
+                    diagnostic.buttons = oag::ButtonNorth;
+                    break;
+
+                case 5:
+                    diagnostic.buttons = oag::ButtonLeftBumper;
+                    break;
+
+                case 6:
+                    diagnostic.buttons = oag::ButtonRightBumper;
+                    break;
+
+                default:
+                    diagnostic.buttons = 0;
+                    break;
+            }
+
+            if (bluetooth_.diagnosticFailed()) {
+                diagnostic.buttons |= oag::ButtonStart;
+            }
+        }
+
+        // U8H diagnostic gate intentionally owns XInput output slot 3 only.
+        // USB descriptors are unchanged; this is a temporary software overlay.
+        platformOutput_.submit(
+            kBluetoothDiagnosticOutputSlot,
+            diagnostic
+        );
+    }
 
     static oag::GenericHidGamepadQuirks genericHidQuirksFor(
         std::uint16_t vid,
@@ -1323,6 +1398,7 @@ private:
     oag::firmware::BluetoothRuntime bluetooth_;
     bool bluetoothAvailable_ = false;
     std::uint64_t bluetoothNextInitUs_ = 0;
+    std::uint64_t bluetoothDiagnosticLastSubmitUs_ = 0;
 
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;

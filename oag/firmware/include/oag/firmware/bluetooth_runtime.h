@@ -58,6 +58,18 @@ public:
         return initialized_;
     }
 
+    std::uint8_t diagnosticStage() const {
+        return diagnosticStage_;
+    }
+
+    bool diagnosticFailed() const {
+        return diagnosticFailed_;
+    }
+
+    bool diagnosticReportSeen() const {
+        return diagnosticReportSeen_;
+    }
+
     // Called by the C BTstack thunks in the translation unit.
     void handleHciPacket(
         std::uint8_t packetType,
