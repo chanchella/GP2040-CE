@@ -12,6 +12,8 @@
 #include "oag/device/usb_device_classifier.h"
 #include "oag/feedback/rumble_command.h"
 #include "oag/feedback/keyboard_led_state.h"
+#include "oag/firmware/bluetooth_hid_parser_v2.h"
+#include "oag/firmware/bluetooth_host_v2.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
@@ -60,7 +62,8 @@ static constexpr std::uint8_t kXoneAuthDone[] = {
     0x06, 0x20, 0x00, 0x02, 0x01, 0x00
 };
 
-class FirmwareCore {
+class FirmwareCore final
+    : public oag::firmware::BluetoothHostV2Observer {
 public:
     bool start() {
         // Golden baseline transport invariant: USB Host runs at 120 MHz to
@@ -73,10 +76,15 @@ public:
             return false;
         }
 
-        // PIO USB Host must remain initialized before future CYW43/BT start.
+        // Hardware-verified invariant: PIO USB Host owns the board first.
         if (!usbHost_.start()) {
             return false;
         }
+
+        // Golden G2E3 invariant: give PIO USB 100 ms to settle before
+        // CYW43/BTstack is initialized. Bluetooth is fail-soft.
+        bluetoothInitNotBeforeUs_ =
+            time_us_64() + 100000ull;
 
         if (!platformOutput_.initialize()) {
             return false;
@@ -90,6 +98,7 @@ public:
         platformOutput_.poll();
 
         usbHost_.task();
+        serviceBluetoothHostV2();
 
         serviceKeyboardLeds();
         maintainXinputTransport();
@@ -622,9 +631,285 @@ public:
         }
     }
 
+
+    void onBluetoothHidReady(
+        oag::TransportType transport,
+        std::uint16_t connectionHandle,
+        std::uint8_t serviceInstance,
+        const std::uint8_t* descriptor,
+        std::size_t descriptorLength
+    ) override {
+        if (
+            descriptor == nullptr ||
+            descriptorLength == 0
+        ) {
+            return;
+        }
+
+        const oag::BluetoothTransportHandle handle {
+            transport,
+            connectionHandle,
+            serviceInstance,
+        };
+
+        if (registry_.findBluetooth(handle)) {
+            return;
+        }
+
+        oag::firmware::BluetoothHidDescriptorV2 parsed {};
+        if (!bluetoothHidParser_.parseDescriptor(
+                descriptor,
+                descriptorLength,
+                parsed
+            )) {
+            return;
+        }
+
+        oag::ProtocolKind protocol =
+            oag::ProtocolKind::Unknown;
+
+        if (parsed.hasGamepad) {
+            protocol = oag::ProtocolKind::HidGamepad;
+        } else if (parsed.hasKeyboard) {
+            protocol = oag::ProtocolKind::HidKeyboard;
+        } else if (parsed.hasMouse) {
+            protocol = oag::ProtocolKind::HidMouse;
+        }
+
+        if (protocol == oag::ProtocolKind::Unknown) {
+            return;
+        }
+
+        const auto id = registry_.connectBluetooth(
+            handle,
+            0,
+            0,
+            protocol
+        );
+
+        if (
+            !id ||
+            id->index >= oag::DeviceRegistry::kCapacity
+        ) {
+            return;
+        }
+
+        bluetoothHidDescriptors_[id->index] = parsed;
+
+        if (parsed.hasGamepad) {
+            const auto slot = slots_.bindFirstFree(*id);
+
+            if (!slot) {
+                if (!parsed.hasKeyboard && !parsed.hasMouse) {
+                    bluetoothHidDescriptors_[id->index] = {};
+                    registry_.disconnect(*id);
+                    return;
+                }
+            } else {
+                states_[*slot] = {};
+                states_[*slot].source = *id;
+                states_[*slot].connected = true;
+            }
+        }
+
+        if (parsed.hasKeyboard) {
+            keyboardStates_[id->index] = {};
+            keyboardStates_[id->index].source = *id;
+            keyboardStates_[id->index].connected = true;
+        }
+
+        if (parsed.hasMouse) {
+            mouseStates_[id->index] = {};
+            mouseStates_[id->index].source = *id;
+            mouseStates_[id->index].connected = true;
+        }
+    }
+
+    void onBluetoothHidReport(
+        oag::TransportType transport,
+        std::uint16_t connectionHandle,
+        std::uint8_t serviceInstance,
+        const std::uint8_t* descriptor,
+        std::size_t descriptorLength,
+        const std::uint8_t* report,
+        std::size_t reportLength
+    ) override {
+        const oag::BluetoothTransportHandle handle {
+            transport,
+            connectionHandle,
+            serviceInstance,
+        };
+
+        const auto id = registry_.findBluetooth(handle);
+
+        if (
+            !id ||
+            id->index >= oag::DeviceRegistry::kCapacity
+        ) {
+            return;
+        }
+
+        const auto& info =
+            bluetoothHidDescriptors_[id->index];
+
+        const std::uint64_t nowUs =
+            time_us_64();
+
+        bool composedChanged = false;
+
+        if (info.hasGamepad) {
+            const auto slot = slots_.slotFor(*id);
+
+            if (
+                slot &&
+                *slot < states_.size() &&
+                bluetoothHidParser_.parseGamepad(
+                    *id,
+                    transport,
+                    info,
+                    descriptor,
+                    descriptorLength,
+                    report,
+                    reportLength,
+                    nowUs,
+                    states_[*slot]
+                )
+            ) {
+                sendSlotOutput(*slot);
+            }
+        }
+
+        if (
+            info.hasKeyboard &&
+            bluetoothHidParser_.parseKeyboard(
+                *id,
+                info,
+                descriptor,
+                descriptorLength,
+                report,
+                reportLength,
+                nowUs,
+                keyboardStates_[id->index]
+            )
+        ) {
+            composedChanged = true;
+        }
+
+        if (
+            info.hasMouse &&
+            bluetoothHidParser_.parseMouse(
+                *id,
+                info,
+                descriptor,
+                descriptorLength,
+                report,
+                reportLength,
+                nowUs,
+                mouseStates_[id->index]
+            )
+        ) {
+            const oag::MouseState& mouseState =
+                mouseStates_[id->index];
+
+            currentMouseMotion_ = {
+                mouseState.dx,
+                mouseState.dy,
+            };
+
+            mouseAimActive_ =
+                currentMouseMotion_.dx != 0 ||
+                currentMouseMotion_.dy != 0;
+
+            if (mouseAimActive_) {
+                mouseAimExpiresUs_ =
+                    nowUs + kMouseAimHoldUs;
+            }
+
+            composedChanged = true;
+        }
+
+        if (composedChanged) {
+            sendComposedOutput();
+        }
+    }
+
+    void onBluetoothHidDisconnected(
+        oag::TransportType transport,
+        std::uint16_t connectionHandle,
+        std::uint8_t serviceInstance
+    ) override {
+        const oag::BluetoothTransportHandle handle {
+            transport,
+            connectionHandle,
+            serviceInstance,
+        };
+
+        const auto id = registry_.findBluetooth(handle);
+
+        if (
+            !id ||
+            id->index >= oag::DeviceRegistry::kCapacity
+        ) {
+            return;
+        }
+
+        const auto slot = slots_.slotFor(*id);
+
+        if (slot && *slot < states_.size()) {
+            states_[*slot] = {};
+            slots_.release(*id);
+        }
+
+        const bool hadKeyboard =
+            keyboardStates_[id->index].connected;
+        const bool hadMouse =
+            mouseStates_[id->index].connected;
+
+        keyboardStates_[id->index] = {};
+        mouseStates_[id->index] = {};
+        bluetoothHidDescriptors_[id->index] = {};
+        registry_.disconnect(*id);
+
+        if (slot) {
+            sendSlotOutput(*slot);
+        }
+
+        if (hadKeyboard || hadMouse) {
+            currentMouseMotion_ = {};
+            mouseAimActive_ = false;
+            sendComposedOutput();
+        }
+    }
+
 private:
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 6000;
+
+    void serviceBluetoothHostV2() {
+        const std::uint64_t nowUs =
+            time_us_64();
+
+        if (!bluetoothInitialized_) {
+            if (
+                bluetoothInitNotBeforeUs_ == 0 ||
+                nowUs < bluetoothInitNotBeforeUs_
+            ) {
+                return;
+            }
+
+            if (bluetoothHost_.initialize(*this)) {
+                bluetoothInitialized_ = true;
+                bluetoothInitNotBeforeUs_ = 0;
+                return;
+            }
+
+            bluetoothInitNotBeforeUs_ =
+                nowUs + 1000000ull;
+            return;
+        }
+
+        bluetoothHost_.poll();
+    }
 
     static oag::GenericHidGamepadQuirks genericHidQuirksFor(
         std::uint16_t vid,
@@ -701,8 +986,11 @@ private:
             const oag::DeviceRecord* record =
                 registry_.find(keyboardStates_[i].source);
 
-            if (record == nullptr ||
-                record->protocol != oag::ProtocolKind::HidKeyboard) {
+            if (
+                record == nullptr ||
+                record->transport != oag::TransportType::UsbPioHost ||
+                record->protocol != oag::ProtocolKind::HidKeyboard
+            ) {
                 continue;
             }
 
@@ -1092,6 +1380,12 @@ private:
     }
 
     oag::firmware::UsbPioHost usbHost_;
+
+    oag::firmware::BluetoothHostV2 bluetoothHost_;
+    oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
+    bool bluetoothInitialized_ = false;
+    std::uint64_t bluetoothInitNotBeforeUs_ = 0;
+
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;
     oag::XusbInputDriver xusb_;
@@ -1152,6 +1446,11 @@ private:
         oag::GenericHidGamepadQuirks,
         oag::DeviceRegistry::kCapacity
     > genericHidQuirks_ {};
+
+    std::array<
+        oag::firmware::BluetoothHidDescriptorV2,
+        oag::DeviceRegistry::kCapacity
+    > bluetoothHidDescriptors_ {};
 
     std::array<
         std::uint8_t,
