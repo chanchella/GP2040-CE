@@ -14,6 +14,7 @@ add_library(oag_core STATIC
     src/mapping/mouse_to_stick_mapper.cpp
     src/protocol/hid/boot_keyboard_input_driver.cpp
     src/protocol/hid/boot_mouse_input_driver.cpp
+    src/mapping/digital_binding_engine.cpp
 )
 
 target_include_directories(oag_core
@@ -59,4 +60,13 @@ if(OAG_BUILD_HOST_TESTS)
     target_compile_features(oag_hid_boot_parser_tests PRIVATE cxx_std_17)
 
     add_test(NAME oag_hid_boot_parser_tests COMMAND oag_hid_boot_parser_tests)
+
+    add_executable(oag_digital_binding_tests
+        tests/host/test_digital_binding_engine.cpp
+    )
+
+    target_link_libraries(oag_digital_binding_tests PRIVATE oag_core)
+    target_compile_features(oag_digital_binding_tests PRIVATE cxx_std_17)
+
+    add_test(NAME oag_digital_binding_tests COMMAND oag_digital_binding_tests)
 endif()
