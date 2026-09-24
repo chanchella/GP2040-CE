@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u9c:
+  firmware-u9d:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -78,23 +78,43 @@ jobs:
       - name: Setup Pico SDK toolchain
         uses: Fortinbra/RaspberryPiPicoBuild@v7
 
+      - name: Checkout exact Arduino-Pico 6.1.1 SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-u9d
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify exact U9D SDK and Bluetooth dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-u9d rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          test "$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
+          test "$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-u9d" >> "${GITHUB_ENV}"
+          echo "U9D_PICO_SDK_230=PASS"
+          echo "U9D_BTSTACK_HIDS_HOST=PASS"
+
       - name: Verify and prepare pinned dependencies
         shell: bash
         run: |
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U9C firmware
+      - name: Configure Pico 2 W U9D firmware
         shell: bash
         run: |
           set -euo pipefail
-          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk" \
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-u9d" \
           cmake -S oag/firmware -B build/oag-fw \
             -DCMAKE_BUILD_TYPE=Release \
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U9C firmware
+      - name: Build Pico 2 W U9D firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -140,7 +160,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U9C"
+          assert manifest["phase"] == "U9D"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -189,6 +209,13 @@ jobs:
           assert manifest["features"]["bluetooth_scan_window"] == 50
           assert manifest["features"]["bluetooth_deferred_connect_outside_adv_callback"] is True
           assert manifest["features"]["bluetooth_u9c_bond_reset_version"] == 2
+          assert manifest["features"]["bluetooth_u9d_exact_stack_generation"] is True
+          assert manifest["features"]["bluetooth_hids_api"] == "hids_host"
+          assert manifest["features"]["bluetooth_sdk_23_migration"] is True
+          assert manifest["features"]["bluetooth_u9d_bond_reset_version"] == 3
+          assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
+          assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
           assert manifest["features"]["mouse_aim_recenter_us"] == 6000
           assert manifest["features"]["default_platform_profile"] == "PC_XINPUT_360"
           assert manifest["pc_xinput_profile"]["console_authentication"] is False
@@ -205,17 +232,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9C_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9D_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9C_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9D_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9C_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U9D_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U9C firmware bundle
+      - name: Upload U9D firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U9C-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U9D-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

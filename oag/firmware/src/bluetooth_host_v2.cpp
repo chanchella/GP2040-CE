@@ -7,7 +7,7 @@
 
 #include "btstack.h"
 #include "btstack_tlv.h"
-#include "ble/gatt-service/hids_client.h"
+#include "ble/gatt-service/hids_host.h"
 
 namespace {
 
@@ -74,7 +74,7 @@ void discoveryTimerThunk(btstack_timer_source_t* timer) {
 }
 
 constexpr std::uint32_t kU9FreshBondTag = 0x4F394252u;
-constexpr std::uint32_t kU9FreshBondVersion = 2u; // U9C compatibility reset
+constexpr std::uint32_t kU9FreshBondVersion = 3u; // U9D SDK 2.3 / HIDS Host reset
 constexpr std::uint32_t kLeScanWindowMs = 5000u;
 
 // Minimal GAP Device Name ATT database. This mirrors the historical
@@ -148,7 +148,7 @@ bool BluetoothHostV2::initialize(
         packetThunk
     );
 
-    hids_client_init(
+    hids_host_init(
         leDescriptorStorage_.data(),
         static_cast<std::uint16_t>(
             leDescriptorStorage_.size()
@@ -461,10 +461,11 @@ void BluetoothHostV2::startLeScan() {
 
     // Historical BluetoothHCI::scanBLE() used passive scan, interval 75,
     // window 50. Keep the same cadence for the compatibility bootstrap.
-    gap_set_scan_parameters(
+    gap_set_scan_params(
         0,
         75,
-        50
+        50,
+        0
     );
 
     gap_start_scan();
@@ -684,7 +685,7 @@ void BluetoothHostV2::startLeHids(
 
     std::uint16_t cid = 0;
     const std::uint8_t status =
-        hids_client_connect(
+        hids_host_connect(
             connectionHandle,
             leHidPacketThunk,
             HID_PROTOCOL_MODE_REPORT,
@@ -830,13 +831,13 @@ void BluetoothHostV2::handleLeHidPacket(
                     ++service
                 ) {
                     const std::uint8_t* descriptor =
-                        hids_client_descriptor_storage_get_descriptor_data(
+                        hids_host_descriptor_storage_get_descriptor_data(
                             peer->hidCid,
                             service
                         );
 
                     const std::uint16_t descriptorLength =
-                        hids_client_descriptor_storage_get_descriptor_len(
+                        hids_host_descriptor_storage_get_descriptor_len(
                             peer->hidCid,
                             service
                         );
@@ -885,13 +886,13 @@ void BluetoothHostV2::handleLeHidPacket(
             }
 
             const std::uint8_t* descriptor =
-                hids_client_descriptor_storage_get_descriptor_data(
+                hids_host_descriptor_storage_get_descriptor_data(
                     peer->hidCid,
                     service
                 );
 
             const std::uint16_t descriptorLength =
-                hids_client_descriptor_storage_get_descriptor_len(
+                hids_host_descriptor_storage_get_descriptor_len(
                     peer->hidCid,
                     service
                 );

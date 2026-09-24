@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 import subprocess
 import sys
 
@@ -48,10 +49,17 @@ branch = git_in(root, "rev-parse", "--abbrev-ref", "HEAD")
 pio_sha = git_in(root / "lib/pico_pio_usb", "rev-parse", "HEAD")
 tinyusb_sha = git_in(root / "lib/tinyusb", "rev-parse", "HEAD")
 
+pico_sdk_path = Path(
+    os.environ.get("PICO_SDK_PATH", root.parent / "pico-sdk")
+).resolve()
+pico_sdk_sha = git_in(pico_sdk_path, "rev-parse", "HEAD")
+btstack_sha = git_in(pico_sdk_path / "lib/btstack", "rev-parse", "HEAD")
+cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
+
 manifest = {
     "product": "OAG Abo Gemi Ultra Gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U9C",
+    "phase": "U9D",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -114,6 +122,10 @@ manifest = {
         "bluetooth_scan_window": 50,
         "bluetooth_deferred_connect_outside_adv_callback": True,
         "bluetooth_u9c_bond_reset_version": 2,
+        "bluetooth_u9d_exact_stack_generation": True,
+        "bluetooth_hids_api": "hids_host",
+        "bluetooth_sdk_23_migration": True,
+        "bluetooth_u9d_bond_reset_version": 3,
         "authentication": False,
     },
     "pc_xinput_profile": {
@@ -128,6 +140,12 @@ manifest = {
         "pico_pio_usb": pio_sha,
         "tinyusb_repo": "OpenStickCommunity/tinyusb",
         "tinyusb": tinyusb_sha,
+        "pico_sdk_repo": "raspberrypi/pico-sdk",
+        "pico_sdk": pico_sdk_sha,
+        "btstack_repo": "bluekitchen/btstack",
+        "btstack": btstack_sha,
+        "cyw43_driver_repo": "georgerobotics/cyw43-driver",
+        "cyw43_driver": cyw43_sha,
     },
     "artifacts": {
         "uf2": {
@@ -151,6 +169,9 @@ manifest = {
 
 expected_pio = "5a37a66dc5d3fbe0ef3cdbeda923a757440f984f"
 expected_tinyusb = "9865cba11ecbcdd25237ba9cf4ccbe3fd1fd821d"
+expected_pico_sdk = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+expected_btstack = "075a0780f0fad7ff67d58ac19f46e8953656a752"
+expected_cyw43 = "055d64274b014dd7b1c2fc94d26e8a18face7124"
 
 if pio_sha != expected_pio:
     raise SystemExit(
@@ -160,6 +181,21 @@ if pio_sha != expected_pio:
 if tinyusb_sha != expected_tinyusb:
     raise SystemExit(
         f"manifest dependency mismatch: tinyusb {tinyusb_sha} != {expected_tinyusb}"
+    )
+
+if pico_sdk_sha != expected_pico_sdk:
+    raise SystemExit(
+        f"manifest dependency mismatch: pico-sdk {pico_sdk_sha} != {expected_pico_sdk}"
+    )
+
+if btstack_sha != expected_btstack:
+    raise SystemExit(
+        f"manifest dependency mismatch: btstack {btstack_sha} != {expected_btstack}"
+    )
+
+if cyw43_sha != expected_cyw43:
+    raise SystemExit(
+        f"manifest dependency mismatch: cyw43 {cyw43_sha} != {expected_cyw43}"
     )
 
 output.parent.mkdir(parents=True, exist_ok=True)
