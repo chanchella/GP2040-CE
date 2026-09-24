@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout ChatGPT OAG branch
         uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 2
 
       - name: Verify branch ownership
         shell: bash
@@ -31,6 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "aed44da64f668553e24eb8f4a60a991725318932"
           git diff --exit-code aed44da64f668553e24eb8f4a60a991725318932 -- oag/firmware/src oag/src
           echo "U9F_U9E_FUNCTIONAL_SOURCE_FREEZE=PASS"
 
