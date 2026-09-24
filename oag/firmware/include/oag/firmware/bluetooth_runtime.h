@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "oag/device/device_registry.h"
+#include "oag/output/logical_gamepad_state.h"
 
 namespace oag::firmware {
 
@@ -44,6 +45,15 @@ public:
     void poll();
 
     bool beginDiscovery();
+
+    void submitPeripheralGamepad(
+        const LogicalGamepadState& state
+    );
+
+    bool peripheralConnected() const {
+        return peripheralConnectionHandle_ != 0xFFFFu;
+    }
+
     bool initialized() const {
         return initialized_;
     }
@@ -71,6 +81,13 @@ public:
     );
 
     void handleSmPacket(
+        std::uint8_t packetType,
+        std::uint16_t channel,
+        std::uint8_t* packet,
+        std::uint16_t size
+    );
+
+    void handlePeripheralHidPacket(
         std::uint8_t packetType,
         std::uint16_t channel,
         std::uint8_t* packet,
@@ -125,6 +142,11 @@ private:
     void notifyLeDescriptors(LeLink& link);
     void disconnectLeServices(LeLink& link);
 
+    void configurePeripheralAdvertising();
+    void requestPeripheralSend();
+    void sendPeripheralReport();
+    static std::uint8_t dpadToHat(std::uint8_t dpad);
+
     BluetoothRuntimeObserver* observer_ = nullptr;
     bool initialized_ = false;
     bool hciWorking_ = false;
@@ -145,6 +167,11 @@ private:
     std::array<std::uint8_t, 4096> classicDescriptorStorage_ {};
     std::array<std::uint8_t, 4096> leDescriptorStorage_ {};
     std::array<std::uint8_t, 520> normalizedReport_ {};
+
+    std::uint16_t peripheralConnectionHandle_ = 0xFFFFu;
+    bool peripheralSubscribed_ = false;
+    bool peripheralSendPending_ = false;
+    LogicalGamepadState peripheralGamepadState_ {};
 };
 
 } // namespace oag::firmware

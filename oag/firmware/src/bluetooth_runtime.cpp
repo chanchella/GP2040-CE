@@ -10,6 +10,9 @@
 
 #include "btstack.h"
 #include "ble/gatt-service/hids_client.h"
+#include "ble/gatt-service/hids_device.h"
+
+#include "oag_ble_gamepad.h"
 
 namespace {
 
@@ -79,6 +82,22 @@ void smPacketThunk(
     }
 }
 
+void peripheralHidPacketThunk(
+    std::uint8_t packetType,
+    std::uint16_t channel,
+    std::uint8_t* packet,
+    std::uint16_t size
+) {
+    if (gBluetoothRuntime != nullptr) {
+        gBluetoothRuntime->handlePeripheralHidPacket(
+            packetType,
+            channel,
+            packet,
+            size
+        );
+    }
+}
+
 btstack_packet_callback_registration_t gHciRegistration {};
 btstack_packet_callback_registration_t gSmRegistration {};
 
@@ -113,6 +132,70 @@ bool asciiContains(
     }
     return false;
 }
+
+const std::uint8_t kBleGamepadReportDescriptor[] = {
+    0x05, 0x01,
+    0x09, 0x05,
+    0xA1, 0x01,
+    0x85, 0x01,
+
+    0x05, 0x09,
+    0x19, 0x01,
+    0x29, 0x10,
+    0x15, 0x00,
+    0x25, 0x01,
+    0x95, 0x10,
+    0x75, 0x01,
+    0x81, 0x02,
+
+    0x05, 0x01,
+    0x09, 0x39,
+    0x15, 0x00,
+    0x25, 0x07,
+    0x35, 0x00,
+    0x46, 0x3B, 0x01,
+    0x65, 0x14,
+    0x75, 0x04,
+    0x95, 0x01,
+    0x81, 0x42,
+    0x75, 0x04,
+    0x95, 0x01,
+    0x81, 0x03,
+
+    0x09, 0x30,
+    0x09, 0x31,
+    0x09, 0x33,
+    0x09, 0x34,
+    0x16, 0x00, 0x80,
+    0x26, 0xFF, 0x7F,
+    0x75, 0x10,
+    0x95, 0x04,
+    0x81, 0x02,
+
+    0x09, 0x32,
+    0x09, 0x35,
+    0x15, 0x00,
+    0x26, 0xFF, 0x00,
+    0x75, 0x08,
+    0x95, 0x02,
+    0x81, 0x02,
+
+    0xC0,
+};
+
+const std::uint8_t kBlePeripheralAdvertisingData[] = {
+    0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x06,
+    0x0C, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
+    'O','A','G',' ','G','a','m','e','p','a','d',
+    0x03, BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS,
+    static_cast<std::uint8_t>(
+        ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE & 0xFF
+    ),
+    static_cast<std::uint8_t>(
+        ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE >> 8
+    ),
+    0x03, BLUETOOTH_DATA_TYPE_APPEARANCE, 0xC4, 0x03,
+};
 
 bool advertisementLooksLikeHid(const std::uint8_t* packet) {
     const std::uint8_t* data =
@@ -222,9 +305,23 @@ bool BluetoothRuntime::initialize(
         )
     );
 
-    gap_set_local_name("OAG Abo Gemi Ultra Gaming");
-    gap_connectable_control(0);
-    gap_discoverable_control(0);
+    att_server_init(profile_data, nullptr, nullptr);
+
+    hids_device_init(
+        0,
+        kBleGamepadReportDescriptor,
+        static_cast<std::uint16_t>(
+            sizeof(kBleGamepadReportDescriptor)
+        )
+    );
+    hids_device_register_packet_handler(
+        peripheralHidPacketThunk
+    );
+
+    gap_set_local_name("OAG Gamepad");
+    gap_connectable_control(1);
+    gap_discoverable_control(1);
+    configurePeripheralAdvertising();
 
     hci_set_inquiry_mode(INQUIRY_MODE_RSSI_AND_EIR);
     gap_set_default_link_policy_settings(
@@ -242,6 +339,178 @@ bool BluetoothRuntime::initialize(
     initialized_ = true;
     hci_power_control(HCI_POWER_ON);
     return true;
+}
+
+void BluetoothRuntime::configurePeripheralAdvertising() {
+    bd_addr_t nullAddress {};
+    gap_advertisements_set_params(
+        0x0030,
+        0x0030,
+        0,
+        0,
+        nullAddress,
+        0x07,
+        0x00
+    );
+
+    gap_advertisements_set_data(
+        static_cast<std::uint8_t>(
+            sizeof(kBlePeripheralAdvertisingData)
+        ),
+        const_cast<std::uint8_t*>(
+            kBlePeripheralAdvertisingData
+        )
+    );
+
+    gap_advertisements_enable(1);
+}
+
+void BluetoothRuntime::submitPeripheralGamepad(
+    const LogicalGamepadState& state
+) {
+    peripheralGamepadState_ = state;
+    requestPeripheralSend();
+}
+
+void BluetoothRuntime::requestPeripheralSend() {
+    if (
+        !initialized_ ||
+        peripheralConnectionHandle_ == 0xFFFFu ||
+        !peripheralSubscribed_ ||
+        peripheralSendPending_
+    ) {
+        return;
+    }
+
+    if (
+        hids_device_request_can_send_now_event(
+            peripheralConnectionHandle_
+        ) == ERROR_CODE_SUCCESS
+    ) {
+        peripheralSendPending_ = true;
+    }
+}
+
+std::uint8_t BluetoothRuntime::dpadToHat(
+    std::uint8_t dpad
+) {
+    const bool up = (dpad & 0x01u) != 0;
+    const bool down = (dpad & 0x02u) != 0;
+    const bool left = (dpad & 0x04u) != 0;
+    const bool right = (dpad & 0x08u) != 0;
+
+    if (up && right) return 1;
+    if (right && down) return 3;
+    if (down && left) return 5;
+    if (left && up) return 7;
+    if (up) return 0;
+    if (right) return 2;
+    if (down) return 4;
+    if (left) return 6;
+    return 8;
+}
+
+void BluetoothRuntime::sendPeripheralReport() {
+    if (
+        peripheralConnectionHandle_ == 0xFFFFu ||
+        !peripheralSubscribed_
+    ) {
+        peripheralSendPending_ = false;
+        return;
+    }
+
+    auto axis16 = [](std::int32_t value) -> std::int16_t {
+        if (value == INT32_MIN) return INT16_MIN;
+        return static_cast<std::int16_t>(value >> 16);
+    };
+
+    const std::uint16_t buttons =
+        static_cast<std::uint16_t>(
+            peripheralGamepadState_.buttons & 0xFFFFu
+        );
+
+    const std::int16_t lx = axis16(peripheralGamepadState_.lx);
+    const std::int16_t ly = axis16(peripheralGamepadState_.ly);
+    const std::int16_t rx = axis16(peripheralGamepadState_.rx);
+    const std::int16_t ry = axis16(peripheralGamepadState_.ry);
+
+    const std::uint8_t report[] = {
+        static_cast<std::uint8_t>(buttons & 0xFFu),
+        static_cast<std::uint8_t>(buttons >> 8),
+        dpadToHat(peripheralGamepadState_.dpad),
+
+        static_cast<std::uint8_t>(static_cast<std::uint16_t>(lx) & 0xFFu),
+        static_cast<std::uint8_t>(
+            static_cast<std::uint16_t>(lx) >> 8
+        ),
+        static_cast<std::uint8_t>(static_cast<std::uint16_t>(ly) & 0xFFu),
+        static_cast<std::uint8_t>(
+            static_cast<std::uint16_t>(ly) >> 8
+        ),
+        static_cast<std::uint8_t>(static_cast<std::uint16_t>(rx) & 0xFFu),
+        static_cast<std::uint8_t>(
+            static_cast<std::uint16_t>(rx) >> 8
+        ),
+        static_cast<std::uint8_t>(static_cast<std::uint16_t>(ry) & 0xFFu),
+        static_cast<std::uint8_t>(
+            static_cast<std::uint16_t>(ry) >> 8
+        ),
+
+        static_cast<std::uint8_t>(
+            peripheralGamepadState_.leftTrigger >> 24
+        ),
+        static_cast<std::uint8_t>(
+            peripheralGamepadState_.rightTrigger >> 24
+        ),
+    };
+
+    hids_device_send_input_report_for_id(
+        peripheralConnectionHandle_,
+        1,
+        report,
+        sizeof(report)
+    );
+
+    peripheralSendPending_ = false;
+}
+
+void BluetoothRuntime::handlePeripheralHidPacket(
+    std::uint8_t packetType,
+    std::uint16_t channel,
+    std::uint8_t* packet,
+    std::uint16_t size
+) {
+    (void)channel;
+    (void)size;
+
+    if (
+        packetType != HCI_EVENT_PACKET ||
+        packet == nullptr ||
+        hci_event_packet_get_type(packet) != HCI_EVENT_HIDS_META
+    ) {
+        return;
+    }
+
+    switch (hci_event_hids_meta_get_subevent_code(packet)) {
+        case HIDS_SUBEVENT_INPUT_REPORT_ENABLE:
+            peripheralConnectionHandle_ =
+                hids_subevent_input_report_enable_get_con_handle(
+                    packet
+                );
+            peripheralSubscribed_ =
+                hids_subevent_input_report_enable_get_enable(
+                    packet
+                ) != 0;
+            requestPeripheralSend();
+            break;
+
+        case HIDS_SUBEVENT_CAN_SEND_NOW:
+            sendPeripheralReport();
+            break;
+
+        default:
+            break;
+    }
 }
 
 void BluetoothRuntime::poll() {
@@ -545,7 +814,10 @@ void BluetoothRuntime::serviceDiagnosticLed() {
 
     const std::uint64_t nowUs = time_us_64();
 
-    if (activeConnectionCount() != 0) {
+    if (
+        activeConnectionCount() != 0 ||
+        peripheralConnectionHandle_ != 0xFFFFu
+    ) {
         diagnosticLedState_ = true;
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
         return;
@@ -709,20 +981,31 @@ void BluetoothRuntime::handleHciPacket(
                     break;
                 }
 
-                LeLink* link = allocateLe();
-                if (link == nullptr) {
-                    gap_disconnect(
-                        gap_subevent_le_connection_complete_get_connection_handle(
-                            packet
-                        )
-                    );
-                    break;
-                }
-
-                link->connectionHandle =
+                const std::uint16_t connectionHandle =
                     gap_subevent_le_connection_complete_get_connection_handle(
                         packet
                     );
+
+                const std::uint8_t role =
+                    gap_subevent_le_connection_complete_get_role(
+                        packet
+                    );
+
+                if (role == HCI_ROLE_SLAVE) {
+                    peripheralConnectionHandle_ = connectionHandle;
+                    peripheralSubscribed_ = false;
+                    peripheralSendPending_ = false;
+                    gap_advertisements_enable(0);
+                    break;
+                }
+
+                LeLink* link = allocateLe();
+                if (link == nullptr) {
+                    gap_disconnect(connectionHandle);
+                    break;
+                }
+
+                link->connectionHandle = connectionHandle;
                 link->addressType =
                     gap_subevent_le_connection_complete_get_peer_address_type(
                         packet
@@ -768,6 +1051,13 @@ void BluetoothRuntime::handleHciPacket(
                 hci_event_disconnection_complete_get_connection_handle(
                     packet
                 );
+
+            if (handle == peripheralConnectionHandle_) {
+                peripheralConnectionHandle_ = 0xFFFFu;
+                peripheralSubscribed_ = false;
+                peripheralSendPending_ = false;
+                configurePeripheralAdvertising();
+            }
 
             if (ClassicLink* classic = findClassicByHandle(handle)) {
                 if (observer_ != nullptr) {
