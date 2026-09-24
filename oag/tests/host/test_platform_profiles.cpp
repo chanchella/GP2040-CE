@@ -63,6 +63,10 @@ int main() {
             PlatformId::Playstation4
         );
 
+    assert(
+        ps4.implementation ==
+        PlatformImplementationStatus::SoftwareFoundation
+    );
     assert(ps4.auth.required());
     assert(ps4.auth.donorFamily == AuthDonorFamily::DualShock4);
 

@@ -23,6 +23,8 @@ add_library(oag_core STATIC
     src/output/platform/playstation/ps3_feedback_decoder.cpp
     src/output/platform/xbox/xgip_packet.cpp
     src/output/platform/xbox/xbox_gip_report_encoder.cpp
+    src/output/platform/playstation/ps4_report_encoder.cpp
+    src/output/platform/playstation/ps4_feedback_decoder.cpp
 )
 
 target_include_directories(oag_core
@@ -123,4 +125,11 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_xbox_gip_encoder_tests PRIVATE oag_core)
     target_compile_features(oag_xbox_gip_encoder_tests PRIVATE cxx_std_17)
     add_test(NAME oag_xbox_gip_encoder_tests COMMAND oag_xbox_gip_encoder_tests)
+
+    add_executable(oag_ps4_encoder_tests
+        tests/host/test_ps4_report_encoder.cpp
+    )
+    target_link_libraries(oag_ps4_encoder_tests PRIVATE oag_core)
+    target_compile_features(oag_ps4_encoder_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_ps4_encoder_tests COMMAND oag_ps4_encoder_tests)
 endif()

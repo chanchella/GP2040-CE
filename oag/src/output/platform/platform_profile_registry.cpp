@@ -113,7 +113,7 @@ constexpr std::array<PlatformProfile, 11> kProfiles {{
     makeProfile(
         PlatformId::Playstation4,
         PlatformWireProtocol::Playstation4Hid,
-        PlatformImplementationStatus::Planned,
+        PlatformImplementationStatus::SoftwareFoundation,
         {
             AuthRequirementKind::LiveOfficialDonorPassthrough,
             AuthDonorFamily::DualShock4,
