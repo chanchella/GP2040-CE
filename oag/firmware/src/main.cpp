@@ -103,6 +103,7 @@ public:
         serviceKeyboardLeds();
         maintainXinputTransport();
         serviceXgipInit();
+        servicePrimaryControllerChords();
         serviceMouseAimRelease();
         servicePlatformFeedback();
     }
@@ -909,6 +910,7 @@ private:
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 6000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
+    static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
 
     void serviceBluetoothHostV2() {
         const std::uint64_t nowUs =
@@ -1195,6 +1197,63 @@ private:
         }
     }
 
+    bool primarySelectionChordPressed(
+        const oag::UniversalGamepadState& state
+    ) const {
+        return
+            (state.buttons & oag::ButtonStart) != 0 &&
+            (
+                (state.buttons & oag::ButtonShare) != 0 ||
+                (state.buttons & oag::ButtonBack) != 0
+            );
+    }
+
+    void servicePrimaryControllerChords() {
+        const std::uint64_t nowUs = time_us_64();
+
+        for (std::size_t i = 0; i < states_.size(); ++i) {
+            const oag::UniversalGamepadState& state = states_[i];
+
+            if (
+                !state.connected ||
+                !state.source.valid() ||
+                primaryChordSource_[i] != state.source
+            ) {
+                primaryChordSource_[i] =
+                    state.connected ? state.source : oag::DeviceId {};
+                primaryChordStartedUs_[i] = 0;
+                primaryChordLatched_[i] = false;
+            }
+
+            if (!state.connected || !state.source.valid()) {
+                continue;
+            }
+
+            if (!primarySelectionChordPressed(state)) {
+                primaryChordStartedUs_[i] = 0;
+                primaryChordLatched_[i] = false;
+                continue;
+            }
+
+            if (primaryChordStartedUs_[i] == 0) {
+                primaryChordStartedUs_[i] = nowUs;
+                continue;
+            }
+
+            if (
+                primaryChordLatched_[i] ||
+                nowUs - primaryChordStartedUs_[i] < kPrimarySelectHoldUs
+            ) {
+                continue;
+            }
+
+            manualPrimaryGamepad_ = state.source;
+            primaryChordLatched_[i] = true;
+            rebuildPcOutputRouting();
+            break;
+        }
+    }
+
     oag::KeyboardState combinedKeyboard() const {
         oag::KeyboardState combined {};
 
@@ -1288,33 +1347,50 @@ private:
                 nextRoutes[outputIndex++] = slot;
             };
 
-        // The first Bluetooth gamepad that connected stays Player 1 while it
-        // remains connected, regardless of wired-device enumeration order.
-        if (primaryBluetoothGamepad_.valid() &&
-            isBluetoothGamepad(primaryBluetoothGamepad_)) {
-            if (const auto slot = slots_.slotFor(primaryBluetoothGamepad_)) {
+        // Manual Start + Share/View selection overrides automatic priority
+        // while that physical controller remains connected.
+        if (
+            manualPrimaryGamepad_.valid() &&
+            isRoutableGamepad(manualPrimaryGamepad_)
+        ) {
+            if (const auto slot = slots_.slotFor(manualPrimaryGamepad_)) {
                 appendSlot(*slot);
             }
         } else {
-            primaryBluetoothGamepad_ = {};
+            manualPrimaryGamepad_ = {};
+        }
 
-            for (std::size_t i = 0;
-                 i < oag::LogicalSlotManager::kGamepadSlots;
-                 ++i) {
-                const auto slot = static_cast<oag::LogicalSlotId>(i);
-                const oag::DeviceId device = slots_.deviceFor(slot);
-
-                if (!isBluetoothGamepad(device)) {
-                    continue;
+        // Without a manual override, the first Bluetooth gamepad is Player 1.
+        if (outputIndex == 0) {
+            if (
+                primaryBluetoothGamepad_.valid() &&
+                isBluetoothGamepad(primaryBluetoothGamepad_)
+            ) {
+                if (const auto slot = slots_.slotFor(primaryBluetoothGamepad_)) {
+                    appendSlot(*slot);
                 }
+            } else {
+                primaryBluetoothGamepad_ = {};
 
-                primaryBluetoothGamepad_ = device;
-                appendSlot(slot);
-                break;
+                for (std::size_t i = 0;
+                     i < oag::LogicalSlotManager::kGamepadSlots;
+                     ++i) {
+                    const auto slot = static_cast<oag::LogicalSlotId>(i);
+                    const oag::DeviceId device = slots_.deviceFor(slot);
+
+                    if (!isBluetoothGamepad(device)) {
+                        continue;
+                    }
+
+                    primaryBluetoothGamepad_ = device;
+                    appendSlot(slot);
+                    break;
+                }
             }
         }
 
-        // Remaining Bluetooth gamepads get the next PC XInput outputs.
+        // Remaining Bluetooth gamepads stay independent; appendSlot de-dupes
+        // whichever device already owns Player 1.
         for (std::size_t i = 0;
              i < oag::LogicalSlotManager::kGamepadSlots &&
              outputIndex < nextRoutes.size();
@@ -1322,10 +1398,7 @@ private:
             const auto slot = static_cast<oag::LogicalSlotId>(i);
             const oag::DeviceId device = slots_.deviceFor(slot);
 
-            if (
-                !isBluetoothGamepad(device) ||
-                device == primaryBluetoothGamepad_
-            ) {
+            if (!isBluetoothGamepad(device)) {
                 continue;
             }
 
@@ -1686,6 +1759,22 @@ private:
     > pcOutputRoutes_ {};
 
     oag::DeviceId primaryBluetoothGamepad_ {};
+    oag::DeviceId manualPrimaryGamepad_ {};
+
+    std::array<
+        oag::DeviceId,
+        oag::LogicalSlotManager::kGamepadSlots
+    > primaryChordSource_ {};
+
+    std::array<
+        std::uint64_t,
+        oag::LogicalSlotManager::kGamepadSlots
+    > primaryChordStartedUs_ {};
+
+    std::array<
+        bool,
+        oag::LogicalSlotManager::kGamepadSlots
+    > primaryChordLatched_ {};
 
     std::array<
         oag::UniversalGamepadState,

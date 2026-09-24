@@ -26,6 +26,9 @@ enum GamepadButton : std::uint64_t {
     ButtonBack        = 1ull << 8,
     ButtonStart       = 1ull << 9,
     ButtonGuide       = 1ull << 10,
+    // Dedicated Share/Capture semantic when a transport exposes it.
+    // Legacy View/Select/Share controls remain represented by ButtonBack.
+    ButtonShare       = 1ull << 11,
 };
 
 struct UniversalGamepadState {

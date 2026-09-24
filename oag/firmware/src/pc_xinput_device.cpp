@@ -14,7 +14,7 @@ namespace {
 
 constexpr std::uint8_t kDeviceRhPort = 0;
 constexpr std::uint16_t kOutBufferSize = 32;
-constexpr std::uint8_t kReservedDescriptorType = 0x22;
+constexpr std::uint8_t kReservedDescriptorType = 0x21;
 constexpr std::size_t kOutputSlots =
     oag::firmware::PcXinputDevice::kOutputSlots;
 
@@ -202,7 +202,7 @@ bool driverXfer(
 
 const usbd_class_driver_t kDriver = {
 #if CFG_TUSB_DEBUG >= 2
-    .name = "OAG_MULTI_XINPUT_RECEIVER_DEVICE",
+    .name = "OAG_MULTI_XINPUT_DEVICE",
 #else
     .name = nullptr,
 #endif

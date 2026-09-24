@@ -38,6 +38,7 @@ constexpr std::uint16_t kUsageDpadLeft = 0x93;
 
 constexpr std::uint16_t kUsageAccelerator = 0xC4;
 constexpr std::uint16_t kUsageBrake = 0xC5;
+constexpr std::uint16_t kUsageConsumerRecord = 0x00B2;
 constexpr std::uint16_t kUsageConsumerHome = 0x0223;
 constexpr std::uint16_t kUsageConsumerAcPan = 0x0238;
 
@@ -707,6 +708,8 @@ bool BluetoothHidParserV2::parseGamepad(
     bool sawButtonPage = false;
     bool sawConsumerGuide = false;
     bool consumerGuidePressed = false;
+    bool sawConsumerShare = false;
+    bool consumerSharePressed = false;
     std::uint64_t reportButtons = 0;
     bool digitalLeftTrigger = false;
     bool digitalRightTrigger = false;
@@ -791,14 +794,21 @@ bool BluetoothHidParserV2::parseGamepad(
         // (usage 0x0223) on a separate HID input report. This mirrors the
         // historical BluetoothHIDMaster path that was hardware-proven on the
         // same controller.
-        if (
-            usagePage == kUsagePageConsumer &&
-            usage == kUsageConsumerHome
-        ) {
-            sawConsumerGuide = true;
-            consumerGuidePressed = value != 0;
-            sawUseful = true;
-            continue;
+        if (usagePage == kUsagePageConsumer) {
+            if (usage == kUsageConsumerHome) {
+                sawConsumerGuide = true;
+                consumerGuidePressed = value != 0;
+                sawUseful = true;
+                continue;
+            }
+
+            // Xbox Series Bluetooth exposes Share/Capture as Consumer Record.
+            if (usage == kUsageConsumerRecord) {
+                sawConsumerShare = true;
+                consumerSharePressed = value != 0;
+                sawUseful = true;
+                continue;
+            }
         }
 
         if (usagePage != kUsagePageGenericDesktop) {
@@ -911,13 +921,16 @@ bool BluetoothHidParserV2::parseGamepad(
                 guideLogicalMax
             );
 
-        const std::uint64_t preservedGuide =
-            reportCarriesGuideButton
-                ? 0
-                : (next.buttons & ButtonGuide);
+        std::uint64_t preservedSeparateButtons =
+            next.buttons & ButtonShare;
+
+        if (!reportCarriesGuideButton) {
+            preservedSeparateButtons |=
+                next.buttons & ButtonGuide;
+        }
 
         next.buttons =
-            reportButtons | preservedGuide;
+            reportButtons | preservedSeparateButtons;
     }
 
     if (sawConsumerGuide) {
@@ -925,6 +938,14 @@ bool BluetoothHidParserV2::parseGamepad(
             next.buttons |= ButtonGuide;
         } else {
             next.buttons &= ~ButtonGuide;
+        }
+    }
+
+    if (sawConsumerShare) {
+        if (consumerSharePressed) {
+            next.buttons |= ButtonShare;
+        } else {
+            next.buttons &= ~ButtonShare;
         }
     }
 
