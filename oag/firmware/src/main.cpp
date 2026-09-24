@@ -84,10 +84,9 @@ public:
             return false;
         }
 
-        // Preserve the proven Golden/U6E ordering invariant: PIO USB Host is
-        // live before CYW43/BTstack. Bluetooth failure is fail-soft so the
-        // hardware-verified USB path remains usable.
-        bluetoothAvailable_ = bluetooth_.initialize(*this);
+        // Golden hardware behavior: USB Host first, then 100 ms settle,
+        // then CYW43/BTstack. Keep this non-blocking.
+        bluetoothNextInitUs_ = time_us_64() + 100000ull;
 
         if (!platformOutput_.initialize()) {
             return false;
@@ -102,9 +101,7 @@ public:
 
         usbHost_.task();
 
-        if (bluetoothAvailable_) {
-            bluetooth_.poll();
-        }
+        serviceBluetoothRuntime();
 
         serviceKeyboardLeds();
         maintainXinputTransport();
@@ -828,6 +825,30 @@ public:
     }
 
 private:
+    void serviceBluetoothRuntime() {
+        const std::uint64_t nowUs = time_us_64();
+
+        if (!bluetoothAvailable_) {
+            if (
+                bluetoothNextInitUs_ == 0 ||
+                nowUs < bluetoothNextInitUs_
+            ) {
+                return;
+            }
+
+            if (bluetooth_.initialize(*this)) {
+                bluetoothAvailable_ = true;
+                bluetoothNextInitUs_ = 0;
+                return;
+            }
+
+            bluetoothNextInitUs_ = nowUs + 1000000ull;
+            return;
+        }
+
+        bluetooth_.poll();
+    }
+
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 6000;
 
@@ -1299,6 +1320,7 @@ private:
     oag::firmware::UsbPioHost usbHost_;
     oag::firmware::BluetoothRuntime bluetooth_;
     bool bluetoothAvailable_ = false;
+    std::uint64_t bluetoothNextInitUs_ = 0;
 
     oag::DeviceRegistry registry_;
     oag::LogicalSlotManager slots_;

@@ -83,10 +83,100 @@ btstack_packet_callback_registration_t gHciRegistration {};
 btstack_packet_callback_registration_t gSmRegistration {};
 
 bool looksLikeClassicPeripheral(std::uint32_t classOfDevice) {
-    // Major Device Class 0x05 = Peripheral. This includes joystick/gamepad,
-    // keyboard, mouse and combo HID devices. Protocol classification happens
-    // later from the HID descriptor, not from CoD alone.
     return (classOfDevice & 0x1F00u) == 0x0500u;
+}
+
+bool asciiContains(
+    const std::uint8_t* data,
+    std::uint8_t length,
+    const char* needle
+) {
+    if (data == nullptr || needle == nullptr) return false;
+    const std::size_t needleLength = std::strlen(needle);
+    if (needleLength == 0 || needleLength > length) return false;
+
+    for (std::uint8_t i = 0;
+         static_cast<std::size_t>(i) + needleLength <= length;
+         ++i) {
+        bool match = true;
+        for (std::size_t j = 0; j < needleLength; ++j) {
+            char a = static_cast<char>(data[i + j]);
+            char b = needle[j];
+            if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+            if (b >= 'A' && b <= 'Z') b = static_cast<char>(b - 'A' + 'a');
+            if (a != b) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+bool advertisementLooksLikeHid(const std::uint8_t* packet) {
+    const std::uint8_t* data =
+        gap_event_advertising_report_get_data(packet);
+    const std::uint8_t dataLength =
+        gap_event_advertising_report_get_data_length(packet);
+
+    if (ad_data_contains_uuid16(
+            dataLength,
+            data,
+            ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE
+        )) {
+        return true;
+    }
+
+    ad_context_t context {};
+    for (
+        ad_iterator_init(&context, dataLength, data);
+        ad_iterator_has_more(&context);
+        ad_iterator_next(&context)
+    ) {
+        const std::uint8_t type = ad_iterator_get_data_type(&context);
+        const std::uint8_t len = ad_iterator_get_data_len(&context);
+        const std::uint8_t* item = ad_iterator_get_data(&context);
+
+        if (type == BLUETOOTH_DATA_TYPE_APPEARANCE && len >= 2) {
+            const std::uint16_t appearance =
+                little_endian_read_16(item, 0);
+            if (appearance >= 0x03C0 && appearance <= 0x03C4) {
+                return true;
+            }
+        }
+
+        if (
+            type != BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME &&
+            type != BLUETOOTH_DATA_TYPE_SHORTENED_LOCAL_NAME
+        ) {
+            continue;
+        }
+
+        static const char* const kNames[] = {
+            "Xbox",
+            "Wireless Controller",
+            "DualSense",
+            "Pro Controller",
+            "Joy-Con",
+            "Nintendo",
+            "8BitDo",
+            "GameSir",
+            "PXN",
+            "MOCUTE",
+            "IPEGA",
+            "Gamepad",
+            "Controller",
+        };
+
+        for (const char* name : kNames) {
+            if (asciiContains(item, len, name)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 } // namespace
@@ -132,6 +222,10 @@ bool BluetoothRuntime::initialize(
         )
     );
 
+    gap_set_local_name("OAG Abo Gemi Ultra Gaming");
+    gap_connectable_control(0);
+    gap_discoverable_control(0);
+
     hci_set_inquiry_mode(INQUIRY_MODE_RSSI_AND_EIR);
     gap_set_default_link_policy_settings(
         LM_LINK_POLICY_ENABLE_SNIFF_MODE |
@@ -145,30 +239,40 @@ bool BluetoothRuntime::initialize(
     gSmRegistration.callback = &smPacketThunk;
     sm_add_event_handler(&gSmRegistration);
 
-    // Classic HID devices are allowed to initiate a reconnect/pair as well.
-    gap_discoverable_control(1);
-
     initialized_ = true;
     hci_power_control(HCI_POWER_ON);
     return true;
 }
 
 void BluetoothRuntime::poll() {
-    if (!initialized_) {
-        return;
-    }
+    if (!initialized_) return;
 
     cyw43_arch_poll();
+
+    const std::uint64_t nowUs = time_us_64();
 
     if (
         hciWorking_ &&
         discoveryPhase_ == DiscoveryPhase::LeScan &&
         !leConnectPending_ &&
-        time_us_64() >= leScanDeadlineUs_
+        nowUs >= leScanDeadlineUs_
     ) {
         gap_stop_scan();
         startClassicInquiry();
     }
+
+    if (
+        hciWorking_ &&
+        hasFreeConnectionBudget() &&
+        discoveryPhase_ == DiscoveryPhase::Idle &&
+        !classicConnectPending_ &&
+        !leConnectPending_ &&
+        nowUs >= nextDiscoveryRetryUs_
+    ) {
+        resumeDiscovery();
+    }
+
+    serviceDiagnosticLed();
 }
 
 bool BluetoothRuntime::beginDiscovery() {
@@ -316,9 +420,9 @@ void BluetoothRuntime::startClassicInquiry() {
     gap_stop_scan();
     discoveryPhase_ = DiscoveryPhase::ClassicInquiry;
 
-    // Inquiry length unit is 1.28 s. Four units gives a short discovery slice
-    // before OAG rotates to LE scanning.
+    // Golden cadence: 4 * 1.28 s ~= 5.1 s.
     gap_inquiry_start(4);
+    nextDiscoveryRetryUs_ = time_us_64() + 5500000ull;
 }
 
 void BluetoothRuntime::startLeScan() {
@@ -332,11 +436,12 @@ void BluetoothRuntime::startLeScan() {
         return;
     }
 
-    gap_set_scan_parameters(0, 48, 48);
+    gap_set_scan_parameters(1, 0x0030, 0x0030);
     gap_start_scan();
 
     discoveryPhase_ = DiscoveryPhase::LeScan;
-    leScanDeadlineUs_ = time_us_64() + 4000000ull;
+    leScanDeadlineUs_ = time_us_64() + 5000000ull;
+    nextDiscoveryRetryUs_ = leScanDeadlineUs_ + 250000ull;
 }
 
 void BluetoothRuntime::resumeDiscovery() {
@@ -435,6 +540,37 @@ void BluetoothRuntime::disconnectLeServices(LeLink& link) {
     link = {};
 }
 
+void BluetoothRuntime::serviceDiagnosticLed() {
+    if (!hciWorking_) return;
+
+    const std::uint64_t nowUs = time_us_64();
+
+    if (activeConnectionCount() != 0) {
+        diagnosticLedState_ = true;
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+        return;
+    }
+
+    const std::uint64_t intervalUs =
+        (classicConnectPending_ || leConnectPending_)
+            ? 120000ull
+            : (
+                discoveryPhase_ == DiscoveryPhase::ClassicInquiry ||
+                discoveryPhase_ == DiscoveryPhase::LeScan
+            )
+                ? 500000ull
+                : 250000ull;
+
+    if (nowUs - diagnosticLastToggleUs_ >= intervalUs) {
+        diagnosticLastToggleUs_ = nowUs;
+        diagnosticLedState_ = !diagnosticLedState_;
+        cyw43_arch_gpio_put(
+            CYW43_WL_GPIO_LED_PIN,
+            diagnosticLedState_ ? 1 : 0
+        );
+    }
+}
+
 void BluetoothRuntime::handleHciPacket(
     std::uint8_t packetType,
     std::uint16_t channel,
@@ -457,7 +593,7 @@ void BluetoothRuntime::handleHciPacket(
                 HCI_STATE_WORKING
             ) {
                 hciWorking_ = true;
-                startClassicInquiry();
+                startLeScan();
             }
             break;
 
@@ -498,7 +634,8 @@ void BluetoothRuntime::handleHciPacket(
                 discoveryPhase_ =
                     DiscoveryPhase::PausedForConnection;
             } else {
-                startLeScan();
+                discoveryPhase_ = DiscoveryPhase::Idle;
+                nextDiscoveryRetryUs_ = time_us_64() + 250000ull;
             }
             break;
         }
@@ -518,16 +655,7 @@ void BluetoothRuntime::handleHciPacket(
                 break;
             }
 
-            const std::uint8_t* adData =
-                gap_event_advertising_report_get_data(packet);
-            const std::uint8_t adLength =
-                gap_event_advertising_report_get_data_length(packet);
-
-            if (!ad_data_contains_uuid16(
-                    adLength,
-                    adData,
-                    ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE
-                )) {
+            if (!advertisementLooksLikeHid(packet)) {
                 break;
             }
 
@@ -556,7 +684,8 @@ void BluetoothRuntime::handleHciPacket(
                 discoveryPhase_ =
                     DiscoveryPhase::PausedForConnection;
             } else {
-                startClassicInquiry();
+                discoveryPhase_ = DiscoveryPhase::Idle;
+                nextDiscoveryRetryUs_ = time_us_64() + 250000ull;
             }
             break;
         }
@@ -655,7 +784,8 @@ void BluetoothRuntime::handleHciPacket(
                 disconnectLeServices(*le);
             }
 
-            resumeDiscovery();
+            discoveryPhase_ = DiscoveryPhase::Idle;
+            nextDiscoveryRetryUs_ = time_us_64() + 100000ull;
             break;
         }
 

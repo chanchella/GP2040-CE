@@ -119,6 +119,7 @@ private:
     void startClassicInquiry();
     void startLeScan();
     void resumeDiscovery();
+    void serviceDiagnosticLed();
 
     void startLeHids(std::uint16_t connectionHandle);
     void notifyLeDescriptors(LeLink& link);
@@ -130,9 +131,13 @@ private:
 
     DiscoveryPhase discoveryPhase_ = DiscoveryPhase::Idle;
     std::uint64_t leScanDeadlineUs_ = 0;
+    std::uint64_t nextDiscoveryRetryUs_ = 0;
 
     bool classicConnectPending_ = false;
     bool leConnectPending_ = false;
+
+    std::uint64_t diagnosticLastToggleUs_ = 0;
+    bool diagnosticLedState_ = false;
 
     std::array<ClassicLink, kConnectionBudget> classicLinks_ {};
     std::array<LeLink, kConnectionBudget> leLinks_ {};
