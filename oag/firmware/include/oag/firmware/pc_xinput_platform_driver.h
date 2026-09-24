@@ -19,7 +19,10 @@ public:
         const LogicalGamepadState& state
     ) override;
 
-    bool takeRumble(RumbleCommand& output) override;
+    bool takeRumble(
+        std::uint8_t& logicalSlot,
+        RumbleCommand& output
+    ) override;
 
 private:
     PcXinputDevice device_;

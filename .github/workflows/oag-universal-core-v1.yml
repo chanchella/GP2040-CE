@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u6d:
+  firmware-u6e:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U6D firmware
+      - name: Configure Pico 2 W U6E firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -94,7 +94,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U6D firmware
+      - name: Build Pico 2 W U6E firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -140,7 +140,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U6D"
+          assert manifest["phase"] == "U6E"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -152,6 +152,10 @@ jobs:
           assert manifest["features"]["host_enumeration_buffer_bytes"] == 1024
           assert manifest["features"]["pc_generic_hid_output"] is False
           assert manifest["features"]["pc_xinput_output"] is True
+          assert manifest["features"]["pc_xinput_output_slots"] == 4
+          assert manifest["features"]["multi_xinput_output"] is True
+          assert manifest["features"]["slot0_keyboard_mouse_overlay"] is True
+          assert manifest["features"]["slot_scoped_rumble_reverse"] is True
           assert manifest["features"]["rumble_reverse_runtime"] is True
           assert manifest["features"]["host_root_watchdog_2s"] is False
           assert manifest["features"]["golden_usb_host_clock_120mhz"] is True
@@ -181,17 +185,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6D_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6E_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6D_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6E_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6D_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U6E_${SHORT_SHA}_Pico2W.map"
 
-      - name: Upload U6D firmware bundle
+      - name: Upload U6E firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U6D-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U6E-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

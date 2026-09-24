@@ -32,11 +32,15 @@ public:
         const LogicalGamepadState& state
     ) = 0;
 
-    // Returns the newest platform-originated rumble command, if one exists.
+    // Returns the newest platform-originated rumble command and the logical
+    // output slot that received it. This keeps reverse feedback aligned with
+    // the same physical controller that produced that logical controller.
     // Platform-specific auxiliary feedback (lightbar, LEDs, trigger haptics,
-    // etc.) remains in dedicated capability channels and is not collapsed
-    // into this base rumble contract.
-    virtual bool takeRumble(RumbleCommand& output) = 0;
+    // etc.) remains in dedicated capability channels.
+    virtual bool takeRumble(
+        std::uint8_t& logicalSlot,
+        RumbleCommand& output
+    ) = 0;
 };
 
 } // namespace oag

@@ -145,6 +145,11 @@ public:
         states_[*slot].source = *id;
         states_[*slot].connected = true;
 
+        if (*slot < pendingRumbleValid_.size()) {
+            pendingRumble_[*slot] = {};
+            pendingRumbleValid_[*slot] = false;
+        }
+
         xgipPhases_[*slot] =
             protocol == oag::ProtocolKind::XgipXboxOne
                 ? XgipInitPhase::Power
@@ -176,7 +181,6 @@ public:
             return;
         }
 
-        const auto primaryBefore = primaryOutputSlot();
         const auto slot = slots_.slotFor(*id);
 
         if (slot) {
@@ -184,17 +188,18 @@ public:
             xgipPhases_[*slot] = XgipInitPhase::None;
             xgipTxPending_[*slot] = false;
             xgipGuidePressed_[*slot] = false;
+
+            if (*slot < pendingRumbleValid_.size()) {
+                pendingRumble_[*slot] = {};
+                pendingRumbleValid_[*slot] = false;
+            }
         }
 
         slots_.release(*id);
         registry_.disconnect(*id);
 
-        if (slot && primaryBefore && *slot == *primaryBefore) {
-            sendComposedOutput();
-        }
-
-        if (!primaryOutputSlot()) {
-            pendingRumbleValid_ = false;
+        if (slot) {
+            sendSlotOutput(*slot);
         }
     }
 
@@ -325,6 +330,11 @@ public:
         states_[*slot] = {};
         states_[*slot].source = *id;
         states_[*slot].connected = true;
+
+        if (*slot < pendingRumbleValid_.size()) {
+            pendingRumble_[*slot] = {};
+            pendingRumbleValid_[*slot] = false;
+        }
     }
 
     void onHidUnmounted(
@@ -373,11 +383,15 @@ public:
             return;
         }
 
-        const auto primaryBefore = primaryOutputSlot();
         const auto slot = slots_.slotFor(*id);
 
         if (slot && *slot < states_.size()) {
             states_[*slot] = {};
+
+            if (*slot < pendingRumbleValid_.size()) {
+                pendingRumble_[*slot] = {};
+                pendingRumbleValid_[*slot] = false;
+            }
         }
 
         slots_.release(*id);
@@ -385,8 +399,8 @@ public:
         genericHidQuirks_[id->index] = {};
         registry_.disconnect(*id);
 
-        if (slot && primaryBefore && *slot == *primaryBefore) {
-            sendComposedOutput();
+        if (slot) {
+            sendSlotOutput(*slot);
         }
     }
 
@@ -486,10 +500,7 @@ public:
             return;
         }
 
-        const auto primary = primaryOutputSlot();
-        if (primary && *slot == *primary) {
-            sendComposedOutput();
-        }
+        sendSlotOutput(*slot);
     }
 
     void onUsbDeviceUnmounted(std::uint8_t devAddr) {
@@ -574,10 +585,7 @@ public:
             return;
         }
 
-        const auto primary = primaryOutputSlot();
-        if (primary && *slot == *primary) {
-            sendComposedOutput();
-        }
+        sendSlotOutput(*slot);
     }
 
     void onXinputReportSent(
@@ -918,16 +926,35 @@ private:
         return combined;
     }
 
-    oag::LogicalGamepadState basePrimaryOutput() const {
-        const auto primary = primaryOutputSlot();
-
-        if (!primary ||
-            *primary >= states_.size() ||
-            !states_[*primary].connected) {
+    oag::LogicalGamepadState baseSlotZeroOutput() const {
+        if (states_.empty() || !states_[0].connected) {
             return {};
         }
 
-        return mapping_.process(states_[*primary]);
+        return mapping_.process(states_[0]);
+    }
+
+    void sendSlotOutput(oag::LogicalSlotId slot) {
+        if (slot >= oag::firmware::PcXinputDevice::kOutputSlots) {
+            return;
+        }
+
+        if (slot == 0) {
+            sendComposedOutput();
+            return;
+        }
+
+        oag::LogicalGamepadState output {};
+
+        if (slot < states_.size() && states_[slot].connected) {
+            output = mapping_.process(states_[slot]);
+        } else {
+            // The four PC interfaces are statically enumerated. Vacant OAG
+            // slots therefore remain present on Windows but report neutral.
+            output.connected = true;
+        }
+
+        platformOutput_.submit(slot, output);
     }
 
     void sendComposedOutput() {
@@ -944,7 +971,7 @@ private:
                 mouseAimActive_
                     ? currentMouseMotion_
                     : oag::MouseMotion {},
-                basePrimaryOutput()
+                baseSlotZeroOutput()
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
@@ -972,100 +999,96 @@ private:
     }
 
     void servicePlatformFeedback() {
+        std::uint8_t feedbackSlot = 0;
         oag::RumbleCommand newest {};
-        if (platformOutput_.takeRumble(newest)) {
-            pendingRumble_ = newest;
-            pendingRumbleValid_ = true;
-        }
 
-        if (!pendingRumbleValid_) {
-            return;
-        }
-
-        const auto primary = primaryOutputSlot();
-        if (!primary) {
-            pendingRumbleValid_ = false;
-            return;
-        }
-
-        const oag::DeviceId source = slots_.deviceFor(*primary);
-        const oag::DeviceRecord* record = registry_.find(source);
-
-        if (record == nullptr) {
-            pendingRumbleValid_ = false;
-            return;
-        }
-
-        if (record->protocol == oag::ProtocolKind::XusbXbox360) {
-            const std::uint8_t rumblePacket[8] = {
-                0x00,
-                0x08,
-                0x00,
-                pendingRumble_.leftMotor,
-                pendingRumble_.rightMotor,
-                0x00,
-                0x00,
-                0x00,
-            };
-
-            if (tuh_xinput_send_report(
-                    record->usb.deviceAddress,
-                    record->usb.interfaceInstance,
-                    rumblePacket,
-                    sizeof(rumblePacket)
-                )) {
-                pendingRumbleValid_ = false;
+        // Drain all currently completed PC OUT reports. There are only four
+        // PC XInput outputs, so this loop is bounded by device-side state.
+        while (platformOutput_.takeRumble(feedbackSlot, newest)) {
+            if (feedbackSlot >= pendingRumble_.size()) {
+                continue;
             }
 
-            return;
+            pendingRumble_[feedbackSlot] = newest;
+            pendingRumbleValid_[feedbackSlot] = true;
         }
 
-        if (record->protocol == oag::ProtocolKind::XgipXboxOne) {
-            if (*primary >= xgipPhases_.size() ||
-                xgipPhases_[*primary] != XgipInitPhase::Ready ||
-                xgipTxPending_[*primary]) {
-                return;
-            }
-
-            const std::uint8_t rumblePacket[13] = {
-                0x09, 0x00, xgipRumbleSequence_, 0x09,
-                0x00, 0x0F,
-                0x00, 0x00,
-                pendingRumble_.leftMotor,
-                pendingRumble_.rightMotor,
-                0xFF, 0x00, 0xFF,
-            };
-
-            if (tuh_xinput_send_report(
-                    record->usb.deviceAddress,
-                    record->usb.interfaceInstance,
-                    rumblePacket,
-                    sizeof(rumblePacket)
-                )) {
-                pendingRumbleValid_ = false;
-                ++xgipRumbleSequence_;
-                if (xgipRumbleSequence_ == 0) {
-                    xgipRumbleSequence_ = 1;
-                }
-            }
-
-            return;
-        }
-
-        pendingRumbleValid_ = false;
-    }
-
-    std::optional<oag::LogicalSlotId> primaryOutputSlot() const {
         for (std::size_t i = 0;
-             i < oag::LogicalSlotManager::kGamepadSlots;
+             i < pendingRumbleValid_.size();
              ++i) {
-            const auto slot = static_cast<oag::LogicalSlotId>(i);
-            if (slots_.deviceFor(slot).valid()) {
-                return slot;
+            if (!pendingRumbleValid_[i]) {
+                continue;
             }
-        }
 
-        return std::nullopt;
+            const auto slot = static_cast<oag::LogicalSlotId>(i);
+            const oag::DeviceId source = slots_.deviceFor(slot);
+            const oag::DeviceRecord* record = registry_.find(source);
+
+            if (record == nullptr) {
+                pendingRumbleValid_[i] = false;
+                continue;
+            }
+
+            if (record->protocol == oag::ProtocolKind::XusbXbox360) {
+                const std::uint8_t rumblePacket[8] = {
+                    0x00,
+                    0x08,
+                    0x00,
+                    pendingRumble_[i].leftMotor,
+                    pendingRumble_[i].rightMotor,
+                    0x00,
+                    0x00,
+                    0x00,
+                };
+
+                if (tuh_xinput_send_report(
+                        record->usb.deviceAddress,
+                        record->usb.interfaceInstance,
+                        rumblePacket,
+                        sizeof(rumblePacket)
+                    )) {
+                    pendingRumbleValid_[i] = false;
+                }
+
+                continue;
+            }
+
+            if (record->protocol == oag::ProtocolKind::XgipXboxOne) {
+                if (i >= xgipPhases_.size() ||
+                    xgipPhases_[i] != XgipInitPhase::Ready ||
+                    xgipTxPending_[i]) {
+                    continue;
+                }
+
+                const std::uint8_t rumblePacket[13] = {
+                    0x09, 0x00, xgipRumbleSequence_[i], 0x09,
+                    0x00, 0x0F,
+                    0x00, 0x00,
+                    pendingRumble_[i].leftMotor,
+                    pendingRumble_[i].rightMotor,
+                    0xFF, 0x00, 0xFF,
+                };
+
+                if (tuh_xinput_send_report(
+                        record->usb.deviceAddress,
+                        record->usb.interfaceInstance,
+                        rumblePacket,
+                        sizeof(rumblePacket)
+                    )) {
+                    pendingRumbleValid_[i] = false;
+                    ++xgipRumbleSequence_[i];
+                    if (xgipRumbleSequence_[i] == 0) {
+                        xgipRumbleSequence_[i] = 1;
+                    }
+                }
+
+                continue;
+            }
+
+            // Generic HID output feedback is family-specific and remains a
+            // later driver capability. Do not emit guessed vendor reports.
+            pendingRumbleValid_[i] = false;
+        }
     }
 
     oag::firmware::UsbPioHost usbHost_;
@@ -1156,10 +1179,20 @@ private:
         oag::LogicalSlotManager::kGamepadSlots
     > xgipGuidePressed_ {};
 
-    std::uint8_t xgipRumbleSequence_ = 1;
+    std::array<
+        std::uint8_t,
+        oag::firmware::PcXinputDevice::kOutputSlots
+    > xgipRumbleSequence_ {1, 1, 1, 1};
 
-    oag::RumbleCommand pendingRumble_ {};
-    bool pendingRumbleValid_ = false;
+    std::array<
+        oag::RumbleCommand,
+        oag::firmware::PcXinputDevice::kOutputSlots
+    > pendingRumble_ {};
+
+    std::array<
+        bool,
+        oag::firmware::PcXinputDevice::kOutputSlots
+    > pendingRumbleValid_ {};
 };
 
 FirmwareCore gCore;

@@ -38,19 +38,18 @@ bool PcXinputPlatformDriver::submit(
     std::uint8_t logicalSlot,
     const LogicalGamepadState& state
 ) {
-    // Current hardware-verified PC device profile exposes one logical XInput
-    // controller. Multi-device PC output remains a later independent gate.
-    if (logicalSlot != 0) {
+    if (logicalSlot >= PcXinputDevice::kOutputSlots) {
         return false;
     }
 
-    return device_.send(state);
+    return device_.send(logicalSlot, state);
 }
 
 bool PcXinputPlatformDriver::takeRumble(
+    std::uint8_t& logicalSlot,
     RumbleCommand& output
 ) {
-    return device_.takeRumble(output);
+    return device_.takeRumble(logicalSlot, output);
 }
 
 } // namespace oag::firmware
