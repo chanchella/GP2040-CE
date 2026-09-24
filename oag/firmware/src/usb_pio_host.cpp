@@ -29,8 +29,18 @@ bool UsbPioHost::start() {
     }
 
     static pio_usb_configuration_t config = PIO_USB_DEFAULT_CONFIG;
+
+    // Exact Pico 2 W PIO assignment from the previously hardware-proven
+    // three-root diagnostic. Do not fall back to PIO_USB_DEFAULT_CONFIG
+    // state-machine/DMA ownership for this board.
     config.pin_dp = kPort1Dp;
     config.pinout = PIO_USB_PINOUT_DPDM;
+    config.sm_tx = 3;
+    config.sm_rx = 2;
+    config.sm_eop = 3;
+    config.pio_rx_num = 0;
+    config.pio_tx_num = 1;
+    config.tx_ch = 9;
 
     if (!tuh_configure(
             kHostRhPort,
