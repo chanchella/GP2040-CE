@@ -168,11 +168,6 @@ public:
         xgipTxPending_[*slot] = false;
         xgipGuidePressed_[*slot] = false;
 
-        bluetoothHost_.notifyWiredGamepadAttached(
-            vid,
-            pid
-        );
-
         rebuildPcOutputRouting();
     }
 
@@ -356,11 +351,6 @@ public:
             pendingRumble_[*slot] = {};
             pendingRumbleValid_[*slot] = false;
         }
-
-        bluetoothHost_.notifyWiredGamepadAttached(
-            vid,
-            pid
-        );
 
         rebuildPcOutputRouting();
     }

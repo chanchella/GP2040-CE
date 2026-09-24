@@ -52,15 +52,9 @@ public:
     void poll();
     bool beginDiscovery();
 
-    // Pairing Assist is intentionally transport-only. Plugging a known
-    // Bluetooth-capable controller over USB does not alter controller routing,
-    // output slots, keyboard/mouse composition, or stored bonds. It only opens
-    // a temporary high-priority BLE discovery window.
-    void notifyWiredGamepadAttached(
-        std::uint16_t vid,
-        std::uint16_t pid
-    );
-
+    // Cable Pairing Assist starts only after a known Bluetooth-capable
+    // controller leaves USB. While the controller is wired, U10F USB Host
+    // behavior is left completely undisturbed.
     void notifyWiredGamepadDetached(
         std::uint16_t vid,
         std::uint16_t pid

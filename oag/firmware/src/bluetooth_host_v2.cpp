@@ -341,15 +341,6 @@ void BluetoothHostV2::requestPairingAssist() {
     pairingAssistRequested_ = true;
 }
 
-void BluetoothHostV2::notifyWiredGamepadAttached(
-    std::uint16_t vid,
-    std::uint16_t pid
-) {
-    if (isKnownBluetoothCapableUsbGamepad(vid, pid)) {
-        requestPairingAssist();
-    }
-}
-
 void BluetoothHostV2::notifyWiredGamepadDetached(
     std::uint16_t vid,
     std::uint16_t pid
@@ -650,11 +641,12 @@ void BluetoothHostV2::startLeScan() {
 
     deferredBleCandidateValid_ = false;
 
-    // U10F default remains byte-for-byte behaviorally passive. Pairing Assist
-    // temporarily uses active scanning so scan responses are requested and a
-    // controller entering Pairing Mode after cable detach is discovered faster.
+    // Preserve the hardware-good U10F scan parameters exactly, including
+    // passive scanning. Pairing Assist accelerates discovery by staying in BLE
+    // instead of alternating into Classic inquiry; it does not increase radio
+    // activity while USB Host is timing-sensitive.
     gap_set_scan_params(
-        pairingAssistActive_ ? 1 : 0,
+        0,
         75,
         50,
         0
