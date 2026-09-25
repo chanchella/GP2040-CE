@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5G-WIN-XUSB20-KM-COMPOSITE-2S",
+    "phase": "U10F-PM1-UI5H-XUSB20-IAD-4PAD-KM-2S",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -238,9 +238,12 @@ manifest = {
         "pc_native_hid_interfaces": 2,
         "windows_usb_parent_composite": True,
         "windows_usb_vid": "CAFE",
-        "windows_usb_pid": "4016",
+        "windows_usb_pid": "4017",
         "windows_xusb20_compatible_id": True,
         "windows_xusb20_receiver_interfaces": 8,
+        "windows_xusb20_iad_grouped": True,
+        "windows_xusb20_iad_interface_count": 8,
+        "windows_ms_os_function_reserved_byte": 1,
         "windows_hid_interfaces": 2,
         "windows_usb_mode_switch_reenumerates": False,
         "native_km_combo_engine": True,
@@ -323,7 +326,8 @@ manifest = {
         "u10f_pm1_ui5d_dual_usb_persona_2s": "SUPERSEDED_BEFORE_HARDWARE",
         "u10f_pm1_ui5e_stable_composite_km_2s": "REJECTED_HARDWARE_CONTROLLERS_NOT_ENUMERATED",
         "u10f_pm1_ui5f_recovery_ui5a_2s": "HARDWARE_VERIFIED_CONTROLLERS_AND_KM_CONTROLLER_MODE_BY_USER",
-        "u10f_pm1_ui5g_win_xusb20_km_composite_2s": "PENDING_HARDWARE",
+        "u10f_pm1_ui5g_win_xusb20_km_composite_2s": "HARDWARE_PARTIAL_ONLY_BLUETOOTH_CONTROLLER_VISIBLE",
+        "u10f_pm1_ui5h_xusb20_iad_4pad_km_2s": "PENDING_HARDWARE",
     },
 }
 
