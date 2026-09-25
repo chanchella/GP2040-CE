@@ -29,7 +29,7 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
 
-      - name: Verify TRUE GOLDEN plus isolated BT-OUT1 BLE peripheral delta
+      - name: Verify TRUE GOLDEN plus clean G1 Bluetooth output delta
         shell: bash
         run: |
           set -euo pipefail
@@ -45,7 +45,9 @@ jobs:
 
           EXPECTED_RUNTIME="$(printf '%s\n' \
             'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
+            'oag/firmware/include/oag/firmware/bluetooth_platform_output.h' \
             'oag/firmware/src/bluetooth_host_v2.cpp' \
+            'oag/firmware/src/bluetooth_platform_output.cpp' \
             'oag/firmware/src/main.cpp' | sort)"
 
           ACTUAL_RUNTIME="$(git diff --name-only "${U10F_BASELINE}" -- \
@@ -57,32 +59,36 @@ jobs:
 
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
-          # BT-OUT1 exact runtime identities.
-          test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "272dea2861596dd4fc135e192c3e2be49bc08922"
-          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "29320395556dd4af63805602623161082cb72e7c"
-          test "$(git hash-object oag/firmware/src/main.cpp)" = "7810fa18237b9e5ae9525b6fe8fb9e27fce38925"
-          test "$(git hash-object oag/firmware/CMakeLists.txt)" = "df8cd047895715c262b1b0320a4cd86a537e9880"
-          test "$(git hash-object oag/firmware/oag_ble_gamepad.gatt)" = "d57adbb184a9284bac12f4bd97209e778a5d91a4"
+          # Exact runtime identities for the clean G1 candidate.
+          test "$(git hash-object oag/firmware/CMakeLists.txt)" = "a96bfa36cc18954321288707ba53bd71525ac8b0"
+          test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "2ab8cbf5bec81e6cae3e08fa808444107e66"
+          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "c7f9cc20daa7e30a6d15910a2c9253bc072a5152"
+          test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_platform_output.h)" = "66194ac32078b4a556afc1631636b286aeea2467"
+          test "$(git hash-object oag/firmware/src/bluetooth_platform_output.cpp)" = "c7477a8a5a4ca361d99323b43adb6a3d3186f8ab"
+          test "$(git hash-object oag/firmware/src/main.cpp)" = "0dd862f2e38863d8834bb4ab7b0936e5553180b9"
+          test "$(git hash-object oag/firmware/oag_ble_platform.gatt)" = "1085edc9e739840f4ca352855f8cea7edbfc4296"
 
-          BT_OUT1_RUNTIME_DIFF="$(git diff --name-only "${TRUE_GOLDEN}" -- \
+          G1_RUNTIME_DIFF="$(git diff --name-only "${TRUE_GOLDEN}" -- \
             oag/firmware/CMakeLists.txt \
-            oag/firmware/oag_ble_gamepad.gatt \
+            oag/firmware/oag_ble_platform.gatt \
             oag/firmware/include \
             oag/firmware/src \
             oag/firmware/tusb_config.h \
             oag/include \
             oag/src | sort)"
 
-          EXPECTED_BT_OUT1_RUNTIME="$(printf '%s\n' \
+          EXPECTED_G1_RUNTIME="$(printf '%s\n' \
             'oag/firmware/CMakeLists.txt' \
             'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
-            'oag/firmware/oag_ble_gamepad.gatt' \
+            'oag/firmware/include/oag/firmware/bluetooth_platform_output.h' \
+            'oag/firmware/oag_ble_platform.gatt' \
             'oag/firmware/src/bluetooth_host_v2.cpp' \
+            'oag/firmware/src/bluetooth_platform_output.cpp' \
             'oag/firmware/src/main.cpp' | sort)"
 
-          test "${BT_OUT1_RUNTIME_DIFF}" = "${EXPECTED_BT_OUT1_RUNTIME}"
+          test "${G1_RUNTIME_DIFF}" = "${EXPECTED_G1_RUNTIME}"
 
-          # Everything target-facing/USB-facing is exactly U10F.
+          # Everything USB/XInput/parser/mapping-facing remains TRUE GOLDEN/U10F.
           git diff --exit-code "${U10F_BASELINE}" -- \
             oag/firmware/src/usb_pio_host.cpp \
             oag/firmware/src/usb_pio_probe.c \
@@ -97,51 +103,50 @@ jobs:
             oag/src/protocol/xusb/xusb_input_driver.cpp \
             oag/src/protocol/xgip/xgip_input_driver.cpp
 
+          git diff --exit-code "${TRUE_GOLDEN}" -- \
+            oag/firmware/btstack_config.h
+
           python3 - <<'PY'
           from pathlib import Path
 
+          host = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
+          out = Path("oag/firmware/src/bluetooth_platform_output.cpp").read_text()
           main = Path("oag/firmware/src/main.cpp").read_text()
-          assert main.count("notifyWiredGamepadDetached(") == 2
-          assert "notifyWiredGamepadAttached(" not in main
-
-          bt = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
-          assert "requestPairingAssist()" in bt
-          assert "ERROR_CODE_PIN_OR_KEY_MISSING" in bt
-          assert "kLeLowLatencyIntervalMin = 6u" in bt
-          assert "kLeLowLatencyIntervalMax = 12u" in bt
-          assert "gap_le_connection_interval(" in bt
-          assert "gap_request_connection_parameter_update(" in bt
-          assert "HIDS_SUBEVENT_INPUT_REPORT_ENABLE" in bt
-          assert "hids_device_send_input_report_for_id(" in bt
-          assert "role == HCI_ROLE_SLAVE" in bt
-          assert "Do not force SMP immediately from the peripheral side." in bt
-          assert "BT-OUT1-P2: platform-side stale-bond repair." in bt
-          assert "BT-OUT1-P3: quiesce controller discovery" in bt
-          assert "P6S%uE%02XR%02XO%02XI%02X" in bt
-          assert "sm_event_pairing_complete_get_reason" in bt
-          assert "Preserve a real SMP/reencryption reason" in bt
-          assert "SM_EVENT_PAIRING_STARTED" in bt
-          assert "battery_service_server_init(100);" in bt
-          assert "device_information_service_server_init();" in bt
-          assert "device_information_service_server_set_pnp_id(" in bt
-          assert "hci_dump_init(&gOagSmpTraceDump);" in bt
-          assert "L2CAP_CID_SECURITY_MANAGER_PROTOCOL" in bt
-          assert "gLastOutgoingSmpOpcode" in bt
-          assert "gLastIncomingSmpOpcode" in bt
-          assert "SM_AUTHREQ_SECURE_CONNECTION |" in bt
-
-          main = Path("oag/firmware/src/main.cpp").read_text()
-          assert "submitBluetoothPlatformGamepad(" in main
-
           cmake = Path("oag/firmware/CMakeLists.txt").read_text()
-          assert "pico_btstack_make_gatt_header(" in cmake
-          assert "U10F-PM1-L1-BT-OUT1" in cmake
+          gatt = Path("oag/firmware/oag_ble_platform.gatt").read_text()
 
-          gatt = Path("oag/firmware/oag_ble_gamepad.gatt").read_text()
-          assert "#import <hids.gatt>" in gatt
+          # TRUE GOLDEN input path and Pairing Assist invariants remain present.
+          assert "requestPairingAssist()" in host
+          assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
+          assert "kLeLowLatencyIntervalMin = 6u" in host
+          assert "kLeLowLatencyIntervalMax = 12u" in host
+          assert "gap_request_connection_parameter_update(" in host
+          assert "SM_AUTHREQ_BONDING" in host
+          assert "SM_AUTHREQ_SECURE_CONNECTION |" not in host
+          assert "setPlatformOutputLinkActive" in host
+
+          # New output layer must not re-own/reinitialize the Bluetooth stack.
+          assert "hids_device_init(" in out
+          assert "battery_service_server_init(100)" in out
+          assert "device_information_service_server_init()" in out
+          assert "0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x06" in out
+          assert "sm_init()" not in out
+          assert "l2cap_init()" not in out
+          assert "cyw43_arch_init()" not in out
+          assert "hci_power_control(" not in out
+          assert "sm_set_authentication_requirements(" not in out
+
+          assert "bluetoothPlatformOutput_.initialize(" in main
+          assert "bluetoothPlatformOutput_.submit(" in main
+
+          assert "src/bluetooth_platform_output.cpp" in cmake
+          assert "pico_btstack_make_gatt_header(" in cmake
+          assert "oag_ble_platform.gatt" in cmake
+
+          assert '#import <hids.gatt>' in gatt
+          assert '#import <battery_service.gatt>' in gatt
+          assert '#import <device_information_service.gatt>' in gatt
           assert "C4 03" in gatt
-          assert "#import <battery_service.gatt>" in gatt
-          assert "#import <device_information_service.gatt>" in gatt
 
           tusb = Path("oag/firmware/tusb_config.h").read_text()
           assert "#define CFG_TUD_HID 0" in tusb
@@ -152,11 +157,10 @@ jobs:
           platform = Path("oag/firmware/src/pc_xinput_platform_driver.cpp").read_text()
           assert "return PlatformId::PcXinput360;" in platform
 
-          print("U10F_PM1_EXACT_U10F_USB_RUNTIME=PASS")
-          print("U10F_PM1_U10J_PAIRING_BASE=PASS")
-          print("U10F_PM1_L1_BLE_LATENCY_PRESERVED=PASS")
-          print("U10F_PM1_BT_OUT1_ISOLATION=PASS")
-          print("U10F_PM1_XBOX360_XINPUT_TARGET=PASS")
+          print("TRUE_GOLDEN_59182F30_BASE=PASS")
+          print("USB_XINPUT_KM_PATHS_UNCHANGED=PASS")
+          print("BLUETOOTH_INPUT_PATH_PRESERVED=PASS")
+          print("G1_EXTERNAL_BLE_OUTPUT_ISOLATED=PASS")
           PY
 
       - name: Verify no Antigravity coupling
@@ -292,147 +296,32 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U10F-PM1-L1-BT-OUT1"
-          assert manifest["features"]["usb_hub_host"] is True
-          assert manifest["features"]["wired_xgip_input"] is True
-          assert manifest["features"]["xgip_host_init_sequence"] is True
-          assert manifest["features"]["generic_hid_structural_fallback"] is True
-          assert manifest["features"]["known_usb_controller_classifier"] is True
-          assert manifest["features"]["usb_host_device_capacity"] == 12
-          assert manifest["features"]["usb_host_hub_capacity"] == 4
-          assert manifest["features"]["logical_gamepad_slots"] == 8
-          assert manifest["features"]["host_enumeration_buffer_bytes"] == 1024
-          assert manifest["features"]["pc_generic_hid_output"] is False
-          assert manifest["features"]["pc_xinput_output"] is True
-          assert manifest["features"]["pc_xinput_output_slots"] == 4
-          assert manifest["features"]["multi_xinput_output"] is True
-          assert manifest["features"]["slot0_keyboard_mouse_overlay"] is False
-          assert manifest["features"]["host_player1_keyboard_mouse_overlay"] is True
-          assert manifest["features"]["slot_scoped_rumble_reverse"] is True
-          assert manifest["features"]["rumble_reverse_runtime"] is True
-          assert manifest["features"]["host_root_watchdog_2s"] is False
-          assert manifest["features"]["golden_usb_host_clock_120mhz"] is True
-          assert manifest["features"]["golden_xusb_continuous_rearm"] is True
-          assert manifest["features"]["keyboard_boot_host"] is True
-          assert manifest["features"]["keyboard_lock_led_output"] is True
-          assert manifest["features"]["keyboard_default_numlock_led"] is True
-          assert manifest["features"]["g808_skip_set_idle_golden_quirk"] is True
-          assert manifest["features"]["mouse_boot_host"] is True
-          assert manifest["features"]["generic_hid_gamepad_host"] is True
-          assert manifest["features"]["platform_profile_registry"] is True
-          assert manifest["features"]["platform_output_runtime_abstraction"] is True
-          assert manifest["features"]["keyboard_mouse_runtime_gamepad"] is True
-          assert manifest["features"]["bluetooth"] is True
-          assert manifest["features"]["bluetooth_host_v2"] is True
-          assert manifest["features"]["bluetooth_host_only"] is False
-          assert manifest["features"]["bluetooth_peripheral_output"] is True
-          assert manifest["features"]["bluetooth_max_simultaneous_peers"] == 4
-          assert manifest["features"]["bluetooth_ble_hid_host"] is True
-          assert manifest["features"]["bluetooth_classic_hid_host"] is True
-          assert manifest["features"]["bluetooth_gamepad_input"] is True
-          assert manifest["features"]["bluetooth_keyboard_input"] is True
-          assert manifest["features"]["bluetooth_mouse_input"] is True
-          assert manifest["features"]["bluetooth_platform_ble_hid_gamepad"] is True
-          assert manifest["features"]["bluetooth_platform_primary_mirror"] is True
-          assert manifest["features"]["bluetooth_platform_output_connections"] == 1
-          assert manifest["features"]["bluetooth_platform_gamepad_appearance"] == "0x03C4"
-          assert manifest["features"]["bluetooth_platform_rumble"] is False
-          assert manifest["features"]["bluetooth_dual_role_central_peripheral"] is True
-          assert manifest["features"]["bluetooth_g2e3_transport_sequence"] is True
-          assert manifest["features"]["bluetooth_init_after_usb_host_ms"] == 100
-          assert manifest["features"]["bluetooth_historical_hidmaster_compatibility"] is True
-          assert manifest["features"]["bluetooth_local_gap_att_server"] is True
-          assert manifest["features"]["bluetooth_scan_uuid_1812_only"] is True
-          assert manifest["features"]["bluetooth_scan_type"] == "passive"
-          assert manifest["features"]["bluetooth_scan_interval"] == 75
-          assert manifest["features"]["bluetooth_scan_window"] == 50
-          assert manifest["features"]["bluetooth_deferred_connect_outside_adv_callback"] is True
-          assert manifest["features"]["bluetooth_u9c_bond_reset_version"] == 2
-          assert manifest["features"]["bluetooth_u9d_exact_stack_generation"] is True
-          assert manifest["features"]["bluetooth_hids_api"] == "hids_host+hids_device"
-          assert manifest["features"]["bluetooth_sdk_23_migration"] is True
-          assert manifest["features"]["bluetooth_u9d_bond_reset_version"] == 3
-          assert manifest["features"]["bluetooth_u9e_live_hid_report_dispatch_fix"] is True
-          assert manifest["features"]["bluetooth_hids_host_accepts_gattservice_packet_type"] is True
-          assert manifest["features"]["bluetooth_u9f_baseline_freeze"] is True
-          assert manifest["features"]["u9f_functional_source_frozen_to_u9e"] is True
-          assert manifest["features"]["bluetooth_u9g_consumer_home_0223_guide"] is True
-          assert manifest["features"]["bluetooth_u9g_xbox_ble_rumble_report_id"] == 3
-          assert manifest["features"]["bluetooth_u9g_xbox_ble_rumble_retry_ms"] == 50
-          assert manifest["features"]["bluetooth_u9g_family_scoped_feedback"] is True
-          assert manifest["features"]["bluetooth_u10a_continuous_discovery_guard"] is True
-          assert manifest["features"]["bluetooth_u10a_bt_first_pc_output_routing"] is True
-          assert manifest["features"]["bluetooth_u10a_primary_bt_gamepad_sticky"] is True
-          assert manifest["features"]["bluetooth_u10a_max_peers"] == 4
-          assert manifest["features"]["u10c_u10a_pc_output_descriptor_restored"] is True
-          assert manifest["features"]["u10c_primary_select_hold_ms"] == 3000
-          assert manifest["features"]["u10c_primary_select_start_share_back_fallback"] is True
-          assert manifest["features"]["u10c_xbox_ble_consumer_record_share"] is True
-          assert manifest["features"]["u10c_keyboard_mouse_follow_primary"] is True
-          assert manifest["features"]["u10c_usb_hub_gamepads_not_port_bound"] is True
-          assert manifest["features"]["u10d_independent_xinput_interfaces"] is True
-          assert manifest["features"]["u10d_custom_descriptor_type"] == "0x22"
-          assert manifest["features"]["u10d_sequential_endpoint_pairs"] == ["81/01", "82/02", "83/03", "84/04"]
-          assert manifest["features"]["u10d_fresh_windows_serial_namespace"] == "OAG-IND"
-          assert manifest["features"]["u10d_u10c_runtime_routing_frozen"] is True
-          assert manifest["features"]["u10e_receiver_vid"] == "0x045E"
-          assert manifest["features"]["u10e_receiver_pid"] == "0x0719"
-          assert manifest["features"]["u10e_true_receiver_interfaces"] == 8
-          assert manifest["features"]["u10e_gamepad_protocol"] == "0x81"
-          assert manifest["features"]["u10e_aux_protocol"] == "0x82"
-          assert manifest["features"]["u10e_gamepad_endpoint_pairs"] == ["81/01", "83/03", "85/05", "87/07"]
-          assert manifest["features"]["u10e_aux_endpoint_pairs"] == ["82/02", "84/04", "86/06", "88/08"]
-          assert manifest["features"]["u10e_presence_heartbeat_ms"] == 1000
-          assert manifest["features"]["u10e_wireless_input_packet_size"] == 29
-          assert manifest["features"]["u10e_receiver_rumble_decode"] is True
-          assert manifest["features"]["u10e_receiver_battery_reply"] is True
-          assert manifest["features"]["u10e_unique_vendor_serial_reply"] is True
-          assert manifest["features"]["u10e_u10c_primary_keyboard_mouse_routing_preserved"] is True
-          assert manifest["features"]["u10f_xusb22_led_player_assignment_tracking"] is True
-          assert manifest["features"]["u10f_host_player1_primary_routing"] is True
-          assert manifest["features"]["u10f_keyboard_mouse_follow_host_player1"] is True
-          assert manifest["features"]["u10f_primary_chord_guide_fallback"] is True
-          assert manifest["features"]["u10f_receiver_persona_frozen_from_u10e"] is True
-          assert manifest["features"]["u10f_pm1_exact_u10f_runtime_base"] is True
-          assert manifest["features"]["u10f_pm1_pairing_source"] == "U10J"
-          assert manifest["features"]["u10f_pm1_pairing_assist_on_usb_detach_only"] is True
-          assert manifest["features"]["u10f_pm1_pairing_assist_ble_only_window_ms"] == 30000
-          assert manifest["features"]["u10f_pm1_pairing_assist_scan_type"] == "passive"
-          assert manifest["features"]["u10f_pm1_existing_bluetooth_peers_preserved"] is True
-          assert manifest["features"]["u10f_pm1_pin_or_key_missing_single_bond_repair"] is True
-          assert manifest["features"]["u10f_pm1_usb_host_exact_u10f"] is True
-          assert manifest["features"]["u10f_pm1_receiver_exact_u10f"] is True
-          assert manifest["features"]["u10f_pm1_pc_gamepad_output"] == "XBOX360_XINPUT_RECEIVER"
-          assert manifest["features"]["u10f_pm1_pc_generic_hid_gamepad_output"] is False
-          assert manifest["features"]["u10f_pm1_supported_gamepads_normalized_to_xbox360"] is True
-          assert manifest["verification"]["hardware_verified"] is False
-          assert manifest["verification"]["hardware_verified_baseline_phase"] == "U10F-PM1-L1 TRUE GOLDEN"
-          assert manifest["verification"]["hardware_verified_baseline_sha"] == "59182f30c2028f77c059666d6473487d90a82b64"
-          assert manifest["verification"]["bt_out1_ble_platform_output"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u9f_simultaneous_wired_bluetooth_regression"] == "HARDWARE_VERIFIED"
-          assert manifest["verification"]["u9g_xbox_ble_guide_rumble"] == "HARDWARE_VERIFIED"
-          assert manifest["verification"]["u10a_single_bluetooth_primary_plus_wired_gamepad_keyboard_mouse"] == "HARDWARE_VERIFIED"
-          assert manifest["verification"]["u10a_multibluetooth_2_to_4_peers"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10b_receiver_descriptor_experiment"] == "REJECTED_RETURNED_TO_U10A"
-          assert manifest["verification"]["u10c_primary_selection_chord"] == "HARDWARE_VERIFIED"
-          assert manifest["verification"]["u10d_independent_controller_output"] == "REJECTED_HARDWARE"
-          assert manifest["verification"]["u10e_true_xbox360_wireless_receiver"] == "PARTIAL_HARDWARE_VERIFIED_PRIMARY_NUMBERING_MISMATCH"
-          assert manifest["verification"]["u10f_host_player1_primary_alignment"] == "HARDWARE_VERIFIED_BY_USER"
-          assert manifest["verification"]["u10f_pm1_u10f_runtime_regression"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10f_pm1_pairing_mode"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10f_pm1_usb_three_roots"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10f_pm1_xbox360_output_policy"] == "HARDWARE_VERIFIED_BY_USER"
-          assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
-          assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
-          assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
-          assert manifest["features"]["mouse_aim_recenter_us"] == 6000
-          assert manifest["features"]["default_platform_profile"] == "PC_XINPUT_360"
-          assert manifest["pc_xinput_profile"]["compatibility_pid"] == "0x0719"
-          assert manifest["pc_xinput_profile"]["console_authentication"] is False
-          assert manifest["dependencies"]["pico_pio_usb"] == "5a37a66dc5d3fbe0ef3cdbeda923a757440f984f"
-          assert manifest["dependencies"]["tinyusb"] == "9865cba11ecbcdd25237ba9cf4ccbe3fd1fd821d"
-          assert manifest["verification"]["ci_verified"] is True
-          print("OAG_MANIFEST_VERIFY=PASS")
+          assert manifest["phase"] == "U10F-PM1-G1-BT-OUT"
+          f = manifest["features"]
+
+          # TRUE GOLDEN hardware/runtime invariants.
+          assert f["usb_root_ports"] == 3
+          assert f["usb_hub_host"] is True
+          assert f["pc_xinput_output"] is True
+          assert f["pc_xinput_output_slots"] == 4
+          assert f["golden_usb_host_clock_120mhz"] is True
+          assert f["golden_xusb_continuous_rearm"] is True
+          assert f["keyboard_boot_host"] is True
+          assert f["mouse_boot_host"] is True
+          assert f["generic_hid_gamepad_host"] is True
+
+          # Golden Bluetooth input stays enabled while G1 adds one generic
+          # peripheral/output persona.
+          assert f["bluetooth_host_v2"] is True
+          assert f["bluetooth_host_only"] is False
+          assert f["bluetooth_peripheral_output"] is True
+          assert f["bluetooth_peripheral_profile"] == "GENERIC_BLE_HID_GAMEPAD"
+          assert f["bluetooth_peripheral_primary_only"] is True
+          assert f["bluetooth_peripheral_sm_policy"] == "TRUE_GOLDEN_BONDING_NO_IO"
+          assert f["bluetooth_ble_hid_host"] is True
+          assert f["bluetooth_classic_hid_host"] is True
+
+          print("BUILD_MANIFEST_G1=PASS")
           PY
 
       - name: Package exact-SHA artifacts
@@ -442,22 +331,22 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_U10F_PM1_G1_BT_OUT_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_U10F_PM1_G1_BT_OUT_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_U10F_PM1_G1_BT_OUT_${SHORT_SHA}_Pico2W.map"
 
-      - name: Package full BT-OUT1 project
+      - name: Package full G1 Bluetooth output project
         shell: bash
         run: |
           set -euo pipefail
 
-          STOCK_SOURCE_SHA="68d864dbf3d74f624040e2c67dd78a65253be64d"
+          STOCK_SOURCE_SHA="ccd27d99d1f4924665ecc49a8ed160226f60495b"
           STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
-          STOCK_NAME="OAG_U10F_PM1_L1_BT_OUT1_FULL_PROJECT_${STOCK_SHORT}"
+          STOCK_NAME="OAG_U10F_PM1_G1_BT_OUT_FULL_PROJECT_${STOCK_SHORT}"
           STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
           STOCK_ROOT="${STOCK_PARENT}/${STOCK_NAME}"
 
@@ -483,9 +372,9 @@ jobs:
           rsync -a --exclude='.git'             "${GITHUB_WORKSPACE}/pico-sdk-u9d/"             "${STOCK_ROOT}/dependencies/pico-sdk-2.3.0/"
 
           mkdir -p "${STOCK_ROOT}/BUILD_ARTIFACTS"
-          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_*_Pico2W.uf2             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
-          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_*_Pico2W.elf             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
-          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_*_Pico2W.map             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_U10F_PM1_G1_BT_OUT_*_Pico2W.uf2             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_U10F_PM1_G1_BT_OUT_*_Pico2W.elf             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_U10F_PM1_G1_BT_OUT_*_Pico2W.map             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
           cp artifacts/build-manifest.json             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
           cp artifacts/size-report.txt             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
 
@@ -496,7 +385,7 @@ jobs:
           CYW43_SHA="$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)"
 
           cat > "${STOCK_ROOT}/STOCK_INFO.txt" <<EOF
-          OAG U10F-PM1-L1-BT-OUT1 FULL PROJECT
+          OAG U10F-PM1-G1-BT-OUT FULL PROJECT
           ======================================
           Runtime/source commit: ${STOCK_SOURCE_SHA}
           Packaging workflow commit: ${GITHUB_SHA}
@@ -505,9 +394,11 @@ jobs:
           Runtime basis:
           - TRUE GOLDEN parent: 59182f30c2028f77c059666d6473487d90a82b64.
           - Existing USB / Hub / XInput / Receiver / Keyboard / Mouse runtime preserved.
-          - Existing Bluetooth Host, Pairing Mode, and BLE low-latency input preserved.
-          - Added BLE HID Gamepad Peripheral output for platform pairing.
-          - PC gamepad target remains Xbox 360 / XInput receiver in parallel.
+          - TRUE GOLDEN Bluetooth Host, Pairing Mode, and BLE low-latency input preserved.
+          - External output rebuilt from scratch as an isolated Generic BLE HID Gamepad.
+          - Output uses TRUE GOLDEN SM policy: Bonding + NoInputNoOutput; no forced Secure Connections.
+          - Official BTstack HOG services: HID + Battery + Device Information.
+          - PC USB target remains Xbox 360 / XInput receiver in parallel.
 
           Pinned dependencies:
           Pico-PIO-USB: ${PIO_SHA}
@@ -539,11 +430,11 @@ jobs:
 
           sha256sum             "artifacts/${STOCK_NAME}.zip"             | tee "artifacts/${STOCK_NAME}.zip.sha256.txt"
 
-          echo "BT_OUT1_FULL_PROJECT_PACKAGE=PASS"
+          echo "G1_BT_OUT_FULL_PROJECT_PACKAGE=PASS"
 
-      - name: Upload BT-OUT1 firmware bundle
+      - name: Upload G1 Bluetooth output bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-BT-OUT1-${{ github.sha }}
+          name: OAG-U10F-PM1-G1-BT-OUT-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
