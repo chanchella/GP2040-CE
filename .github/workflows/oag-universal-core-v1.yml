@@ -59,7 +59,7 @@ jobs:
 
           # BT-OUT1 exact runtime identities.
           test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "272dea2861596dd4fc135e192c3e2be49bc08922"
-          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "7b83d640881da01a2f406adc7dd4b3ea08a79b5a"
+          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "fa5cc37d44e5e12aacea9a132a16df5f6359d649"
           test "$(git hash-object oag/firmware/src/main.cpp)" = "7810fa18237b9e5ae9525b6fe8fb9e27fce38925"
           test "$(git hash-object oag/firmware/CMakeLists.txt)" = "df8cd047895715c262b1b0320a4cd86a537e9880"
           test "$(git hash-object oag/firmware/oag_ble_gamepad.gatt)" = "4480925ad1488ec054733b78a856f993e8935f97"
@@ -116,6 +116,7 @@ jobs:
           assert "role == HCI_ROLE_SLAVE" in bt
           assert "BT-OUT1-P1: do not force SMP immediately" in bt
           assert "BT-OUT1-P2: platform-side stale-bond repair." in bt
+          assert "BT-OUT1-P3: quiesce controller discovery" in bt
           assert "SM_AUTHREQ_SECURE_CONNECTION |" in bt
 
           main = Path("oag/firmware/src/main.cpp").read_text()
@@ -441,7 +442,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          STOCK_SOURCE_SHA="7cc5af8f9697a3163ebc3475c221bdb23f1ae21d"
+          STOCK_SOURCE_SHA="731452162ae150035b2ced29715ad2d353a7649f"
           STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
           STOCK_NAME="OAG_U10F_PM1_L1_BT_OUT1_FULL_PROJECT_${STOCK_SHORT}"
           STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
