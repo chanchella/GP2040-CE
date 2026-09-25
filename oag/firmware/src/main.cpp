@@ -938,6 +938,10 @@ private:
             if (bluetoothHost_.initialize(*this)) {
                 bluetoothInitialized_ = true;
                 bluetoothInitNotBeforeUs_ = 0;
+
+                // Seed the new BLE output with the exact same Primary/KM
+                // composed state already used by the stable PC output.
+                sendComposedOutput();
                 return;
             }
 
@@ -1610,14 +1614,28 @@ private:
         if (!output.connected && !hasKeyboard && !hasMouse) {
             // A true wireless receiver must report Player 1 absent when there
             // is no routed gamepad and no keyboard/mouse virtual input.
+            const oag::LogicalGamepadState neutral {};
+
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                oag::LogicalGamepadState {}
+                neutral
             );
+
+            if (bluetoothInitialized_) {
+                bluetoothHost_.submitBluetoothPlatformGamepad(
+                    neutral
+                );
+            }
             return;
         }
 
         platformOutput_.submit(hostPrimaryOutputSlot_, output);
+
+        if (bluetoothInitialized_) {
+            bluetoothHost_.submitBluetoothPlatformGamepad(
+                output
+            );
+        }
     }
 
     void serviceMouseAimRelease() {

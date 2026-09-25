@@ -10,6 +10,10 @@
 #include "btstack.h"
 #include "btstack_tlv.h"
 #include "ble/gatt-service/hids_host.h"
+#include "ble/gatt-service/hids_device.h"
+
+#include "oag/input/gamepad_state.h"
+#include "oag_ble_gamepad.h"
 
 namespace {
 
@@ -67,6 +71,22 @@ void leHidPacketThunk(
     }
 }
 
+void platformHidPacketThunk(
+    std::uint8_t packetType,
+    std::uint16_t channel,
+    std::uint8_t* packet,
+    std::uint16_t size
+) {
+    if (gBluetoothHostV2 != nullptr) {
+        gBluetoothHostV2->handlePlatformHidPacket(
+            packetType,
+            channel,
+            packet,
+            size
+        );
+    }
+}
+
 void discoveryTimerThunk(btstack_timer_source_t* timer) {
     (void)timer;
 
@@ -89,26 +109,178 @@ constexpr std::uint16_t kLeLowLatencyIntervalMax = 12u;
 constexpr std::uint16_t kLeLowLatencyConnLatency = 0u;
 constexpr std::uint16_t kLeLowLatencySupervisionTimeout = 400u; // 4 seconds
 
-// Minimal GAP Device Name ATT database. This mirrors the historical
-// BluetoothHCI behavior where the Pico exposes a local GAP service even while
-// acting as the BLE HID Host/Central.
-constexpr std::uint8_t kLocalGapProfile[] = {
-    0x01,
+// BT-OUT1 uses BTstack's HID-over-GATT Device service while preserving the
+// existing HIDS Host/Central path. The GATT database is generated at build
+// time from oag_ble_gamepad.gatt (Pico SDK / BTstack supported path).
+constexpr std::uint8_t kPlatformReportId = 1u;
 
-    // 0x0001 PRIMARY_SERVICE, GAP_SERVICE (0x1800)
-    0x0a, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x28, 0x00, 0x18,
+constexpr std::uint8_t kPlatformHidDescriptor[] = {
+    0x05, 0x01,       // Usage Page (Generic Desktop)
+    0x09, 0x05,       // Usage (Game Pad)
+    0xA1, 0x01,       // Collection (Application)
+    0x85, 0x01,       //   Report ID 1
 
-    // 0x0002 CHARACTERISTIC, GAP_DEVICE_NAME (0x2A00), READ
-    0x0d, 0x00, 0x02, 0x00, 0x02, 0x00, 0x03, 0x28,
-    0x02, 0x03, 0x00, 0x00, 0x2a,
+    0x05, 0x09,       //   Usage Page (Button)
+    0x19, 0x01,       //   Usage Minimum (Button 1)
+    0x29, 0x10,       //   Usage Maximum (Button 16)
+    0x15, 0x00,
+    0x25, 0x01,
+    0x75, 0x01,
+    0x95, 0x10,
+    0x81, 0x02,       //   Input (Data,Var,Abs)
 
-    // 0x0003 VALUE, "OAG Abo Gemi Ultra Gaming"
-    0x21, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x2a,
-    'O','A','G',' ','A','b','o',' ','G','e','m','i',' ',
-    'U','l','t','r','a',' ','G','a','m','i','n','g',
+    0x05, 0x01,       //   Usage Page (Generic Desktop)
+    0x09, 0x39,       //   Usage (Hat switch)
+    0x15, 0x00,
+    0x25, 0x07,
+    0x35, 0x00,
+    0x46, 0x3B, 0x01, //   Physical Maximum 315
+    0x65, 0x14,       //   Unit: degrees
+    0x75, 0x04,
+    0x95, 0x01,
+    0x81, 0x42,       //   Input (Data,Var,Abs,Null)
+    0x65, 0x00,
+    0x75, 0x04,
+    0x95, 0x01,
+    0x81, 0x03,       //   Padding
 
-    0x00, 0x00
+    0x05, 0x01,       //   Usage Page (Generic Desktop)
+    0x09, 0x30,       //   X  - left stick X
+    0x09, 0x31,       //   Y  - left stick Y
+    0x09, 0x32,       //   Z  - right stick X
+    0x09, 0x35,       //   Rz - right stick Y
+    0x16, 0x00, 0x80, //   Logical Minimum -32768
+    0x26, 0xFF, 0x7F, //   Logical Maximum  32767
+    0x75, 0x10,
+    0x95, 0x04,
+    0x81, 0x02,
+
+    0x05, 0x02,       //   Usage Page (Simulation Controls)
+    0x09, 0xC5,       //   Brake       - left trigger
+    0x09, 0xC4,       //   Accelerator - right trigger
+    0x15, 0x00,
+    0x26, 0xFF, 0x00,
+    0x75, 0x08,
+    0x95, 0x02,
+    0x81, 0x02,
+
+    0xC0
 };
+
+// 30-byte legacy advertising payload: General Discoverable + HIDS UUID +
+// official Generic HID/Gamepad Appearance (0x03C4) + compact product name.
+constexpr std::uint8_t kPlatformAdvData[] = {
+    0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x02,
+    0x12, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
+    'O','A','G',' ','U','n','i','v','e','r','s','a','l',' ','P','a','d',
+    0x03, BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS,
+    static_cast<std::uint8_t>(
+        ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE & 0xFF
+    ),
+    static_cast<std::uint8_t>(
+        ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE >> 8
+    ),
+    0x03, BLUETOOTH_DATA_TYPE_APPEARANCE, 0xC4, 0x03,
+};
+
+std::int16_t encodePlatformAxis(std::int32_t value) {
+    if (value == std::numeric_limits<std::int32_t>::min()) {
+        return std::numeric_limits<std::int16_t>::min();
+    }
+
+    if (value <= 0) {
+        return static_cast<std::int16_t>(value / 65536);
+    }
+
+    const std::int64_t scaled =
+        static_cast<std::int64_t>(value) *
+        std::numeric_limits<std::int16_t>::max() /
+        std::numeric_limits<std::int32_t>::max();
+
+    return static_cast<std::int16_t>(scaled);
+}
+
+void storeLe16(
+    std::array<std::uint8_t, 13>& report,
+    std::size_t offset,
+    std::int16_t value
+) {
+    const auto raw = static_cast<std::uint16_t>(value);
+    report[offset] = static_cast<std::uint8_t>(raw & 0xFFu);
+    report[offset + 1] = static_cast<std::uint8_t>(raw >> 8);
+}
+
+std::uint8_t encodePlatformHat(std::uint8_t dpad) {
+    const bool up =
+        (dpad & static_cast<std::uint8_t>(oag::DpadBits::Up)) != 0;
+    const bool down =
+        (dpad & static_cast<std::uint8_t>(oag::DpadBits::Down)) != 0;
+    const bool left =
+        (dpad & static_cast<std::uint8_t>(oag::DpadBits::Left)) != 0;
+    const bool right =
+        (dpad & static_cast<std::uint8_t>(oag::DpadBits::Right)) != 0;
+
+    if (up && !down) {
+        if (right && !left) return 1;
+        if (left && !right) return 7;
+        return 0;
+    }
+    if (down && !up) {
+        if (right && !left) return 3;
+        if (left && !right) return 5;
+        return 4;
+    }
+    if (right && !left) return 2;
+    if (left && !right) return 6;
+    return 8; // Null/center state.
+}
+
+std::array<std::uint8_t, 13> encodePlatformReport(
+    const oag::LogicalGamepadState& state
+) {
+    std::array<std::uint8_t, 13> report {};
+    report[2] = 8;
+
+    if (!state.connected) {
+        return report;
+    }
+
+    std::uint16_t buttons = 0;
+    const auto addButton = [&](std::uint64_t sourceMask, std::uint8_t bit) {
+        if ((state.buttons & sourceMask) != 0) {
+            buttons |= static_cast<std::uint16_t>(1u << bit);
+        }
+    };
+
+    addButton(oag::ButtonSouth, 0);
+    addButton(oag::ButtonEast, 1);
+    addButton(oag::ButtonWest, 2);
+    addButton(oag::ButtonNorth, 3);
+    addButton(oag::ButtonLeftBumper, 4);
+    addButton(oag::ButtonRightBumper, 5);
+    addButton(oag::ButtonLeftStick, 6);
+    addButton(oag::ButtonRightStick, 7);
+    addButton(oag::ButtonBack, 8);
+    addButton(oag::ButtonStart, 9);
+    addButton(oag::ButtonGuide, 10);
+    addButton(oag::ButtonShare, 11);
+
+    report[0] = static_cast<std::uint8_t>(buttons & 0xFFu);
+    report[1] = static_cast<std::uint8_t>(buttons >> 8);
+    report[2] = encodePlatformHat(state.dpad);
+
+    storeLe16(report, 3, encodePlatformAxis(state.lx));
+    storeLe16(report, 5, encodePlatformAxis(state.ly));
+    storeLe16(report, 7, encodePlatformAxis(state.rx));
+    storeLe16(report, 9, encodePlatformAxis(state.ry));
+
+    report[11] =
+        static_cast<std::uint8_t>(state.leftTrigger >> 24);
+    report[12] =
+        static_cast<std::uint8_t>(state.rightTrigger >> 24);
+
+    return report;
+}
 
 } // namespace
 
@@ -144,7 +316,7 @@ bool BluetoothHostV2::initialize(
     // Historical BluetoothHCI installed a local GAP/ATT server before power-on.
     // Keep runtime Host-only: this does not start advertising.
     att_server_init(
-        kLocalGapProfile,
+        profile_data,
         nullptr,
         nullptr
     );
@@ -167,8 +339,33 @@ bool BluetoothHostV2::initialize(
         )
     );
 
+    // BT-OUT1 peripheral: same BTstack instance, separate HIDS Device role.
+    hids_device_init(
+        0,
+        kPlatformHidDescriptor,
+        sizeof(kPlatformHidDescriptor)
+    );
+    hids_device_register_packet_handler(
+        platformHidPacketThunk
+    );
+
     gap_set_local_name(
-        "OAG Abo Gemi Ultra Gaming"
+        "OAG Universal Gamepad"
+    );
+
+    bd_addr_t platformAdvAddress {};
+    gap_advertisements_set_params(
+        0x0020,
+        0x0030,
+        0,
+        0,
+        platformAdvAddress,
+        0x07,
+        0x00
+    );
+    gap_advertisements_set_data(
+        sizeof(kPlatformAdvData),
+        const_cast<std::uint8_t*>(kPlatformAdvData)
     );
 
     gap_set_default_link_policy_settings(
@@ -240,6 +437,41 @@ std::size_t BluetoothHostV2::connectedPeerCount() const {
     }
 
     return count;
+}
+
+bool BluetoothHostV2::bluetoothPlatformConnected() const {
+    return
+        platformConnectionHandle_ != kInvalidPlatformHandle &&
+        platformInputSubscribed_;
+}
+
+bool BluetoothHostV2::submitBluetoothPlatformGamepad(
+    const oag::LogicalGamepadState& state
+) {
+    const auto next = encodePlatformReport(state);
+
+    if (
+        next == platformLatestReport_ &&
+        !platformReportDirty_
+    ) {
+        return true;
+    }
+
+    platformLatestReport_ = next;
+    platformReportDirty_ = true;
+
+    if (!bluetoothPlatformConnected()) {
+        return true;
+    }
+
+    const std::uint8_t status =
+        hids_device_request_can_send_now_event(
+            platformConnectionHandle_
+        );
+
+    return
+        status == ERROR_CODE_SUCCESS ||
+        status == ERROR_CODE_COMMAND_DISALLOWED;
 }
 
 BluetoothHidOutputResult BluetoothHostV2::sendLeOutputReport(
@@ -945,6 +1177,16 @@ void BluetoothHostV2::handleSmPacket(
             const std::uint16_t handle =
                 sm_event_pairing_complete_get_handle(packet);
 
+            if (handle == platformConnectionHandle_) {
+                if (
+                    sm_event_pairing_complete_get_status(packet) !=
+                    ERROR_CODE_SUCCESS
+                ) {
+                    gap_disconnect(handle);
+                }
+                break;
+            }
+
             if (
                 sm_event_pairing_complete_get_status(packet) ==
                 ERROR_CODE_SUCCESS
@@ -962,6 +1204,13 @@ void BluetoothHostV2::handleSmPacket(
 
             const std::uint8_t status =
                 sm_event_reencryption_complete_get_status(packet);
+
+            if (handle == platformConnectionHandle_) {
+                if (status != ERROR_CODE_SUCCESS) {
+                    gap_disconnect(handle);
+                }
+                break;
+            }
 
             if (status == ERROR_CODE_SUCCESS) {
                 startLeHids(handle);
@@ -1229,6 +1478,92 @@ void BluetoothHostV2::handleLeHidPacket(
     }
 }
 
+void BluetoothHostV2::handlePlatformHidPacket(
+    std::uint8_t packetType,
+    std::uint16_t channel,
+    std::uint8_t* packet,
+    std::uint16_t size
+) {
+    (void)channel;
+    (void)size;
+
+    if (
+        packetType != HCI_EVENT_PACKET ||
+        packet == nullptr ||
+        hci_event_packet_get_type(packet) != HCI_EVENT_HIDS_META
+    ) {
+        return;
+    }
+
+    switch (hci_event_hids_meta_get_subevent_code(packet)) {
+        case HIDS_SUBEVENT_INPUT_REPORT_ENABLE: {
+            const std::uint16_t handle =
+                hids_subevent_input_report_enable_get_con_handle(
+                    packet
+                );
+
+            if (handle != platformConnectionHandle_) {
+                break;
+            }
+
+            platformInputSubscribed_ =
+                hids_subevent_input_report_enable_get_enable(
+                    packet
+                ) != 0;
+
+            if (!platformInputSubscribed_) {
+                break;
+            }
+
+            platformReportDirty_ = true;
+
+            const std::uint16_t currentInterval =
+                gap_le_connection_interval(
+                    platformConnectionHandle_
+                );
+
+            if (currentInterval > kLeLowLatencyIntervalMax) {
+                (void)gap_request_connection_parameter_update(
+                    platformConnectionHandle_,
+                    kLeLowLatencyIntervalMin,
+                    kLeLowLatencyIntervalMax,
+                    kLeLowLatencyConnLatency,
+                    kLeLowLatencySupervisionTimeout
+                );
+            }
+
+            (void)hids_device_request_can_send_now_event(
+                platformConnectionHandle_
+            );
+            break;
+        }
+
+        case HIDS_SUBEVENT_CAN_SEND_NOW:
+            if (
+                bluetoothPlatformConnected() &&
+                platformReportDirty_
+            ) {
+                const std::uint8_t status =
+                    hids_device_send_input_report_for_id(
+                        platformConnectionHandle_,
+                        kPlatformReportId,
+                        platformLatestReport_.data(),
+                        static_cast<std::uint16_t>(
+                            platformLatestReport_.size()
+                        )
+                    );
+
+                if (status == ERROR_CODE_SUCCESS) {
+                    platformReportDirty_ = false;
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+}
+
 void BluetoothHostV2::handlePacket(
     std::uint8_t packetType,
     std::uint16_t channel,
@@ -1253,6 +1588,11 @@ void BluetoothHostV2::handlePacket(
             ) {
                 hciWorking_ = true;
                 pendingKind_ = PendingKind::None;
+
+                // Advertising is independent from the existing Central scan.
+                // This makes the Pico visible as a BLE Gamepad platform target
+                // while it continues discovering controller inputs.
+                (void)gap_advertisements_enable(1);
                 startLeScan();
             }
             break;
@@ -1374,10 +1714,29 @@ void BluetoothHostV2::handlePacket(
                         packet
                     );
 
-                if (
-                    role == HCI_ROLE_SLAVE ||
-                    !hasCapacity()
-                ) {
+                if (role == HCI_ROLE_SLAVE) {
+                    // Incoming platform connection to our BLE HID Gamepad.
+                    // Never allocate it as an input Peer and never consume the
+                    // four-controller Bluetooth Host budget.
+                    if (
+                        platformConnectionHandle_ !=
+                            kInvalidPlatformHandle &&
+                        platformConnectionHandle_ !=
+                            connectionHandle
+                    ) {
+                        gap_disconnect(connectionHandle);
+                        break;
+                    }
+
+                    platformConnectionHandle_ = connectionHandle;
+                    platformInputSubscribed_ = false;
+                    platformReportDirty_ = true;
+
+                    sm_request_pairing(connectionHandle);
+                    break;
+                }
+
+                if (!hasCapacity()) {
                     gap_disconnect(connectionHandle);
                     pendingKind_ = PendingKind::None;
                     resumeDiscovery();
@@ -1452,6 +1811,14 @@ void BluetoothHostV2::handlePacket(
                 hci_event_disconnection_complete_get_connection_handle(
                     packet
                 );
+
+            if (handle == platformConnectionHandle_) {
+                platformConnectionHandle_ = kInvalidPlatformHandle;
+                platformInputSubscribed_ = false;
+                platformReportDirty_ = true;
+                (void)gap_advertisements_enable(1);
+                break;
+            }
 
             Peer* peer =
                 findBleByHandle(handle);

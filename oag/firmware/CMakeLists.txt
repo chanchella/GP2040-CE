@@ -81,6 +81,12 @@ target_link_libraries(OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W PRIVATE
     pico_btstack_classic
 )
 
+pico_btstack_make_gatt_header(
+    OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/oag_ble_gamepad.gatt"
+)
+
 pico_enable_stdio_usb(OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W 0)
 pico_enable_stdio_uart(OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W 0)
 
@@ -88,7 +94,7 @@ pico_set_program_name(
     OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W
     "OAG Abo Gemi Ultra Gaming"
 )
-pico_set_program_version(OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W "U10F-PM1")
+pico_set_program_version(OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W "U10F-PM1-L1-BT-OUT1")
 
 target_link_options(OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W PRIVATE
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_Pico2W.map"

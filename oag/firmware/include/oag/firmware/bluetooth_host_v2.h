@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "oag/device/device_registry.h"
+#include "oag/output/logical_gamepad_state.h"
 
 namespace oag::firmware {
 
@@ -66,6 +67,13 @@ public:
 
     std::size_t connectedPeerCount() const;
 
+    // BT-OUT1: one BLE HID Gamepad peripheral connection for a phone/PC/tablet.
+    // Input-host peers remain independent and keep their existing four-peer budget.
+    bool bluetoothPlatformConnected() const;
+    bool submitBluetoothPlatformGamepad(
+        const oag::LogicalGamepadState& state
+    );
+
     BluetoothHidOutputResult sendLeOutputReport(
         std::uint16_t connectionHandle,
         std::uint8_t serviceInstance,
@@ -89,6 +97,13 @@ public:
     );
 
     void handleLeHidPacket(
+        std::uint8_t packetType,
+        std::uint16_t channel,
+        std::uint8_t* packet,
+        std::uint16_t size
+    );
+
+    void handlePlatformHidPacket(
         std::uint8_t packetType,
         std::uint16_t channel,
         std::uint8_t* packet,
@@ -188,6 +203,14 @@ private:
 
     std::array<std::uint8_t, 8192> leDescriptorStorage_ {};
     std::array<std::uint8_t, 4096> classicDescriptorStorage_ {};
+
+    // Separate BLE peripheral/output state. This connection is never inserted
+    // into peers_ and therefore cannot consume or merge an input controller.
+    static constexpr std::uint16_t kInvalidPlatformHandle = 0xFFFFu;
+    std::uint16_t platformConnectionHandle_ = kInvalidPlatformHandle;
+    bool platformInputSubscribed_ = false;
+    bool platformReportDirty_ = false;
+    std::array<std::uint8_t, 13> platformLatestReport_ {};
 };
 
 } // namespace oag::firmware
