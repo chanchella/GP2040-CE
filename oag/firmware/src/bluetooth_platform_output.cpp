@@ -10,6 +10,7 @@
 #include "ble/gatt-service/hids_device.h"
 
 #include "oag/firmware/bluetooth_host_v2.h"
+#include "oag/input/gamepad_state.h"
 
 namespace {
 
