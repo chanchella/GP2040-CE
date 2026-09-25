@@ -1639,20 +1639,16 @@ private:
         }
 
         const std::uint8_t vertical =
-            static_cast<std::uint8_t>(
-                oag::DpadBits::Up |
-                oag::DpadBits::Down
-            );
+            static_cast<std::uint8_t>(oag::DpadBits::Up) |
+            static_cast<std::uint8_t>(oag::DpadBits::Down);
 
         if ((merged.dpad & vertical) == vertical) {
             merged.dpad &= static_cast<std::uint8_t>(~vertical);
         }
 
         const std::uint8_t horizontal =
-            static_cast<std::uint8_t>(
-                oag::DpadBits::Left |
-                oag::DpadBits::Right
-            );
+            static_cast<std::uint8_t>(oag::DpadBits::Left) |
+            static_cast<std::uint8_t>(oag::DpadBits::Right);
 
         if ((merged.dpad & horizontal) == horizontal) {
             merged.dpad &= static_cast<std::uint8_t>(~horizontal);
