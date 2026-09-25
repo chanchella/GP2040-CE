@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui2-pc-xinput-policy-and-tests:
+  ui3-razer-easysmx-input-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -59,7 +59,7 @@ jobs:
             'oag/src/output/platform/platform_profile_registry.cpp' \
             'oag/src/protocol/hid/generic_hid_gamepad_driver.cpp' | sort)"
 
-          echo "=== UI2_PC_XINPUT_RUNTIME_DIFF ==="
+          echo "=== UI3_RAZER_EASYSMX_INPUT_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -122,13 +122,17 @@ jobs:
           assert "kUsageConsumerHome = 0x0223" in core_hid
           assert "UsbDeviceProfile::SonyDualSense" in usb_classifier
           assert "UsbDeviceProfile::AogUniversalHid2" in usb_classifier
+          assert "UsbDeviceProfile::RazerWolverineV3Pro" in usb_classifier
+          assert "UsbDeviceProfile::RazerWolverineV3Tournament" in usb_classifier
+          assert "UsbDeviceProfile::EasySmxX15Receiver" in usb_classifier
+          assert "UsbDeviceProfile::EasySmxLegacy2f240091" in usb_classifier
 
           assert "requestPairingAssist()" in host
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI2_PC_XINPUT_POLICY=PASS")
+          print("UI3_RAZER_EASYSMX_INPUT_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -153,8 +157,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui2-pc-xinput:
-    needs: ui2-pc-xinput-policy-and-tests
+  firmware-ui3-razer-easysmx-input:
+    needs: ui3-razer-easysmx-input-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -229,7 +233,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI2-PC-XINPUT"
+          assert manifest["phase"] == "U10F-PM1-UI3-RAZER-EASYSMX-INPUT"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -238,6 +242,12 @@ jobs:
           assert f["xusb_input"] is True
           assert f["wired_xgip_input"] is True
           assert f["generic_hid_gamepad_host"] is True
+          assert f["razer_xbox_family_input_profiles"] is True
+          assert f["razer_wolverine_v3_pro_1532_0a3f"] is True
+          assert f["razer_wolverine_v3_tournament_1532_0a43"] is True
+          assert f["easysmx_x15_receiver_1a34_f517"] is True
+          assert f["easysmx_legacy_receiver_2f24_0091"] is True
+          assert f["easysmx_generic_hid_bluetooth_fallback"] is True
 
           assert f["pc_generic_hid_output"] is False
           assert f["pc_generic_hid_output_slots"] == 0
@@ -253,18 +263,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI2_PC_XINPUT=PASS")
+          print("BUILD_MANIFEST_UI3_RAZER_EASYSMX_INPUT=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI2-PC-XINPUT_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI2-PC-XINPUT_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI2-PC-XINPUT_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI2-PC-XINPUT_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI3-RAZER-EASYSMX-INPUT_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI3-RAZER-EASYSMX-INPUT_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI3-RAZER-EASYSMX-INPUT_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI3-RAZER-EASYSMX-INPUT_* > artifacts/SHA256SUMS.txt
 
       - name: Upload UI2 PC XInput candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI2-PC-XINPUT-${{ github.sha }}
+          name: OAG-U10F-PM1-UI3-RAZER-EASYSMX-INPUT-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
