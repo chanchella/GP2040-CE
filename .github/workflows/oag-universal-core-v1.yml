@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  pc-hid1-policy-and-tests:
+  pc-hid2-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -30,7 +30,7 @@ jobs:
           TRUE_GOLDEN="59182f30c2028f77c059666d6473487d90a82b64"
           git merge-base --is-ancestor "${TRUE_GOLDEN}" HEAD
 
-      - name: Verify isolated PC-HID1 runtime delta
+      - name: Verify isolated PC-HID2 runtime delta
         shell: bash
         run: |
           set -euo pipefail
@@ -55,7 +55,7 @@ jobs:
             'oag/firmware/src/usb_descriptors.cpp' \
             'oag/firmware/tusb_config.h' | sort)"
 
-          echo "=== PC_HID1_RUNTIME_DIFF ==="
+          echo "=== PC_HID2_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -100,9 +100,9 @@ jobs:
           assert "#define CFG_TUD_VENDOR 0" in tusb
           assert "#define CFG_TUD_ENDPOINT0_SIZE 64" in tusb
 
-          assert "6 axis 16 button gamepad with hat switch" in desc
+          assert "AOG Abo Gemi ultra gaming" in desc
           assert "kDeviceVid = 0xCAFE" in desc
-          assert "kDevicePid = 0x4011" in desc
+          assert "kDevicePid = 0x4012" in desc
           assert "kPollingIntervalMs = 1" in desc
           assert "0x29, 0x10" in desc
           assert "0x09, 0x39" in desc
@@ -110,7 +110,18 @@ jobs:
                         "0x09, 0x33", "0x09, 0x34", "0x09, 0x35"):
               assert usage in desc
 
-          assert "ButtonShare" in hid
+          assert "kButtonSouth = hidButton(1)" in hid
+          assert "kButtonEast = hidButton(2)" in hid
+          assert "kButtonWest = hidButton(3)" in hid
+          assert "kButtonNorth = hidButton(4)" in hid
+          assert "kButtonLeftBumper = hidButton(5)" in hid
+          assert "kButtonRightBumper = hidButton(6)" in hid
+          assert "kButtonBack = hidButton(7)" in hid
+          assert "kButtonStart = hidButton(8)" in hid
+          assert "kButtonLeftStick = hidButton(9)" in hid
+          assert "kButtonRightStick = hidButton(10)" in hid
+          assert "kButtonGuide = hidButton(11)" in hid
+          assert "kButtonShare = hidButton(12)" in hid
           assert "tud_hid_n_report" in hid
           assert "return PlatformId::PcGenericHid;" in platform
           assert ".rumble = false" in platform
@@ -123,8 +134,8 @@ jobs:
           assert "gap_request_connection_parameter_update(" in host
 
           print("TRUE_GOLDEN_RUNTIME_PRESERVED=PASS")
-          print("PC_HID1_ISOLATED_TARGET_OUTPUT=PASS")
-          print("PC_HID1_6AXIS_16BUTTON_HAT=PASS")
+          print("PC_HID2_ISOLATED_TARGET_OUTPUT=PASS")
+          print("PC_HID2_6AXIS_16BUTTON_HAT=PASS")
           PY
 
       - name: Architecture dependency guard
@@ -148,8 +159,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-pc-hid1:
-    needs: pc-hid1-policy-and-tests
+  firmware-pc-hid2:
+    needs: pc-hid2-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -224,13 +235,18 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-PC-HID1"
+          assert manifest["phase"] == "U10F-PM1-PC-HID2"
           assert f["pc_generic_hid_output"] is True
           assert f["pc_generic_hid_output_slots"] == 4
           assert f["pc_generic_hid_axes"] == 6
           assert f["pc_generic_hid_buttons"] == 16
           assert f["pc_generic_hid_hat_switch"] is True
           assert f["pc_generic_hid_poll_interval_ms"] == 1
+          assert f["pc_generic_hid_pid"] == "0x4012"
+          assert f["pc_hid2_product_string"] == "AOG Abo Gemi ultra gaming"
+          assert f["pc_hid2_windows_hid_class"] is True
+          assert f["pc_hid2_button_order"] == "A_B_X_Y_LB_RB_BACK_START_L3_R3_GUIDE_SHARE"
+          assert f["pc_hid2_axis_layout"] == "X_Y_LEFT__RX_RY_RIGHT__Z_RZ_LT_RT"
           assert f["pc_xinput_output"] is False
           assert f["bluetooth_host_v2"] is True
           assert f["bluetooth_host_only"] is True
@@ -240,18 +256,18 @@ jobs:
           assert f["mouse_boot_host"] is True
           assert f["generic_hid_gamepad_host"] is True
 
-          print("BUILD_MANIFEST_PC_HID1=PASS")
+          print("BUILD_MANIFEST_PC_HID2=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-PC-HID1_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-PC-HID1_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-PC-HID1_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-PC-HID1_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-PC-HID2_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-PC-HID2_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-PC-HID2_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-PC-HID2_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload PC-HID1 candidate bundle
+      - name: Upload PC-HID2 candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-PC-HID1-${{ github.sha }}
+          name: OAG-U10F-PM1-PC-HID2-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

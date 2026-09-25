@@ -13,13 +13,30 @@
 namespace {
 
 constexpr std::uint16_t kDeviceVid = 0xCAFE;
-constexpr std::uint16_t kDevicePid = 0x4011;
+constexpr std::uint16_t kDevicePid = 0x4012;
 constexpr std::size_t kOutputSlots =
     oag::firmware::PcHidOutput::kOutputSlots;
 constexpr std::uint8_t kEndpointPacketSize = 16;
 constexpr std::uint8_t kPollingIntervalMs = 1;
 
-// 16 buttons + 1 eight-way hat + 6 axes.
+// AOG universal canonical USB gamepad persona.
+//
+// The first ten buttons follow the documented Microsoft XUSB-to-HID order.
+// Cross-family semantic normalization happens before this output layer:
+// A/Cross, B/Circle, X/Square, Y/Triangle, LB/L1, RB/R1,
+// View/Select, Menu/Options, L3, R3. Guide/Home and Share/Create/Capture
+// extend that stable order as buttons 11 and 12.
+//
+// Keep the PC-HID1 hardware-verified shape unchanged:
+// 16 buttons + one eight-way Hat Switch + six analog axes.
+//   X/Y     = left stick
+//   Rx/Ry   = right stick
+//   Z/Rz    = LT/L2 and RT/R2, independently
+//
+// This remains standard USB HID. Native Xbox/PlayStation console personas
+// require their dedicated platform protocol/authentication path and are not
+// impersonated by this generic HID descriptor.
+//
 // Report bytes:
 //   0..1 buttons
 //   2    hat (low nibble; 8 = neutral)
@@ -84,7 +101,7 @@ const std::uint8_t kDeviceDescriptor[] = {
     static_cast<std::uint8_t>(kDeviceVid >> 8),
     static_cast<std::uint8_t>(kDevicePid & 0xFFu),
     static_cast<std::uint8_t>(kDevicePid >> 8),
-    0x01, 0x01,             // bcdDevice 1.01
+    0x02, 0x01,             // bcdDevice 1.02
     0x01, 0x02, 0x03,       // manufacturer/product/serial
     0x01,                   // one configuration
 };
@@ -149,7 +166,7 @@ const char* stringValue(std::uint8_t index) {
         case 1:
             return oag::product::kManufacturer;
         case 2:
-            return "6 axis 16 button gamepad with hat switch";
+            return "AOG Abo Gemi ultra gaming";
         case 3: {
             pico_unique_board_id_t id {};
             pico_get_unique_board_id(&id);
@@ -157,7 +174,7 @@ const char* stringValue(std::uint8_t index) {
             std::snprintf(
                 gSerial,
                 sizeof(gSerial),
-                "OAG-HID-%02X%02X%02X%02X%02X%02X",
+                "AOG-HID2-%02X%02X%02X%02X%02X%02X",
                 id.id[2],
                 id.id[3],
                 id.id[4],

@@ -57,9 +57,9 @@ btstack_sha = git_in(pico_sdk_path / "lib/btstack", "rev-parse", "HEAD")
 cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 
 manifest = {
-    "product": "OAG Abo Gemi Ultra Gaming",
+    "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-PC-HID1",
+    "phase": "U10F-PM1-PC-HID2",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -99,7 +99,7 @@ manifest = {
         "pc_generic_hid_hat_switch": True,
         "pc_generic_hid_poll_interval_ms": 1,
         "pc_generic_hid_vid": "0xCAFE",
-        "pc_generic_hid_pid": "0x4011",
+        "pc_generic_hid_pid": "0x4012",
         "pc_xinput_output": False,
         "pc_xinput_output_slots": 0,
         "multi_xinput_output": False,
@@ -189,14 +189,14 @@ manifest = {
         "u10f_pm1_supported_gamepads_normalized_to_xbox360": False,
         "pc_hid1_true_golden_base": "59182f30c2028f77c059666d6473487d90a82b64",
         "pc_hid1_runtime_delta_scope": "TARGET_FACING_PC_USB_ONLY",
-        "pc_hid1_product_string": "6 axis 16 button gamepad with hat switch",
+        "pc_hid1_product_string": "6 axis 16 button gamepad with hat switch",\n        "pc_hid2_product_string": "AOG Abo Gemi ultra gaming",\n        "pc_hid2_windows_hid_class": True,\n        "pc_hid2_button_order": "A_B_X_Y_LB_RB_BACK_START_L3_R3_GUIDE_SHARE",\n        "pc_hid2_cross_family_semantics": "XBOX_PLAYSTATION_GENERIC_CANONICAL",\n        "pc_hid2_axis_layout": "X_Y_LEFT__RX_RY_RIGHT__Z_RZ_LT_RT",\n        "pc_hid2_pid_cache_bump": "0x4012",
         "pc_hid1_generic_hid_rumble": False,
         "authentication": False,
     },
     "pc_generic_hid_profile": {
         "development_vid": "0xCAFE",
-        "development_pid": "0x4011",
-        "product_string": "6 axis 16 button gamepad with hat switch",
+        "development_pid": "0x4012",
+        "product_string": "AOG Abo Gemi ultra gaming",
         "interfaces": 4,
         "axes_per_interface": 6,
         "buttons_per_interface": 16,
@@ -248,7 +248,7 @@ manifest = {
         "u10f_pm1_pairing_mode": "PENDING_HARDWARE",
         "u10f_pm1_usb_three_roots": "PENDING_HARDWARE",
         "u10f_pm1_xbox360_output_policy": "HISTORICAL_TRUE_GOLDEN",
-        "u10f_pm1_pc_hid1": "PENDING_HARDWARE",
+        "u10f_pm1_pc_hid1": "HARDWARE_VERIFIED_ENUMERATION_BY_USER",\n        "u10f_pm1_pc_hid2_universal_map": "PENDING_HARDWARE",
     },
 }
 

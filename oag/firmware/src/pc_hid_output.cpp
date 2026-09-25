@@ -43,21 +43,59 @@ std::uint8_t hatFromDpad(std::uint8_t dpad) {
     return 8;
 }
 
+constexpr std::uint16_t hidButton(std::uint8_t usageNumber) {
+    return static_cast<std::uint16_t>(
+        1u << static_cast<unsigned>(usageNumber - 1u)
+    );
+}
+
+// Stable canonical face/shoulder/meta order.
+//
+// The first ten usages intentionally follow Microsoft's documented
+// XUSB-to-HID gamepad mapping. The physical labels from other controller
+// families are normalized into the same semantics before this layer:
+//
+//   1  South  = Xbox A      = PlayStation Cross
+//   2  East   = Xbox B      = PlayStation Circle
+//   3  West   = Xbox X      = PlayStation Square
+//   4  North  = Xbox Y      = PlayStation Triangle
+//   5  LB     = L1
+//   6  RB     = R1
+//   7  Back   = View/Select
+//   8  Start  = Menu/Options
+//   9  L3
+//   10 R3
+//   11 Guide  = Xbox/PS/Home
+//   12 Share  = Share/Create/Capture
+//   13..16 reserved for later platform-specific extensions.
+constexpr std::uint16_t kButtonSouth = hidButton(1);
+constexpr std::uint16_t kButtonEast = hidButton(2);
+constexpr std::uint16_t kButtonWest = hidButton(3);
+constexpr std::uint16_t kButtonNorth = hidButton(4);
+constexpr std::uint16_t kButtonLeftBumper = hidButton(5);
+constexpr std::uint16_t kButtonRightBumper = hidButton(6);
+constexpr std::uint16_t kButtonBack = hidButton(7);
+constexpr std::uint16_t kButtonStart = hidButton(8);
+constexpr std::uint16_t kButtonLeftStick = hidButton(9);
+constexpr std::uint16_t kButtonRightStick = hidButton(10);
+constexpr std::uint16_t kButtonGuide = hidButton(11);
+constexpr std::uint16_t kButtonShare = hidButton(12);
+
 std::uint16_t buttonsToHid(std::uint64_t buttons) {
     std::uint16_t out = 0;
 
-    if (buttons & ButtonSouth) out |= 1u << 0;
-    if (buttons & ButtonEast) out |= 1u << 1;
-    if (buttons & ButtonWest) out |= 1u << 2;
-    if (buttons & ButtonNorth) out |= 1u << 3;
-    if (buttons & ButtonLeftBumper) out |= 1u << 4;
-    if (buttons & ButtonRightBumper) out |= 1u << 5;
-    if (buttons & ButtonBack) out |= 1u << 6;
-    if (buttons & ButtonStart) out |= 1u << 7;
-    if (buttons & ButtonLeftStick) out |= 1u << 8;
-    if (buttons & ButtonRightStick) out |= 1u << 9;
-    if (buttons & ButtonGuide) out |= 1u << 10;
-    if (buttons & ButtonShare) out |= 1u << 11;
+    if (buttons & ButtonSouth) out |= kButtonSouth;
+    if (buttons & ButtonEast) out |= kButtonEast;
+    if (buttons & ButtonWest) out |= kButtonWest;
+    if (buttons & ButtonNorth) out |= kButtonNorth;
+    if (buttons & ButtonLeftBumper) out |= kButtonLeftBumper;
+    if (buttons & ButtonRightBumper) out |= kButtonRightBumper;
+    if (buttons & ButtonBack) out |= kButtonBack;
+    if (buttons & ButtonStart) out |= kButtonStart;
+    if (buttons & ButtonLeftStick) out |= kButtonLeftStick;
+    if (buttons & ButtonRightStick) out |= kButtonRightStick;
+    if (buttons & ButtonGuide) out |= kButtonGuide;
+    if (buttons & ButtonShare) out |= kButtonShare;
 
     return out;
 }
