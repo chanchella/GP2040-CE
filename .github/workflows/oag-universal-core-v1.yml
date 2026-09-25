@@ -59,7 +59,7 @@ jobs:
 
           # BT-OUT1 exact runtime identities.
           test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "272dea2861596dd4fc135e192c3e2be49bc08922"
-          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "e671b141f4cf0232474035721832ab5427851b11"
+          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "29320395556dd4af63805602623161082cb72e7c"
           test "$(git hash-object oag/firmware/src/main.cpp)" = "7810fa18237b9e5ae9525b6fe8fb9e27fce38925"
           test "$(git hash-object oag/firmware/CMakeLists.txt)" = "df8cd047895715c262b1b0320a4cd86a537e9880"
           test "$(git hash-object oag/firmware/oag_ble_gamepad.gatt)" = "d57adbb184a9284bac12f4bd97209e778a5d91a4"
@@ -117,13 +117,17 @@ jobs:
           assert "Do not force SMP immediately from the peripheral side." in bt
           assert "BT-OUT1-P2: platform-side stale-bond repair." in bt
           assert "BT-OUT1-P3: quiesce controller discovery" in bt
-          assert "OAGP5 S%u E%02X R%02X" in bt
+          assert "P6S%uE%02XR%02XO%02XI%02X" in bt
           assert "sm_event_pairing_complete_get_reason" in bt
           assert "Preserve a real SMP/reencryption reason" in bt
           assert "SM_EVENT_PAIRING_STARTED" in bt
           assert "battery_service_server_init(100);" in bt
           assert "device_information_service_server_init();" in bt
           assert "device_information_service_server_set_pnp_id(" in bt
+          assert "hci_dump_init(&gOagSmpTraceDump);" in bt
+          assert "L2CAP_CID_SECURITY_MANAGER_PROTOCOL" in bt
+          assert "gLastOutgoingSmpOpcode" in bt
+          assert "gLastIncomingSmpOpcode" in bt
           assert "SM_AUTHREQ_SECURE_CONNECTION |" in bt
 
           main = Path("oag/firmware/src/main.cpp").read_text()
@@ -451,7 +455,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          STOCK_SOURCE_SHA="5426dbeb214585160eb83da0fcf80301e90bcf8d"
+          STOCK_SOURCE_SHA="68d864dbf3d74f624040e2c67dd78a65253be64d"
           STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
           STOCK_NAME="OAG_U10F_PM1_L1_BT_OUT1_FULL_PROJECT_${STOCK_SHORT}"
           STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
