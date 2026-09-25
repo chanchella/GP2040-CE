@@ -1991,10 +1991,18 @@ void BluetoothHostV2::handlePacket(
                     hci_event_disconnection_complete_get_reason(packet);
 
                 if (!gPlatformSecurityComplete) {
+                    // Preserve a real SMP/reencryption reason captured before
+                    // the ACL disconnect. Only use the HCI disconnect reason
+                    // when security never produced its own failure status.
+                    const std::uint8_t diagnosticReason =
+                        gPlatformDiagStatus == ERROR_CODE_SUCCESS
+                            ? disconnectReason
+                            : gPlatformDiagReason;
+
                     setPlatformDiagnosticAdvertising(
                         gPlatformDiagStage,
                         gPlatformDiagStatus,
-                        disconnectReason
+                        diagnosticReason
                     );
                 } else {
                     buildPlatformAdvertisingName(
