@@ -27,7 +27,7 @@ extern "C" {
 // TinyUSB 0.17 compile anchor. OAG's custom XInput application driver is
 // registered first and claims the target-facing XInput interfaces.
 #define CFG_TUD_VENDOR 1
-#define CFG_TUD_HID 0
+#define CFG_TUD_HID 2
 
 #define CFG_TUH_ENABLED 1
 #define CFG_TUH_RPI_PIO_USB 1
