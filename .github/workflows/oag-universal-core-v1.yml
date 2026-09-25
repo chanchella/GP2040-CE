@@ -404,7 +404,7 @@ jobs:
           assert manifest["verification"]["u10f_pm1_u10f_runtime_regression"] == "PENDING_HARDWARE"
           assert manifest["verification"]["u10f_pm1_pairing_mode"] == "PENDING_HARDWARE"
           assert manifest["verification"]["u10f_pm1_usb_three_roots"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10f_pm1_xbox360_output_policy"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10f_pm1_xbox360_output_policy"] == "HARDWARE_VERIFIED_BY_USER"
           assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
           assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
           assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
