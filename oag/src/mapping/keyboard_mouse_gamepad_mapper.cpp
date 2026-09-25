@@ -135,15 +135,14 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
 
     rebuildExtraBindings();
 
-    // 60%-launch mouse->right-stick curve. A one-count mouse movement is
-    // intentionally mapped to about 60% stick travel so micro-movement is
-    // extremely immediate. Medium and fast motion still ramps toward full
-    // analog deflection through the existing sub-linear curve.
-    mouseConfig_.sensitivityX = 0.045;
-    mouseConfig_.sensitivityY = 0.045;
+    // Full-scale mouse->right-stick profile. Any non-zero one-count mouse
+    // movement reaches full stick magnitude immediately. Direction is still
+    // preserved by the circular boundary.
+    mouseConfig_.sensitivityX = 1.0;
+    mouseConfig_.sensitivityY = 1.0;
     mouseConfig_.exponent = 0.58;
-    mouseConfig_.deadzoneX = 0.521;
-    mouseConfig_.deadzoneY = 0.521;
+    mouseConfig_.deadzoneX = 0.0;
+    mouseConfig_.deadzoneY = 0.0;
     mouseConfig_.boundary = StickBoundary::Circle;
     mouseConfig_.invertY = false;
 }
