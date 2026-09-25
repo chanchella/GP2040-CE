@@ -15,20 +15,21 @@ set(PICO_PIO_USB_PATH "${OAG_REPO_ROOT}/lib/pico_pio_usb" CACHE PATH "Pinned Pic
 
 include("${OAG_REPO_ROOT}/pico_sdk_import.cmake")
 
-project(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W LANGUAGES C CXX ASM)
+project(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W LANGUAGES C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
-add_executable(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W
+add_executable(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W
     src/main.cpp
     src/usb_pio_host.cpp
     src/usb_pio_probe.c
     src/xinput_host.cpp
     src/pc_xinput_device.cpp
     src/pc_xinput_platform_driver.cpp
+    src/pc_native_km_output.cpp
     src/usb_descriptors.cpp
     src/bluetooth_host_v2.cpp
     src/bluetooth_hid_parser_v2.cpp
@@ -45,31 +46,32 @@ add_executable(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W
     ../src/mapping/digital_binding_engine.cpp
     ../src/mapping/mouse_to_stick_mapper.cpp
     ../src/mapping/keyboard_mouse_gamepad_mapper.cpp
+    ../src/mapping/native_km_combo_engine.cpp
     ../src/output/xinput/xinput_report_encoder.cpp
     ../src/output/xinput/xinput_feedback_decoder.cpp
     ../src/feedback/keyboard_led_state.cpp
 )
 
-target_include_directories(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W PRIVATE
+target_include_directories(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}"
     "${CMAKE_CURRENT_LIST_DIR}/include"
     "${CMAKE_CURRENT_LIST_DIR}/../include"
     "${PICO_SDK_PATH}/lib/lwip/src/include"
 )
 
-target_compile_definitions(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W PRIVATE
+target_compile_definitions(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W PRIVATE
     PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64
     PICO_STACK_SIZE=0x1000
     CYW43_LWIP=0
 )
 
-target_compile_options(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W PRIVATE
+target_compile_options(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W PRIVATE
     -Wall
     -Wextra
     -Wpedantic
 )
 
-target_link_libraries(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W PRIVATE
+target_link_libraries(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W PRIVATE
     pico_stdlib
     pico_unique_id
     tinyusb_device
@@ -81,17 +83,17 @@ target_link_libraries(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W PRIV
     pico_btstack_classic
 )
 
-pico_enable_stdio_usb(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W 0)
-pico_enable_stdio_uart(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W 0)
+pico_enable_stdio_usb(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W 0)
+pico_enable_stdio_uart(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W 0)
 
 pico_set_program_name(
-    OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W
+    OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W
     "OAG Abo Gemi Ultra Gaming"
 )
-pico_set_program_version(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W "U10F-PM1-UI4F-KM-EXTRA6-MOUSE-AIM-100-10MS")
+pico_set_program_version(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W "U10F-PM1-UI5A-GLOBAL-KM-MODES-PC-NATIVE")
 
-target_link_options(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W PRIVATE
-    "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W.map"
+target_link_options(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W PRIVATE
+    "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W.map"
 )
 
-pico_add_extra_outputs(OAG_U10F_PM1_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_Pico2W)
+pico_add_extra_outputs(OAG_U10F_PM1_UI5A_GLOBAL_KM_MODES_PC_NATIVE_Pico2W)
