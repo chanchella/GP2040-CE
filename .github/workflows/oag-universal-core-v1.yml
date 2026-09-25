@@ -59,10 +59,10 @@ jobs:
 
           # BT-OUT1 exact runtime identities.
           test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "272dea2861596dd4fc135e192c3e2be49bc08922"
-          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "2a264e7ba6be94f4e8003b7303a0329904e9dce2"
+          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "e671b141f4cf0232474035721832ab5427851b11"
           test "$(git hash-object oag/firmware/src/main.cpp)" = "7810fa18237b9e5ae9525b6fe8fb9e27fce38925"
           test "$(git hash-object oag/firmware/CMakeLists.txt)" = "df8cd047895715c262b1b0320a4cd86a537e9880"
-          test "$(git hash-object oag/firmware/oag_ble_gamepad.gatt)" = "4480925ad1488ec054733b78a856f993e8935f97"
+          test "$(git hash-object oag/firmware/oag_ble_gamepad.gatt)" = "d57adbb184a9284bac12f4bd97209e778a5d91a4"
 
           BT_OUT1_RUNTIME_DIFF="$(git diff --name-only "${TRUE_GOLDEN}" -- \
             oag/firmware/CMakeLists.txt \
@@ -117,10 +117,13 @@ jobs:
           assert "Do not force SMP immediately from the peripheral side." in bt
           assert "BT-OUT1-P2: platform-side stale-bond repair." in bt
           assert "BT-OUT1-P3: quiesce controller discovery" in bt
-          assert "OAGP4 S%u E%02X R%02X" in bt
+          assert "OAGP5 S%u E%02X R%02X" in bt
           assert "sm_event_pairing_complete_get_reason" in bt
           assert "Preserve a real SMP/reencryption reason" in bt
           assert "SM_EVENT_PAIRING_STARTED" in bt
+          assert "battery_service_server_init(100);" in bt
+          assert "device_information_service_server_init();" in bt
+          assert "device_information_service_server_set_pnp_id(" in bt
           assert "SM_AUTHREQ_SECURE_CONNECTION |" in bt
 
           main = Path("oag/firmware/src/main.cpp").read_text()
@@ -133,6 +136,9 @@ jobs:
           gatt = Path("oag/firmware/oag_ble_gamepad.gatt").read_text()
           assert "ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE" in gatt
           assert "C4 03" in gatt
+          assert "#import <battery_service.gatt>" in gatt
+          assert "#import <device_information_service.gatt>" in gatt
+          assert "#import <hids.gatt>" in gatt
 
           tusb = Path("oag/firmware/tusb_config.h").read_text()
           assert "#define CFG_TUD_HID 0" in tusb
@@ -446,7 +452,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          STOCK_SOURCE_SHA="2a9e78561b8efe05d601959667ee514e103f63c3"
+          STOCK_SOURCE_SHA="5426dbeb214585160eb83da0fcf80301e90bcf8d"
           STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
           STOCK_NAME="OAG_U10F_PM1_L1_BT_OUT1_FULL_PROJECT_${STOCK_SHORT}"
           STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
