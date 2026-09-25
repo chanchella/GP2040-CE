@@ -382,6 +382,95 @@ jobs:
           cp "${OAG_MAP_PATH}" \
             "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_${SHORT_SHA}_Pico2W.map"
 
+      - name: Package full U10F-PM1 stock project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STOCK_SOURCE_SHA="64195844e28ded0126d3965594705585a31d469d"
+          STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
+          STOCK_NAME="OAG_U10F_PM1_FULL_PROJECT_STOCK_${STOCK_SHORT}"
+          STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
+          STOCK_ROOT="${STOCK_PARENT}/${STOCK_NAME}"
+
+          rm -rf "${STOCK_PARENT}"
+          mkdir -p "${STOCK_ROOT}"
+
+          # Exact U10F-PM1 source tree, not the CI packaging-only commit.
+          git archive "${STOCK_SOURCE_SHA}" | tar -x -C "${STOCK_ROOT}"
+
+          # Materialize the two pinned repository submodules into the stock tree.
+          rm -rf             "${STOCK_ROOT}/lib/tinyusb"             "${STOCK_ROOT}/lib/pico_pio_usb"
+
+          mkdir -p             "${STOCK_ROOT}/lib/tinyusb"             "${STOCK_ROOT}/lib/pico_pio_usb"
+
+          rsync -a --exclude='.git'             "${GITHUB_WORKSPACE}/lib/tinyusb/"             "${STOCK_ROOT}/lib/tinyusb/"
+
+          rsync -a --exclude='.git'             "${GITHUB_WORKSPACE}/lib/pico_pio_usb/"             "${STOCK_ROOT}/lib/pico_pio_usb/"
+
+          # Include the exact Pico SDK + BTstack + CYW43 generation used by CI
+          # so this stock package is self-contained for the pinned toolchain
+          # source dependencies.
+          mkdir -p "${STOCK_ROOT}/dependencies/pico-sdk-2.3.0"
+          rsync -a --exclude='.git'             "${GITHUB_WORKSPACE}/pico-sdk-u9d/"             "${STOCK_ROOT}/dependencies/pico-sdk-2.3.0/"
+
+          mkdir -p "${STOCK_ROOT}/BUILD_ARTIFACTS"
+          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_*_Pico2W.uf2             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_*_Pico2W.elf             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_*_Pico2W.map             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/build-manifest.json             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/size-report.txt             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+
+          PIO_SHA="$(git -C lib/pico_pio_usb rev-parse HEAD)"
+          TINYUSB_SHA="$(git -C lib/tinyusb rev-parse HEAD)"
+          PICO_SDK_SHA="$(git -C pico-sdk-u9d rev-parse HEAD)"
+          BTSTACK_SHA="$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)"
+          CYW43_SHA="$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)"
+
+          cat > "${STOCK_ROOT}/STOCK_INFO.txt" <<EOF
+          OAG U10F-PM1 FULL PROJECT STOCK
+          =================================
+          Runtime/source commit: ${STOCK_SOURCE_SHA}
+          Packaging workflow commit: ${GITHUB_SHA}
+          Branch: ${GITHUB_REF_NAME}
+
+          Runtime basis:
+          - Exact U10F USB / Hub / XInput / Receiver / Keyboard / Mouse runtime.
+          - Pairing Mode only from the U10J pairing-isolated Bluetooth files.
+          - PC gamepad target: Xbox 360 / XInput receiver.
+
+          Pinned dependencies:
+          Pico-PIO-USB: ${PIO_SHA}
+          TinyUSB: ${TINYUSB_SHA}
+          Pico SDK: ${PICO_SDK_SHA}
+          BTstack: ${BTSTACK_SHA}
+          CYW43: ${CYW43_SHA}
+
+          Included:
+          - Full repository source tree at the runtime commit
+          - Full TinyUSB submodule source
+          - Full Pico-PIO-USB submodule source
+          - Exact Pico SDK source used by CI, including its checked-out dependencies
+          - UF2 / ELF / MAP
+          - build-manifest.json
+          - size-report.txt
+          - SHA256SUMS.txt
+          EOF
+
+          (
+            cd "${STOCK_ROOT}"
+            find . -type f ! -name SHA256SUMS.txt -print0               | sort -z               | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+
+          (
+            cd "${STOCK_PARENT}"
+            zip -r -6               "${GITHUB_WORKSPACE}/artifacts/${STOCK_NAME}.zip"               "${STOCK_NAME}"
+          )
+
+          sha256sum             "artifacts/${STOCK_NAME}.zip"             | tee "artifacts/${STOCK_NAME}.zip.sha256.txt"
+
+          echo "U10F_PM1_FULL_STOCK_PACKAGE=PASS"
+
       - name: Upload U10F-PM1 firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
