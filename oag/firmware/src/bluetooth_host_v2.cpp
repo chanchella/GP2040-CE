@@ -1,6 +1,7 @@
 #include "oag/firmware/bluetooth_host_v2.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 
@@ -169,19 +170,80 @@ constexpr std::uint8_t kPlatformHidDescriptor[] = {
 
 // 30-byte legacy advertising payload: General Discoverable + HIDS UUID +
 // official Generic HID/Gamepad Appearance (0x03C4) + compact product name.
-constexpr std::uint8_t kPlatformAdvData[] = {
-    0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x02,
-    0x12, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
-    'O','A','G',' ','U','n','i','v','e','r','s','a','l',' ','P','a','d',
-    0x03, BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS,
-    static_cast<std::uint8_t>(
+std::array<std::uint8_t, 31> gPlatformAdvData {};
+std::uint8_t gPlatformAdvDataLen = 0;
+std::uint8_t gPlatformDiagStage = 0;
+std::uint8_t gPlatformDiagStatus = 0;
+std::uint8_t gPlatformDiagReason = 0;
+bool gPlatformSecurityComplete = false;
+
+void buildPlatformAdvertisingName(const char* name) {
+    const std::size_t maxNameLength = 18;
+    const std::size_t nameLength = std::min<std::size_t>(
+        std::strlen(name),
+        maxNameLength
+    );
+
+    std::size_t i = 0;
+    gPlatformAdvData[i++] = 0x02;
+    gPlatformAdvData[i++] = BLUETOOTH_DATA_TYPE_FLAGS;
+    gPlatformAdvData[i++] = 0x02;
+
+    gPlatformAdvData[i++] =
+        static_cast<std::uint8_t>(nameLength + 1);
+    gPlatformAdvData[i++] =
+        BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME;
+
+    std::memcpy(
+        &gPlatformAdvData[i],
+        name,
+        nameLength
+    );
+    i += nameLength;
+
+    gPlatformAdvData[i++] = 0x03;
+    gPlatformAdvData[i++] =
+        BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS;
+    gPlatformAdvData[i++] = static_cast<std::uint8_t>(
         ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE & 0xFF
-    ),
-    static_cast<std::uint8_t>(
+    );
+    gPlatformAdvData[i++] = static_cast<std::uint8_t>(
         ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE >> 8
-    ),
-    0x03, BLUETOOTH_DATA_TYPE_APPEARANCE, 0xC4, 0x03,
-};
+    );
+
+    gPlatformAdvData[i++] = 0x03;
+    gPlatformAdvData[i++] = BLUETOOTH_DATA_TYPE_APPEARANCE;
+    gPlatformAdvData[i++] = 0xC4;
+    gPlatformAdvData[i++] = 0x03;
+
+    gPlatformAdvDataLen = static_cast<std::uint8_t>(i);
+}
+
+void setPlatformDiagnosticAdvertising(
+    std::uint8_t stage,
+    std::uint8_t status,
+    std::uint8_t reason
+) {
+    gPlatformDiagStage = stage;
+    gPlatformDiagStatus = status;
+    gPlatformDiagReason = reason;
+
+    char name[19] {};
+    std::snprintf(
+        name,
+        sizeof(name),
+        "OAGP4 S%u E%02X R%02X",
+        static_cast<unsigned>(stage),
+        static_cast<unsigned>(status),
+        static_cast<unsigned>(reason)
+    );
+
+    buildPlatformAdvertisingName(name);
+    gap_advertisements_set_data(
+        gPlatformAdvDataLen,
+        gPlatformAdvData.data()
+    );
+}
 
 std::int16_t encodePlatformAxis(std::int32_t value) {
     if (value == std::numeric_limits<std::int32_t>::min()) {
@@ -364,9 +426,12 @@ bool BluetoothHostV2::initialize(
         0x07,
         0x00
     );
+    buildPlatformAdvertisingName(
+        "OAG Universal Pad"
+    );
     gap_advertisements_set_data(
-        sizeof(kPlatformAdvData),
-        const_cast<std::uint8_t*>(kPlatformAdvData)
+        gPlatformAdvDataLen,
+        gPlatformAdvData.data()
     );
 
     gap_set_default_link_policy_settings(
@@ -1158,33 +1223,63 @@ void BluetoothHostV2::handleSmPacket(
     }
 
     switch (hci_event_packet_get_type(packet)) {
-        case SM_EVENT_JUST_WORKS_REQUEST:
-            sm_just_works_confirm(
-                sm_event_just_works_request_get_handle(
-                    packet
-                )
-            );
-            break;
+        case SM_EVENT_JUST_WORKS_REQUEST: {
+            const std::uint16_t handle =
+                sm_event_just_works_request_get_handle(packet);
 
-        case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
-            sm_numeric_comparison_confirm(
-                sm_event_numeric_comparison_request_get_handle(
-                    packet
-                )
-            );
+            if (handle == platformConnectionHandle_) {
+                gPlatformDiagStage = 3;
+            }
+
+            sm_just_works_confirm(handle);
             break;
+        }
+
+        case SM_EVENT_NUMERIC_COMPARISON_REQUEST: {
+            const std::uint16_t handle =
+                sm_event_numeric_comparison_request_get_handle(packet);
+
+            if (handle == platformConnectionHandle_) {
+                gPlatformDiagStage = 4;
+            }
+
+            sm_numeric_comparison_confirm(handle);
+            break;
+        }
+
+        case SM_EVENT_PAIRING_STARTED: {
+            const std::uint16_t handle =
+                sm_event_pairing_started_get_handle(packet);
+
+            if (handle == platformConnectionHandle_) {
+                gPlatformDiagStage = 2;
+            }
+            break;
+        }
 
         case SM_EVENT_PAIRING_COMPLETE: {
             const std::uint16_t handle =
                 sm_event_pairing_complete_get_handle(packet);
 
             if (handle == platformConnectionHandle_) {
-                if (
-                    sm_event_pairing_complete_get_status(packet) !=
-                    ERROR_CODE_SUCCESS
-                ) {
+                const std::uint8_t status =
+                    sm_event_pairing_complete_get_status(packet);
+                const std::uint8_t reason =
+                    sm_event_pairing_complete_get_reason(packet);
+
+                gPlatformDiagStage = 5;
+                gPlatformDiagStatus = status;
+                gPlatformDiagReason = reason;
+
+                if (status != ERROR_CODE_SUCCESS) {
+                    setPlatformDiagnosticAdvertising(
+                        5,
+                        status,
+                        reason
+                    );
                     gap_disconnect(handle);
                 } else {
+                    gPlatformSecurityComplete = true;
                     resumeDiscovery();
                 }
                 break;
@@ -1201,6 +1296,16 @@ void BluetoothHostV2::handleSmPacket(
             break;
         }
 
+        case SM_EVENT_REENCRYPTION_STARTED: {
+            const std::uint16_t handle =
+                sm_event_reencryption_started_get_handle(packet);
+
+            if (handle == platformConnectionHandle_) {
+                gPlatformDiagStage = 6;
+            }
+            break;
+        }
+
         case SM_EVENT_REENCRYPTION_COMPLETE: {
             const std::uint16_t handle =
                 sm_event_reencryption_complete_get_handle(packet);
@@ -1209,7 +1314,12 @@ void BluetoothHostV2::handleSmPacket(
                 sm_event_reencryption_complete_get_status(packet);
 
             if (handle == platformConnectionHandle_) {
+                gPlatformDiagStage = 7;
+                gPlatformDiagStatus = status;
+                gPlatformDiagReason = 0;
+
                 if (status == ERROR_CODE_SUCCESS) {
+                    gPlatformSecurityComplete = true;
                     resumeDiscovery();
                     break;
                 }
@@ -1243,6 +1353,11 @@ void BluetoothHostV2::handleSmPacket(
                     break;
                 }
 
+                setPlatformDiagnosticAdvertising(
+                    7,
+                    status,
+                    0
+                );
                 gap_disconnect(handle);
                 break;
             }
@@ -1767,6 +1882,11 @@ void BluetoothHostV2::handlePacket(
                     platformInputSubscribed_ = false;
                     platformReportDirty_ = true;
 
+                    gPlatformDiagStage = 1;
+                    gPlatformDiagStatus = 0;
+                    gPlatformDiagReason = 0;
+                    gPlatformSecurityComplete = false;
+
                     // BT-OUT1-P3: quiesce controller discovery only while the
                     // platform link completes SMP/HOGP security setup. The
                     // previous candidates kept BLE scan / Classic inquiry
@@ -1867,6 +1987,25 @@ void BluetoothHostV2::handlePacket(
                 );
 
             if (handle == platformConnectionHandle_) {
+                const std::uint8_t disconnectReason =
+                    hci_event_disconnection_complete_get_reason(packet);
+
+                if (!gPlatformSecurityComplete) {
+                    setPlatformDiagnosticAdvertising(
+                        gPlatformDiagStage,
+                        gPlatformDiagStatus,
+                        disconnectReason
+                    );
+                } else {
+                    buildPlatformAdvertisingName(
+                        "OAG Universal Pad"
+                    );
+                    gap_advertisements_set_data(
+                        gPlatformAdvDataLen,
+                        gPlatformAdvData.data()
+                    );
+                }
+
                 platformConnectionHandle_ = kInvalidPlatformHandle;
                 platformInputSubscribed_ = false;
                 platformReportDirty_ = true;
