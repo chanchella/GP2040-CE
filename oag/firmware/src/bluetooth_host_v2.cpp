@@ -1732,7 +1732,12 @@ void BluetoothHostV2::handlePacket(
                     platformInputSubscribed_ = false;
                     platformReportDirty_ = true;
 
-                    sm_request_pairing(connectionHandle);
+                    // BT-OUT1-P1: do not force SMP immediately from the
+                    // peripheral side. Android/other hosts will naturally
+                    // trigger security when they access the encrypted HIDS
+                    // report CCC/characteristic. This follows BTstack's HOG
+                    // device flow and avoids a dual-role pairing race while
+                    // preserving the existing input-host SM behavior.
                     break;
                 }
 
