@@ -9,6 +9,7 @@
 #include "pico/unique_id.h"
 #include "tusb.h"
 #include "device/usbd_pvt.h"
+#include "oag/firmware/windows_xusb20_compat.h"
 
 namespace {
 
@@ -632,6 +633,15 @@ extern "C" bool tud_vendor_control_xfer_cb(
     tusb_control_request_t const* request
 ) {
     if (stage != CONTROL_STAGE_SETUP) {
+        return true;
+    }
+
+    if (
+        oag::firmware::handleWindowsXusb20CompatIdRequest(
+            rhport,
+            request
+        )
+    ) {
         return true;
     }
 
