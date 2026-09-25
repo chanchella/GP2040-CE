@@ -74,9 +74,14 @@ jobs:
             'oag/firmware/src/bluetooth_platform_output.cpp' \
             'oag/firmware/src/main.cpp' | sort)"
 
+          echo "=== G1_RUNTIME_DIFF ==="
+          printf '%s\n' "${G1_RUNTIME_DIFF}"
+          echo "=== EXPECTED_G1_RUNTIME ==="
+          printf '%s\n' "${EXPECTED_G1_RUNTIME}"
           test "${G1_RUNTIME_DIFF}" = "${EXPECTED_G1_RUNTIME}"
 
           # Everything USB/XInput/parser/mapping-facing remains TRUE GOLDEN/U10F.
+          echo "=== VERIFY USB/XINPUT TARGET FILES ==="
           git diff --exit-code "${U10F_BASELINE}" -- \
             oag/firmware/src/usb_pio_host.cpp \
             oag/firmware/src/usb_pio_probe.c \
