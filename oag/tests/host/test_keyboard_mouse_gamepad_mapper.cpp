@@ -160,8 +160,8 @@ int main() {
     assert((output.buttons & ButtonLeftBumper) != 0);
     assert((output.buttons & ButtonRightBumper) != 0);
 
-    // UI4C ultra curve: one mouse count must feel immediate and land around
-    // one-third stick travel, without turning micro-movement into full-stick.
+    // UI4D 60%-launch curve: one mouse count should land very close to
+    // 60% right-stick travel.
     output = mapper.apply(
         nullptr,
         &mouse,
@@ -175,8 +175,8 @@ int main() {
             std::numeric_limits<std::int32_t>::max()
         );
 
-    assert(oneCount > (fullScale * 3) / 10);  // > 30%
-    assert(oneCount < (fullScale * 2) / 5);  // < 40%
+    assert(oneCount > (fullScale * 59) / 100);  // > 59%
+    assert(oneCount < (fullScale * 61) / 100);  // < 61%
 
     return 0;
 }

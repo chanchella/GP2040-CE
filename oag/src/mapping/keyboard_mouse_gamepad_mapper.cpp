@@ -135,15 +135,15 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
 
     rebuildExtraBindings();
 
-    // Ultra-responsive mouse->right-stick curve. The first mouse count
-    // deliberately lands around one-third stick travel so game deadzones are
-    // cleared immediately, while the sub-linear response keeps medium motion
-    // progressive and fast flicks approach full analog deflection.
+    // 60%-launch mouse->right-stick curve. A one-count mouse movement is
+    // intentionally mapped to about 60% stick travel so micro-movement is
+    // extremely immediate. Medium and fast motion still ramps toward full
+    // analog deflection through the existing sub-linear curve.
     mouseConfig_.sensitivityX = 0.045;
     mouseConfig_.sensitivityY = 0.045;
     mouseConfig_.exponent = 0.58;
-    mouseConfig_.deadzoneX = 0.18;
-    mouseConfig_.deadzoneY = 0.18;
+    mouseConfig_.deadzoneX = 0.521;
+    mouseConfig_.deadzoneY = 0.521;
     mouseConfig_.boundary = StickBoundary::Circle;
     mouseConfig_.invertY = false;
 }

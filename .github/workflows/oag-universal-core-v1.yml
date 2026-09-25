@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui4c-km-extra6-mouse-aim-ultra-policy-and-tests:
+  ui4d-km-extra6-mouse-aim-60-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -61,7 +61,7 @@ jobs:
             'oag/include/oag/mapping/keyboard_mouse_gamepad_mapper.h' \
             'oag/src/mapping/keyboard_mouse_gamepad_mapper.cpp' | sort)"
 
-          echo "=== UI4C_KM_EXTRA6_MOUSE_AIM_ULTRA_RUNTIME_DIFF ==="
+          echo "=== UI4D_KM_EXTRA6_MOUSE_AIM_60_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -145,7 +145,7 @@ jobs:
           assert "mouseButton(MouseButtonForward)" in km
           assert "mouseConfig_.sensitivityX = 0.045" in km
           assert "mouseConfig_.exponent = 0.58" in km
-          assert "mouseConfig_.deadzoneX = 0.18" in km
+          assert "mouseConfig_.deadzoneX = 0.521" in km
           assert "kMouseAimHoldUs = 2500" in main
 
           assert "requestPairingAssist()" in host
@@ -153,7 +153,7 @@ jobs:
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI4C_KM_EXTRA6_MOUSE_AIM_ULTRA_POLICY=PASS")
+          print("UI4D_KM_EXTRA6_MOUSE_AIM_60_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -178,8 +178,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui4c-km-extra6-mouse-aim-ultra:
-    needs: ui4c-km-extra6-mouse-aim-ultra-policy-and-tests
+  firmware-ui4d-km-extra6-mouse-aim-60:
+    needs: ui4d-km-extra6-mouse-aim-60-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -254,7 +254,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI4C-KM-EXTRA6-MOUSE-AIM-ULTRA"
+          assert manifest["phase"] == "U10F-PM1-UI4D-KM-EXTRA6-MOUSE-AIM-60"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -276,7 +276,7 @@ jobs:
           assert f["km_mouse_overlay_primary_only"] is True
           assert f["km_mouse_sensitivity_x"] == 0.045
           assert f["km_mouse_response_exponent"] == 0.58
-          assert f["km_mouse_anti_deadzone_x"] == 0.18
+          assert f["km_mouse_anti_deadzone_x"] == 0.521
           assert f["mouse_aim_recenter_us"] == 2500
 
           assert f["pc_generic_hid_output"] is False
@@ -293,18 +293,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI4C_KM_EXTRA6_MOUSE_AIM_ULTRA=PASS")
+          print("BUILD_MANIFEST_UI4D_KM_EXTRA6_MOUSE_AIM_60=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4C-KM-EXTRA6-MOUSE-AIM-ULTRA_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4C-KM-EXTRA6-MOUSE-AIM-ULTRA_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4C-KM-EXTRA6-MOUSE-AIM-ULTRA_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI4C-KM-EXTRA6-MOUSE-AIM-ULTRA_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4D-KM-EXTRA6-MOUSE-AIM-60_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4D-KM-EXTRA6-MOUSE-AIM-60_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4D-KM-EXTRA6-MOUSE-AIM-60_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI4D-KM-EXTRA6-MOUSE-AIM-60_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI4C Ultra Mouse Aim candidate bundle
+      - name: Upload UI4D 60 Percent Mouse Aim candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI4C-KM-EXTRA6-MOUSE-AIM-ULTRA-${{ github.sha }}
+          name: OAG-U10F-PM1-UI4D-KM-EXTRA6-MOUSE-AIM-60-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

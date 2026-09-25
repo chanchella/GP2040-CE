@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI4C-KM-EXTRA6-MOUSE-AIM-ULTRA",
+    "phase": "U10F-PM1-UI4D-KM-EXTRA6-MOUSE-AIM-60",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -226,8 +226,8 @@ manifest = {
         "km_mouse_sensitivity_x": 0.045,
         "km_mouse_sensitivity_y": 0.045,
         "km_mouse_response_exponent": 0.58,
-        "km_mouse_anti_deadzone_x": 0.18,
-        "km_mouse_anti_deadzone_y": 0.18,
+        "km_mouse_anti_deadzone_x": 0.521,
+        "km_mouse_anti_deadzone_y": 0.521,
         "km_mouse_overlay_primary_only": True,
         "pc_generic_hid_profile_runtime": False,
         "android_generic_hid_profile_runtime": False,
@@ -298,6 +298,7 @@ manifest = {
         "u10f_pm1_ui4_km_extra6_mouse_aim": "PENDING_HARDWARE",
         "u10f_pm1_ui4b_km_extra6_mouse_aim_strong": "PENDING_HARDWARE",
         "u10f_pm1_ui4c_km_extra6_mouse_aim_ultra": "PENDING_HARDWARE",
+        "u10f_pm1_ui4d_km_extra6_mouse_aim_60": "PENDING_HARDWARE",
     },
 }
 
