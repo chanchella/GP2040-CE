@@ -1184,6 +1184,8 @@ void BluetoothHostV2::handleSmPacket(
                     ERROR_CODE_SUCCESS
                 ) {
                     gap_disconnect(handle);
+                } else {
+                    resumeDiscovery();
                 }
                 break;
             }
@@ -1208,6 +1210,7 @@ void BluetoothHostV2::handleSmPacket(
 
             if (handle == platformConnectionHandle_) {
                 if (status == ERROR_CODE_SUCCESS) {
+                    resumeDiscovery();
                     break;
                 }
 
@@ -1764,12 +1767,26 @@ void BluetoothHostV2::handlePacket(
                     platformInputSubscribed_ = false;
                     platformReportDirty_ = true;
 
-                    // BT-OUT1-P1: do not force SMP immediately from the
-                    // peripheral side. Android/other hosts will naturally
-                    // trigger security when they access the encrypted HIDS
-                    // report CCC/characteristic. This follows BTstack's HOG
-                    // device flow and avoids a dual-role pairing race while
-                    // preserving the existing input-host SM behavior.
+                    // BT-OUT1-P3: quiesce controller discovery only while the
+                    // platform link completes SMP/HOGP security setup. The
+                    // previous candidates kept BLE scan / Classic inquiry
+                    // running during Android pairing, which can create a
+                    // dual-role radio scheduling race. Do not touch existing
+                    // peers or global bonds; discovery resumes after security
+                    // succeeds or after this platform link disconnects.
+                    stopDiscoveryTimer();
+                    gap_stop_scan();
+                    gap_inquiry_stop();
+                    if (
+                        pendingKind_ == PendingKind::None &&
+                        !deferredBleCandidateValid_
+                    ) {
+                        discoveryPhase_ = DiscoveryPhase::Idle;
+                    }
+
+                    // Do not force SMP immediately from the peripheral side.
+                    // Android/other hosts trigger security when they access
+                    // the encrypted HIDS report CCC/characteristic.
                     break;
                 }
 
@@ -1854,6 +1871,7 @@ void BluetoothHostV2::handlePacket(
                 platformInputSubscribed_ = false;
                 platformReportDirty_ = true;
                 (void)gap_advertisements_enable(1);
+                resumeDiscovery();
                 break;
             }
 
