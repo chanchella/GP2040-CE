@@ -8,6 +8,8 @@ KeyboardMouseGamepadMapper::KeyboardMouseGamepadMapper() {
 
 void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
     bindings_.clear();
+    extraBindings_.clear();
+    extraBindSlots_ = {};
 
     // Movement: WASD -> left analog stick.
     bindings_.addBinding(
@@ -81,7 +83,7 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
         LogicalDigitalControl::DpadRight
     );
 
-    // Mouse buttons.
+    // Core mouse buttons stay fixed in the FPS profile.
     bindings_.addBinding(
         mouseButton(MouseButtonLeft),
         LogicalDigitalControl::RightTrigger
@@ -94,23 +96,130 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
         mouseButton(MouseButtonMiddle),
         LogicalDigitalControl::RightStickClick
     );
-    bindings_.addBinding(
-        mouseButton(MouseButtonBack),
-        LogicalDigitalControl::LeftBumper
-    );
-    bindings_.addBinding(
-        mouseButton(MouseButtonForward),
-        LogicalDigitalControl::RightBumper
-    );
 
-    // Conservative default aim curve. This is intentionally configurable.
-    mouseConfig_.sensitivityX = 0.018;
-    mouseConfig_.sensitivityY = 0.018;
-    mouseConfig_.exponent = 1.35;
-    mouseConfig_.deadzoneX = 0.08;
-    mouseConfig_.deadzoneY = 0.08;
+    // Six isolated extra bind slots:
+    //   0..3 = keyboard F1..F4
+    //   4..5 = mouse Back / Forward side buttons.
+    // Defaults are intentionally useful but every slot can be reassigned with
+    // configureExtraBind() without touching the base FPS mapping.
+    extraBindSlots_[0] = {
+        true,
+        keyboardUsage(0x3A), // F1
+        LogicalDigitalControl::Guide,
+    };
+    extraBindSlots_[1] = {
+        true,
+        keyboardUsage(0x3B), // F2
+        LogicalDigitalControl::Back,
+    };
+    extraBindSlots_[2] = {
+        true,
+        keyboardUsage(0x3C), // F3
+        LogicalDigitalControl::Start,
+    };
+    extraBindSlots_[3] = {
+        true,
+        keyboardUsage(0x3D), // F4
+        LogicalDigitalControl::LeftStickClick,
+    };
+    extraBindSlots_[4] = {
+        true,
+        mouseButton(MouseButtonBack),
+        LogicalDigitalControl::LeftBumper,
+    };
+    extraBindSlots_[5] = {
+        true,
+        mouseButton(MouseButtonForward),
+        LogicalDigitalControl::RightBumper,
+    };
+
+    rebuildExtraBindings();
+
+    // Responsive mouse->right-stick curve for games with analog deadzones.
+    // One or two mouse counts now produce a meaningful stick value instead
+    // of being swallowed by the game's deadzone, while larger movements still
+    // ramp smoothly toward full stick deflection.
+    mouseConfig_.sensitivityX = 0.024;
+    mouseConfig_.sensitivityY = 0.024;
+    mouseConfig_.exponent = 0.72;
+    mouseConfig_.deadzoneX = 0.12;
+    mouseConfig_.deadzoneY = 0.12;
     mouseConfig_.boundary = StickBoundary::Circle;
     mouseConfig_.invertY = false;
+}
+
+bool KeyboardMouseGamepadMapper::configureExtraBind(
+    std::size_t slot,
+    BindingSource source,
+    LogicalDigitalControl target
+) {
+    if (slot >= extraBindSlots_.size()) {
+        return false;
+    }
+
+    const ExtraBindSlot previous = extraBindSlots_[slot];
+
+    extraBindSlots_[slot] = {
+        true,
+        source,
+        target,
+    };
+
+    if (rebuildExtraBindings()) {
+        return true;
+    }
+
+    extraBindSlots_[slot] = previous;
+    rebuildExtraBindings();
+    return false;
+}
+
+bool KeyboardMouseGamepadMapper::disableExtraBind(
+    std::size_t slot
+) {
+    if (slot >= extraBindSlots_.size()) {
+        return false;
+    }
+
+    const ExtraBindSlot previous = extraBindSlots_[slot];
+    extraBindSlots_[slot] = {};
+
+    if (rebuildExtraBindings()) {
+        return true;
+    }
+
+    extraBindSlots_[slot] = previous;
+    rebuildExtraBindings();
+    return false;
+}
+
+const ExtraBindSlot* KeyboardMouseGamepadMapper::extraBind(
+    std::size_t slot
+) const {
+    if (slot >= extraBindSlots_.size()) {
+        return nullptr;
+    }
+
+    return &extraBindSlots_[slot];
+}
+
+bool KeyboardMouseGamepadMapper::rebuildExtraBindings() {
+    extraBindings_.clear();
+
+    for (const ExtraBindSlot& slot : extraBindSlots_) {
+        if (!slot.enabled) {
+            continue;
+        }
+
+        if (!extraBindings_.addBinding(
+                slot.source,
+                slot.target
+            )) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 LogicalGamepadState KeyboardMouseGamepadMapper::apply(
@@ -121,6 +230,12 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
 ) const {
     LogicalGamepadState output =
         bindings_.apply(keyboard, mouse, base);
+
+    output = extraBindings_.apply(
+        keyboard,
+        mouse,
+        output
+    );
 
     const StickVector aim =
         mouseMapper_.map(mouseMotion, mouseConfig_);

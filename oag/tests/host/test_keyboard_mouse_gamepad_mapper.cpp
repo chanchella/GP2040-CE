@@ -95,5 +95,89 @@ int main() {
         static_cast<std::uint8_t>(DpadBits::Right)
     );
 
+
+    // UI4: six isolated extra bind slots exist and default to four keyboard
+    // keys plus the two mouse side buttons.
+    assert(KeyboardMouseGamepadMapper::kExtraBindSlots == 6);
+
+    for (std::size_t i = 0;
+         i < KeyboardMouseGamepadMapper::kExtraBindSlots;
+         ++i) {
+        const ExtraBindSlot* slot = mapper.extraBind(i);
+        assert(slot != nullptr);
+        assert(slot->enabled);
+    }
+
+    const ExtraBindSlot* extra0 = mapper.extraBind(0);
+    const ExtraBindSlot* extra4 = mapper.extraBind(4);
+    const ExtraBindSlot* extra5 = mapper.extraBind(5);
+
+    assert(extra0->source == keyboardUsage(0x3A));
+    assert(extra4->source == mouseButton(MouseButtonBack));
+    assert(extra5->source == mouseButton(MouseButtonForward));
+
+    keyboard = {};
+    keyboard.connected = true;
+    keyboard.setPressed(0x3A, true); // F1 default -> Guide.
+
+    output = mapper.apply(
+        &keyboard,
+        nullptr,
+        MouseMotion {}
+    );
+
+    assert((output.buttons & ButtonGuide) != 0);
+
+    // Extra slots are genuinely reconfigurable without touching the base
+    // keyboard/mouse profile.
+    assert(mapper.configureExtraBind(
+        0,
+        keyboardUsage(0x3A),
+        LogicalDigitalControl::North
+    ));
+
+    output = mapper.apply(
+        &keyboard,
+        nullptr,
+        MouseMotion {}
+    );
+
+    assert((output.buttons & ButtonNorth) != 0);
+    assert((output.buttons & ButtonGuide) == 0);
+
+    mouse = {};
+    mouse.connected = true;
+    mouse.buttons =
+        MouseButtonBack |
+        MouseButtonForward;
+
+    output = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {}
+    );
+
+    assert((output.buttons & ButtonLeftBumper) != 0);
+    assert((output.buttons & ButtonRightBumper) != 0);
+
+    // The new default mouse curve must make a one-count movement materially
+    // larger than the old conservative ~8% response while remaining below
+    // half-stick for precision.
+    output = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {1, 0}
+    );
+
+    const std::int64_t oneCount =
+        static_cast<std::int64_t>(output.rx);
+    const std::int64_t fullScale =
+        static_cast<std::int64_t>(
+            std::numeric_limits<std::int32_t>::max()
+        );
+
+    assert(oneCount > fullScale / 7);  // > ~14%
+    assert(oneCount < fullScale / 2);  // < 50%
+
     return 0;
 }
