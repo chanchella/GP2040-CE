@@ -1,0 +1,17 @@
+// OAG U10F-PM1-G1 Generic BLE Gamepad output.
+//
+// This follows BTstack's official HOG device layout. The external BLE persona
+// is intentionally generic and compatibility-first; Xbox/Switch/PS personas
+// are separate future drivers, not mixed into this baseline.
+
+PRIMARY_SERVICE, GAP_SERVICE
+CHARACTERISTIC, GAP_DEVICE_NAME, READ, "OAG Universal Pad"
+// Bluetooth Assigned Numbers: Generic HID / Gamepad appearance = 0x03C4.
+CHARACTERISTIC, GAP_APPEARANCE, READ, C4 03
+
+#import <battery_service.gatt>
+#import <device_information_service.gatt>
+#import <hids.gatt>
+
+PRIMARY_SERVICE, GATT_SERVICE
+CHARACTERISTIC, GATT_DATABASE_HASH, READ,
