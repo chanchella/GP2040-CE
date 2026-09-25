@@ -92,7 +92,14 @@ manifest = {
         "digital_binding_engine_software_foundation": True,
         "keyboard_mouse_runtime_gamepad": True,
         "mouse_aim_recenter_us": 6000,
-        "pc_generic_hid_output": True,\n        "pc_generic_hid_output_slots": 4,\n        "pc_generic_hid_axes": 6,\n        "pc_generic_hid_buttons": 16,\n        "pc_generic_hid_hat_switch": True,\n        "pc_generic_hid_poll_interval_ms": 1,\n        "pc_generic_hid_vid": "0xCAFE",\n        "pc_generic_hid_pid": "0x4011",
+        "pc_generic_hid_output": True,
+        "pc_generic_hid_output_slots": 4,
+        "pc_generic_hid_axes": 6,
+        "pc_generic_hid_buttons": 16,
+        "pc_generic_hid_hat_switch": True,
+        "pc_generic_hid_poll_interval_ms": 1,
+        "pc_generic_hid_vid": "0xCAFE",
+        "pc_generic_hid_pid": "0x4011",
         "pc_xinput_output": False,
         "pc_xinput_output_slots": 0,
         "multi_xinput_output": False,
@@ -180,7 +187,11 @@ manifest = {
         "u10f_pm1_pc_gamepad_output": "GENERIC_USB_HID_6AXIS_16BUTTON_HAT",
         "u10f_pm1_pc_generic_hid_gamepad_output": True,
         "u10f_pm1_supported_gamepads_normalized_to_xbox360": False,
-        "pc_hid1_true_golden_base": "59182f30c2028f77c059666d6473487d90a82b64",\n        "pc_hid1_runtime_delta_scope": "TARGET_FACING_PC_USB_ONLY",\n        "pc_hid1_product_string": "6 axis 16 button gamepad with hat switch",\n        "pc_hid1_generic_hid_rumble": False,\n        "authentication": False,
+        "pc_hid1_true_golden_base": "59182f30c2028f77c059666d6473487d90a82b64",
+        "pc_hid1_runtime_delta_scope": "TARGET_FACING_PC_USB_ONLY",
+        "pc_hid1_product_string": "6 axis 16 button gamepad with hat switch",
+        "pc_hid1_generic_hid_rumble": False,
+        "authentication": False,
     },
     "pc_generic_hid_profile": {
         "development_vid": "0xCAFE",
@@ -189,9 +200,9 @@ manifest = {
         "interfaces": 4,
         "axes_per_interface": 6,
         "buttons_per_interface": 16,
-        "hat_switch": true,
+        "hat_switch": True,
         "poll_interval_ms": 1,
-        "xinput_rumble": false
+        "xinput_rumble": False
     },
     "dependencies": {
         "pico_pio_usb_repo": "sekigon-gonnoc/Pico-PIO-USB",
@@ -236,7 +247,8 @@ manifest = {
         "u10f_pm1_u10f_runtime_regression": "PENDING_HARDWARE",
         "u10f_pm1_pairing_mode": "PENDING_HARDWARE",
         "u10f_pm1_usb_three_roots": "PENDING_HARDWARE",
-        "u10f_pm1_xbox360_output_policy": "HISTORICAL_TRUE_GOLDEN",\n        "u10f_pm1_pc_hid1": "PENDING_HARDWARE",
+        "u10f_pm1_xbox360_output_policy": "HISTORICAL_TRUE_GOLDEN",
+        "u10f_pm1_pc_hid1": "PENDING_HARDWARE",
     },
 }
 
