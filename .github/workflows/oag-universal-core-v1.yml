@@ -29,15 +29,17 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
 
-      - name: Verify U10F-PM1 exact U10F runtime plus pairing only
+      - name: Verify U10F-PM1 baseline plus isolated L1 BLE latency delta
         shell: bash
         run: |
           set -euo pipefail
           U10F_BASELINE="7799d270d98ae09e7608f05b15f687a20a459871"
           U10J_PAIRING="52f727530a2e1d17199ff939b69446745f131c65"
+          U10F_PM1_RUNTIME="64195844e28ded0126d3965594705585a31d469d"
 
           git merge-base --is-ancestor "${U10F_BASELINE}" HEAD
           git merge-base --is-ancestor "${U10J_PAIRING}" HEAD
+          git merge-base --is-ancestor "${U10F_PM1_RUNTIME}" HEAD
 
           EXPECTED_RUNTIME="$(printf '%s\n' \
             'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
@@ -53,10 +55,16 @@ jobs:
 
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
-          # These three files are exact U10J pairing-isolated files.
+          # Main/header remain exact U10J pairing-isolated files.
           test "$(git hash-object oag/firmware/src/main.cpp)" = "df839d9998c5c3c559a569ad0541e81e2b4ba03c"
           test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "41aeb22ae1af4576d291b11b70834f84b7f96e93"
-          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "ef92ce0ae51f669919623fbe978761c2f24c63d1"
+
+          # U10F-PM1-L1 is allowed to change exactly one runtime file:
+          # BluetoothHostV2 gets a BLE-only best-effort connection interval request.
+          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "49e9c1c16483ddac5911985d77ebc2faa81c622a"
+
+          L1_RUNTIME_DIFF="$(git diff --name-only "${U10F_PM1_RUNTIME}" --             oag/firmware/include             oag/firmware/src             oag/firmware/tusb_config.h             oag/include             oag/src | sort)"
+          test "${L1_RUNTIME_DIFF}" = "oag/firmware/src/bluetooth_host_v2.cpp"
 
           # Everything target-facing/USB-facing is exactly U10F.
           git diff --exit-code "${U10F_BASELINE}" -- \
@@ -83,6 +91,10 @@ jobs:
           bt = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
           assert "requestPairingAssist()" in bt
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in bt
+          assert "kLeLowLatencyIntervalMin = 6u" in bt
+          assert "kLeLowLatencyIntervalMax = 12u" in bt
+          assert "gap_le_connection_interval(" in bt
+          assert "gap_request_connection_parameter_update(" in bt
 
           tusb = Path("oag/firmware/tusb_config.h").read_text()
           assert "#define CFG_TUD_HID 0" in tusb
@@ -94,7 +106,8 @@ jobs:
           assert "return PlatformId::PcXinput360;" in platform
 
           print("U10F_PM1_EXACT_U10F_USB_RUNTIME=PASS")
-          print("U10F_PM1_U10J_PAIRING_ONLY=PASS")
+          print("U10F_PM1_U10J_PAIRING_BASE=PASS")
+          print("U10F_PM1_L1_BLE_LATENCY_ISOLATION=PASS")
           print("U10F_PM1_XBOX360_XINPUT_TARGET=PASS")
           PY
 
