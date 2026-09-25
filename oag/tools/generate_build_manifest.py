@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5F-RECOVERY-UI5A-2S",
+    "phase": "U10F-PM1-UI5G-WIN-XUSB20-KM-COMPOSITE-2S",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -236,6 +236,13 @@ manifest = {
         "pc_native_keyboard_output": True,
         "pc_native_mouse_output": True,
         "pc_native_hid_interfaces": 2,
+        "windows_usb_parent_composite": True,
+        "windows_usb_vid": "CAFE",
+        "windows_usb_pid": "4016",
+        "windows_xusb20_compatible_id": True,
+        "windows_xusb20_receiver_interfaces": 8,
+        "windows_hid_interfaces": 2,
+        "windows_usb_mode_switch_reenumerates": False,
         "native_km_combo_engine": True,
         "native_km_combo_slots": 8,
         "pc_generic_hid_profile_runtime": False,
@@ -315,7 +322,8 @@ manifest = {
         "u10f_pm1_ui5c_global_km_logical_switch": "REJECTED_HARDWARE_NATIVE_KM_FAILED",
         "u10f_pm1_ui5d_dual_usb_persona_2s": "SUPERSEDED_BEFORE_HARDWARE",
         "u10f_pm1_ui5e_stable_composite_km_2s": "REJECTED_HARDWARE_CONTROLLERS_NOT_ENUMERATED",
-        "u10f_pm1_ui5f_recovery_ui5a_2s": "PENDING_HARDWARE",
+        "u10f_pm1_ui5f_recovery_ui5a_2s": "HARDWARE_VERIFIED_CONTROLLERS_AND_KM_CONTROLLER_MODE_BY_USER",
+        "u10f_pm1_ui5g_win_xusb20_km_composite_2s": "PENDING_HARDWARE",
     },
 }
 
