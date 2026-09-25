@@ -9,6 +9,7 @@
 
 #include "oag/core/product_identity.h"
 #include "oag/firmware/pc_xinput_device.h"
+#include "oag/firmware/target_usb_persona.h"
 
 namespace {
 
@@ -41,7 +42,7 @@ const std::uint8_t kMouseReportDescriptor[] = {
 // The configuration below is byte-shaped from real 045E:0719 descriptor
 // captures. Gamepad interfaces use the 20-byte 0x22 receiver descriptor;
 // auxiliary interfaces use the 12-byte 0x22 descriptor.
-const std::uint8_t kDeviceDescriptor[] = {
+const std::uint8_t kControllerDeviceDescriptor[] = {
     0x12, 0x01,
     0x00, 0x02,
     0xFF, 0xFF, 0xFF,
@@ -53,11 +54,10 @@ const std::uint8_t kDeviceDescriptor[] = {
     0x01,
 };
 
-const std::uint8_t kConfigurationDescriptor[] = {
-    // Xbox receiver core = 321 bytes. Two standard HID interfaces add
-    // 25 bytes each, giving 371 bytes total (0x0173).
-    0x09, 0x02, 0x73, 0x01,
-    0x0A,
+const std::uint8_t kControllerConfigurationDescriptor[] = {
+    // Exact Xbox 360 Wireless Receiver controller-only topology.
+    0x09, 0x02, 0x41, 0x01,
+    0x08,
     0x01,
     0x00,
     0xA0,
@@ -123,32 +123,57 @@ const std::uint8_t kConfigurationDescriptor[] = {
     0x07, 0x05, 0x88, 0x03, 0x20, 0x00, 0x02,
     0x07, 0x05, 0x08, 0x03, 0x20, 0x00, 0x04,
 
-    // Native keyboard — interface 8 — EP 89
+};
+
+const std::uint8_t kNativeKmDeviceDescriptor[] = {
+    0x12, 0x01,
+    0x00, 0x02,
+    0x00, 0x00, 0x00,
+    0x08,
+    0xFE, 0xCA,
+    0x14, 0x40,
+    0x00, 0x01,
+    0x01, 0x02, 0x03,
+    0x01,
+};
+
+const std::uint8_t kNativeKmConfigurationDescriptor[] = {
+    0x09, 0x02, 0x3B, 0x00,
+    0x02,
+    0x01,
+    0x00,
+    0xA0,
+    0x32,
+
     TUD_HID_DESCRIPTOR(
-        0x08,
+        0x00,
         0,
         HID_ITF_PROTOCOL_KEYBOARD,
         sizeof(kKeyboardReportDescriptor),
-        0x89,
+        0x81,
         8,
         1
     ),
 
-    // Native mouse — interface 9 — EP 8A
     TUD_HID_DESCRIPTOR(
-        0x09,
+        0x01,
         0,
         HID_ITF_PROTOCOL_MOUSE,
         sizeof(kMouseReportDescriptor),
-        0x8A,
+        0x82,
         8,
         1
     ),
 };
 
-static_assert(sizeof(kDeviceDescriptor) == 18);
+static_assert(sizeof(kControllerDeviceDescriptor) == 18);
+static_assert(sizeof(kNativeKmDeviceDescriptor) == 18);
 static_assert(kOutputSlots == 4);
-static_assert(sizeof(kConfigurationDescriptor) == 0x0173);
+static_assert(sizeof(kControllerConfigurationDescriptor) == 0x0141);
+static_assert(sizeof(kNativeKmConfigurationDescriptor) == 0x003B);
+
+oag::firmware::TargetUsbPersona gTargetUsbPersona =
+    oag::firmware::TargetUsbPersona::NativeKeyboardMouse;
 
 std::uint16_t gStringDescriptor[32] {};
 char gSerial[24] {};
@@ -158,15 +183,26 @@ const char* stringValue(std::uint8_t index) {
         case 1:
             return oag::product::kManufacturer;
         case 2:
-            return "AOG Abo Gemi ultra gaming";
+            return
+                gTargetUsbPersona ==
+                    oag::firmware::TargetUsbPersona::NativeKeyboardMouse
+                    ? "AOG Abo Gemi Keyboard Mouse"
+                    : "AOG Abo Gemi ultra gaming";
         case 3: {
             pico_unique_board_id_t id {};
             pico_get_unique_board_id(&id);
 
+            const char* prefix =
+                gTargetUsbPersona ==
+                    oag::firmware::TargetUsbPersona::NativeKeyboardMouse
+                    ? "AOG-KM-"
+                    : "AOG-XI2-";
+
             std::snprintf(
                 gSerial,
                 sizeof(gSerial),
-                "AOG-XI2-%02X%02X%02X%02X%02X%02X",
+                "%s%02X%02X%02X%02X%02X%02X",
+                prefix,
                 id.id[2],
                 id.id[3],
                 id.id[4],
@@ -184,14 +220,23 @@ const char* stringValue(std::uint8_t index) {
 } // namespace
 
 extern "C" std::uint8_t const* tud_descriptor_device_cb(void) {
-    return kDeviceDescriptor;
+    return
+        gTargetUsbPersona ==
+            oag::firmware::TargetUsbPersona::NativeKeyboardMouse
+            ? kNativeKmDeviceDescriptor
+            : kControllerDeviceDescriptor;
 }
 
 extern "C" std::uint8_t const* tud_descriptor_configuration_cb(
     std::uint8_t index
 ) {
     (void)index;
-    return kConfigurationDescriptor;
+
+    return
+        gTargetUsbPersona ==
+            oag::firmware::TargetUsbPersona::NativeKeyboardMouse
+            ? kNativeKmConfigurationDescriptor
+            : kControllerConfigurationDescriptor;
 }
 
 extern "C" std::uint16_t const* tud_descriptor_string_cb(
@@ -270,3 +315,16 @@ extern "C" void tud_hid_set_report_cb(
     (void)buffer;
     (void)bufferSize;
 }
+
+
+namespace oag::firmware {
+
+void setTargetUsbPersona(TargetUsbPersona persona) {
+    gTargetUsbPersona = persona;
+}
+
+TargetUsbPersona targetUsbPersona() {
+    return gTargetUsbPersona;
+}
+
+} // namespace oag::firmware
