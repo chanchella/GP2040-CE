@@ -114,7 +114,7 @@ jobs:
           assert "HIDS_SUBEVENT_INPUT_REPORT_ENABLE" in bt
           assert "hids_device_send_input_report_for_id(" in bt
           assert "role == HCI_ROLE_SLAVE" in bt
-          assert "BT-OUT1-P1: do not force SMP immediately" in bt
+          assert "Do not force SMP immediately from the peripheral side." in bt
           assert "BT-OUT1-P2: platform-side stale-bond repair." in bt
           assert "BT-OUT1-P3: quiesce controller discovery" in bt
           assert "SM_AUTHREQ_SECURE_CONNECTION |" in bt
