@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui4f-km-extra6-mouse-aim-100-10ms-policy-and-tests:
+  ui5a-global-km-modes-pc-native-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -49,19 +49,24 @@ jobs:
             'oag/firmware/CMakeLists.txt' \
             'oag/firmware/include/oag/firmware/pc_hid_output.h' \
             'oag/firmware/include/oag/firmware/pc_hid_platform_driver.h' \
+            'oag/firmware/include/oag/firmware/pc_native_km_output.h' \
             'oag/firmware/src/main.cpp' \
             'oag/firmware/src/pc_hid_output.cpp' \
             'oag/firmware/src/pc_hid_platform_driver.cpp' \
+            'oag/firmware/src/pc_native_km_output.cpp' \
             'oag/firmware/src/usb_descriptors.cpp' \
+            'oag/firmware/tusb_config.h' \
             'oag/include/oag/device/usb_device_classifier.h' \
             'oag/include/oag/protocol/hid/generic_hid_gamepad_driver.h' \
             'oag/src/device/usb_device_classifier.cpp' \
             'oag/src/output/platform/platform_profile_registry.cpp' \
             'oag/src/protocol/hid/generic_hid_gamepad_driver.cpp' \
             'oag/include/oag/mapping/keyboard_mouse_gamepad_mapper.h' \
-            'oag/src/mapping/keyboard_mouse_gamepad_mapper.cpp' | sort)"
+            'oag/src/mapping/keyboard_mouse_gamepad_mapper.cpp' \
+            'oag/include/oag/mapping/native_km_combo_engine.h' \
+            'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_RUNTIME_DIFF ==="
+          echo "=== UI5A_GLOBAL_KM_MODES_PC_NATIVE_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -73,7 +78,6 @@ jobs:
             oag/firmware/src/usb_pio_host.cpp \
             oag/firmware/src/usb_pio_probe.c \
             oag/firmware/src/xinput_host.cpp \
-            oag/firmware/tusb_config.h \
             oag/src/mapping/digital_binding_engine.cpp \
             oag/src/mapping/logical_slot_manager.cpp \
             oag/src/mapping/mouse_to_stick_mapper.cpp \
@@ -110,7 +114,7 @@ jobs:
           assert "src/pc_hid_output.cpp" not in cmake
           assert "src/pc_hid_platform_driver.cpp" not in cmake
 
-          assert "#define CFG_TUD_HID 0" in tusb
+          assert "#define CFG_TUD_HID 2" in tusb
           assert "#define CFG_TUD_VENDOR 1" in tusb
           assert "#define CFG_TUD_ENDPOINT0_SIZE 8" in tusb
 
@@ -119,6 +123,10 @@ jobs:
           assert "kReceiverPid = 0x0719" in desc
           assert "0xFF, 0x5D, 0x81" in desc
           assert "0xFF, 0x5D, 0x82" in desc
+          assert "TUD_HID_REPORT_DESC_KEYBOARD" in desc
+          assert "TUD_HID_REPORT_DESC_MOUSE" in desc
+          assert "0x89" in desc
+          assert "0x8A" in desc
 
           assert "sendPresence" in xdev
           assert "sendInput" in xdev
@@ -139,21 +147,27 @@ jobs:
           assert "UsbDeviceProfile::EasySmxLegacy2f240091" in usb_classifier
 
           assert "kExtraBindSlots = 6" in km_header
-          assert "keyboardUsage(0x3A)" in km
-          assert "keyboardUsage(0x3D)" in km
+          assert "keyboardUsage(0x1E)" in km
+          assert "keyboardUsage(0x21)" in km
           assert "mouseButton(MouseButtonBack)" in km
           assert "mouseButton(MouseButtonForward)" in km
           assert "mouseConfig_.sensitivityX = 1.0" in km
           assert "mouseConfig_.exponent = 0.58" in km
           assert "mouseConfig_.deadzoneX = 0.0" in km
           assert "kMouseAimHoldUs = 10000" in main
+          assert "kKeyboardMouseModeHoldUs = 3000000ull" in main
+          assert "KeyboardMouseOutputMode::Native" in main
+          assert "serviceKeyboardMouseModeToggle()" in main
+          assert "serviceNativeKeyboardMouseOutput()" in main
+          assert "PcNativeKmOutput nativeKmOutput_" in main
+          assert "NativeKmComboEngine nativeKmCombos_" in main
 
           assert "requestPairingAssist()" in host
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS_POLICY=PASS")
+          print("UI5A_GLOBAL_KM_MODES_PC_NATIVE_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -178,8 +192,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui4f-km-extra6-mouse-aim-100-10ms:
-    needs: ui4f-km-extra6-mouse-aim-100-10ms-policy-and-tests
+  firmware-ui5a-global-km-modes-pc-native:
+    needs: ui5a-global-km-modes-pc-native-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -254,7 +268,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI4F-KM-EXTRA6-MOUSE-AIM-100-10MS"
+          assert manifest["phase"] == "U10F-PM1-UI5A-GLOBAL-KM-MODES-PC-NATIVE"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -274,10 +288,20 @@ jobs:
           assert f["km_primary_extra_mouse_slots"] == 2
           assert f["km_extra_runtime_reconfigurable_in_mapper"] is True
           assert f["km_mouse_overlay_primary_only"] is True
+          assert f["km_global_mode_toggle"] == "F4+F5"
+          assert f["km_global_mode_hold_ms"] == 3000
+          assert f["km_default_mode"] == "NATIVE_KEYBOARD_MOUSE"
+          assert f["km_reserved_chord_never_forwarded"] is True
+          assert f["pc_native_keyboard_output"] is True
+          assert f["pc_native_mouse_output"] is True
+          assert f["pc_native_hid_interfaces"] == 2
+          assert f["native_km_combo_engine"] is True
+          assert f["native_km_combo_slots"] == 8
           assert f["km_mouse_sensitivity_x"] == 1.0
           assert f["km_mouse_response_exponent"] == 0.58
           assert f["km_mouse_anti_deadzone_x"] == 0.0
           assert f["mouse_aim_recenter_us"] == 10000
+          assert f["km_extra_default_keyboard_usages"] == ["1", "2", "3", "4"]
 
           assert f["pc_generic_hid_output"] is False
           assert f["pc_generic_hid_output_slots"] == 0
@@ -293,18 +317,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI4F_KM_EXTRA6_MOUSE_AIM_100_10MS=PASS")
+          print("BUILD_MANIFEST_UI5A_GLOBAL_KM_MODES_PC_NATIVE=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4F-KM-EXTRA6-MOUSE-AIM-100-10MS_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4F-KM-EXTRA6-MOUSE-AIM-100-10MS_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4F-KM-EXTRA6-MOUSE-AIM-100-10MS_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI4F-KM-EXTRA6-MOUSE-AIM-100-10MS_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5A-GLOBAL-KM-MODES-PC-NATIVE_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5A-GLOBAL-KM-MODES-PC-NATIVE_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5A-GLOBAL-KM-MODES-PC-NATIVE_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5A-GLOBAL-KM-MODES-PC-NATIVE_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI4F 100 Percent 10ms Mouse Aim candidate bundle
+      - name: Upload UI5A Global KM Modes PC Native candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI4F-KM-EXTRA6-MOUSE-AIM-100-10MS-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5A-GLOBAL-KM-MODES-PC-NATIVE-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
