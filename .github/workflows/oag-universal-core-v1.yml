@@ -425,22 +425,22 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_${SHORT_SHA}_Pico2W.map"
 
-      - name: Package full U10F-PM1 stock project
+      - name: Package full BT-OUT1 project
         shell: bash
         run: |
           set -euo pipefail
 
-          STOCK_SOURCE_SHA="64195844e28ded0126d3965594705585a31d469d"
+          STOCK_SOURCE_SHA="a9dd844ed3360549811279e6af528d39e2efb7ce"
           STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
-          STOCK_NAME="OAG_U10F_PM1_FULL_PROJECT_STOCK_${STOCK_SHORT}"
+          STOCK_NAME="OAG_U10F_PM1_L1_BT_OUT1_FULL_PROJECT_${STOCK_SHORT}"
           STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
           STOCK_ROOT="${STOCK_PARENT}/${STOCK_NAME}"
 
@@ -466,9 +466,9 @@ jobs:
           rsync -a --exclude='.git'             "${GITHUB_WORKSPACE}/pico-sdk-u9d/"             "${STOCK_ROOT}/dependencies/pico-sdk-2.3.0/"
 
           mkdir -p "${STOCK_ROOT}/BUILD_ARTIFACTS"
-          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_*_Pico2W.uf2             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
-          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_*_Pico2W.elf             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
-          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_*_Pico2W.map             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_*_Pico2W.uf2             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_*_Pico2W.elf             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_Abo_Gemi_Ultra_Gaming_BT_OUT1_*_Pico2W.map             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
           cp artifacts/build-manifest.json             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
           cp artifacts/size-report.txt             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
 
@@ -479,16 +479,18 @@ jobs:
           CYW43_SHA="$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)"
 
           cat > "${STOCK_ROOT}/STOCK_INFO.txt" <<EOF
-          OAG U10F-PM1 FULL PROJECT STOCK
-          =================================
+          OAG U10F-PM1-L1-BT-OUT1 FULL PROJECT
+          ======================================
           Runtime/source commit: ${STOCK_SOURCE_SHA}
           Packaging workflow commit: ${GITHUB_SHA}
           Branch: ${GITHUB_REF_NAME}
 
           Runtime basis:
-          - Exact U10F USB / Hub / XInput / Receiver / Keyboard / Mouse runtime.
-          - Pairing Mode only from the U10J pairing-isolated Bluetooth files.
-          - PC gamepad target: Xbox 360 / XInput receiver.
+          - TRUE GOLDEN parent: 59182f30c2028f77c059666d6473487d90a82b64.
+          - Existing USB / Hub / XInput / Receiver / Keyboard / Mouse runtime preserved.
+          - Existing Bluetooth Host, Pairing Mode, and BLE low-latency input preserved.
+          - Added BLE HID Gamepad Peripheral output for platform pairing.
+          - PC gamepad target remains Xbox 360 / XInput receiver in parallel.
 
           Pinned dependencies:
           Pico-PIO-USB: ${PIO_SHA}
@@ -520,11 +522,11 @@ jobs:
 
           sha256sum             "artifacts/${STOCK_NAME}.zip"             | tee "artifacts/${STOCK_NAME}.zip.sha256.txt"
 
-          echo "U10F_PM1_FULL_STOCK_PACKAGE=PASS"
+          echo "BT_OUT1_FULL_PROJECT_PACKAGE=PASS"
 
-      - name: Upload U10F-PM1 firmware bundle
+      - name: Upload BT-OUT1 firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U10F-PM1-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-BT-OUT1-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
