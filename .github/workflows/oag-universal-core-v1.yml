@@ -3,7 +3,7 @@ name: OAG Universal Core V1
 on:
   push:
     branches:
-      - chatgpt/oag-universal-core-v1
+      - chatgpt/oag-universal-core-v1-bt-g3
     paths:
       - 'oag/**'
       - 'docs/oag-universal-core-v1/**'
@@ -27,9 +27,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
+          test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1-bt-g3"
 
-      - name: Verify TRUE GOLDEN plus clean G2 Android BLE output delta
+      - name: Verify TRUE GOLDEN plus clean G3 Bluetooth Universal Input delta
         shell: bash
         run: |
           set -euo pipefail
@@ -47,9 +47,9 @@ jobs:
           # Older U10F ancestry remains asserted above, while USB/XInput
           # target-facing files are byte-diff checked separately.
 
-          # Exact runtime identities for the clean G2 candidate.
+          # Exact runtime identities for the clean G3 candidate.
 
-          G2_RUNTIME_DIFF="$(git diff --name-only "${TRUE_GOLDEN}" -- \
+          G3_RUNTIME_DIFF="$(git diff --name-only "${TRUE_GOLDEN}" -- \
             oag/firmware/CMakeLists.txt \
             oag/firmware/btstack_config.h \
             oag/firmware/oag_ble_platform.gatt \
@@ -59,7 +59,7 @@ jobs:
             oag/include \
             oag/src | sort)"
 
-          EXPECTED_G2_RUNTIME="$(printf '%s\n' \
+          EXPECTED_G3_RUNTIME="$(printf '%s\n' \
             'oag/firmware/CMakeLists.txt' \
             'oag/firmware/btstack_config.h' \
             'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
@@ -69,11 +69,11 @@ jobs:
             'oag/firmware/src/bluetooth_platform_output.cpp' \
             'oag/firmware/src/main.cpp' | sort)"
 
-          echo "=== G2_RUNTIME_DIFF ==="
-          printf '%s\n' "${G2_RUNTIME_DIFF}"
-          echo "=== EXPECTED_G2_RUNTIME ==="
-          printf '%s\n' "${EXPECTED_G2_RUNTIME}"
-          test "${G2_RUNTIME_DIFF}" = "${EXPECTED_G2_RUNTIME}"
+          echo "=== G3_RUNTIME_DIFF ==="
+          printf '%s\n' "${G3_RUNTIME_DIFF}"
+          echo "=== EXPECTED_G3_RUNTIME ==="
+          printf '%s\n' "${EXPECTED_G3_RUNTIME}"
+          test "${G3_RUNTIME_DIFF}" = "${EXPECTED_G3_RUNTIME}"
 
           # Everything USB/XInput/parser/mapping-facing remains TRUE GOLDEN/U10F.
           echo "=== VERIFY USB/XINPUT TARGET FILES ==="
@@ -131,6 +131,11 @@ jobs:
 
           assert "bluetoothPlatformOutput_.initialize(" in main
           assert "bluetoothPlatformOutput_.submit(" in main
+          assert "bluetoothUniversalGamepadBase()" in main
+          assert "sendBluetoothUniversalOutput()" in main
+          assert "mergeAxisByMagnitude(" in main
+          assert "merged.buttons |= input.buttons" in main
+          assert "MAX_ABSOLUTE_MAGNITUDE" not in main
 
           assert "src/bluetooth_platform_output.cpp" in cmake
           assert "pico_btstack_make_gatt_header(" in cmake
@@ -153,7 +158,7 @@ jobs:
           print("TRUE_GOLDEN_59182F30_BASE=PASS")
           print("USB_XINPUT_KM_PATHS_UNCHANGED=PASS")
           print("BLUETOOTH_INPUT_PATH_PRESERVED=PASS")
-          print("G2_EXTERNAL_BLE_OUTPUT_ISOLATED=PASS")
+          print("G3_EXTERNAL_BLE_OUTPUT_ISOLATED=PASS")
           PY
 
       - name: Verify no Antigravity coupling
@@ -289,7 +294,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U10F-PM1-G2-BT-OUT"
+          assert manifest["phase"] == "U10F-PM1-G3-BT-UNIVERSAL-INPUT"
           f = manifest["features"]
 
           # TRUE GOLDEN hardware/runtime invariants.
@@ -312,10 +317,15 @@ jobs:
           assert f["bluetooth_peripheral_primary_only"] is True
           assert f["bluetooth_peripheral_sm_policy"] == "PLATFORM_SC_BOND_NO_IO__INPUT_GOLDEN_BOND"
           assert f["bluetooth_ctkd"] is False
+          assert f["bluetooth_universal_input_merge"] is True
+          assert f["bluetooth_output_gamepad_mode"] == "SINGLE_MERGED_GAMEPAD"
+          assert f["bluetooth_merge_all_gamepad_slots"] is True
+          assert f["bluetooth_keyboard_mouse_as_gamepad"] is True
+          assert f["bluetooth_axis_merge_policy"] == "MAX_ABSOLUTE_MAGNITUDE"
           assert f["bluetooth_ble_hid_host"] is True
           assert f["bluetooth_classic_hid_host"] is True
 
-          print("BUILD_MANIFEST_G2=PASS")
+          print("BUILD_MANIFEST_G3=PASS")
           PY
 
       - name: Package exact-SHA artifacts
@@ -325,22 +335,22 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_U10F_PM1_G2_BT_OUT_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_U10F_PM1_G3_BT_UNIVERSAL_INPUT_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_U10F_PM1_G2_BT_OUT_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_U10F_PM1_G3_BT_UNIVERSAL_INPUT_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_U10F_PM1_G2_BT_OUT_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_U10F_PM1_G3_BT_UNIVERSAL_INPUT_${SHORT_SHA}_Pico2W.map"
 
-      - name: Package full G2 Android BLE output project
+      - name: Package full G3 Bluetooth Universal Input project
         shell: bash
         run: |
           set -euo pipefail
 
-          STOCK_SOURCE_SHA="e69c88af5ec52df1a36c5724da398ce6f4a0b5d1"
+          STOCK_SOURCE_SHA="94758248a8e55875294e64a9e789281e4bd7ee5a"
           STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
-          STOCK_NAME="OAG_U10F_PM1_G2_BT_OUT_FULL_PROJECT_${STOCK_SHORT}"
+          STOCK_NAME="OAG_U10F_PM1_G3_BT_UNIVERSAL_INPUT_FULL_PROJECT_${STOCK_SHORT}"
           STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
           STOCK_ROOT="${STOCK_PARENT}/${STOCK_NAME}"
 
@@ -366,9 +376,9 @@ jobs:
           rsync -a --exclude='.git'             "${GITHUB_WORKSPACE}/pico-sdk-u9d/"             "${STOCK_ROOT}/dependencies/pico-sdk-2.3.0/"
 
           mkdir -p "${STOCK_ROOT}/BUILD_ARTIFACTS"
-          cp artifacts/OAG_U10F_PM1_G2_BT_OUT_*_Pico2W.uf2             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
-          cp artifacts/OAG_U10F_PM1_G2_BT_OUT_*_Pico2W.elf             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
-          cp artifacts/OAG_U10F_PM1_G2_BT_OUT_*_Pico2W.map             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_U10F_PM1_G3_BT_UNIVERSAL_INPUT_*_Pico2W.uf2             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_U10F_PM1_G3_BT_UNIVERSAL_INPUT_*_Pico2W.elf             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
+          cp artifacts/OAG_U10F_PM1_G3_BT_UNIVERSAL_INPUT_*_Pico2W.map             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
           cp artifacts/build-manifest.json             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
           cp artifacts/size-report.txt             "${STOCK_ROOT}/BUILD_ARTIFACTS/"
 
@@ -379,7 +389,7 @@ jobs:
           CYW43_SHA="$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)"
 
           cat > "${STOCK_ROOT}/STOCK_INFO.txt" <<EOF
-          OAG U10F-PM1-G2-BT-OUT FULL PROJECT
+          OAG U10F-PM1-G3-BT-UNIVERSAL-INPUT FULL PROJECT
           ======================================
           Runtime/source commit: ${STOCK_SOURCE_SHA}
           Packaging workflow commit: ${GITHUB_SHA}
@@ -391,7 +401,10 @@ jobs:
           - TRUE GOLDEN Bluetooth Host, Pairing Mode, and BLE low-latency input preserved.
           - External output rebuilt from scratch as an isolated Generic BLE HID Gamepad.
           - Controller-input policy stays TRUE GOLDEN Bonding + NoInputNoOutput.
-          - Platform/phone link temporarily uses Bonding + LE Secure Connections, with CTKD disabled.
+          - Platform/phone link uses the G2-verified Bonding + LE Secure Connections policy, with CTKD disabled.
+          - G3 merges every connected gamepad slot into one BLE virtual gamepad.
+          - Keyboard and mouse are overlaid through the existing KeyboardMouseGamepadMapper.
+          - PC XInput routing remains independent and unchanged.
           - Official BTstack HOG services: HID + Battery + Device Information.
           - PC USB target remains Xbox 360 / XInput receiver in parallel.
 
@@ -425,11 +438,11 @@ jobs:
 
           sha256sum             "artifacts/${STOCK_NAME}.zip"             | tee "artifacts/${STOCK_NAME}.zip.sha256.txt"
 
-          echo "G2_BT_OUT_FULL_PROJECT_PACKAGE=PASS"
+          echo "G3_BT_UNIVERSAL_INPUT_FULL_PROJECT_PACKAGE=PASS"
 
-      - name: Upload G2 Android BLE output bundle
+      - name: Upload G3 Bluetooth Universal Input bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-G2-BT-OUT-${{ github.sha }}
+          name: OAG-U10F-PM1-G3-BT-UNIVERSAL-INPUT-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
