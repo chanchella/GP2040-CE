@@ -262,7 +262,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-G1"
+        "U10F-PM1-G3"
     );
     device_information_service_server_set_pnp_id(
         2,
