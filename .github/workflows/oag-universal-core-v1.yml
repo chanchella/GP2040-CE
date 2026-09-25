@@ -330,7 +330,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          STOCK_SOURCE_SHA="0f91033fdde41323c5e5e607236a7b843fdfba33"
+          STOCK_SOURCE_SHA="cb4a05d40c89dbd171b9029f94f9998fa3cd18ec"
           STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
           STOCK_NAME="OAG_U10F_PM1_G1_BT_OUT_FULL_PROJECT_${STOCK_SHORT}"
           STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
