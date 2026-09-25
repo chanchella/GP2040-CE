@@ -18,6 +18,7 @@
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/pc_native_km_output.h"
 #include "oag/firmware/usb_pio_host.h"
+#include "oag/firmware/usb_km_persona.h"
 #include "oag/firmware/xinput_host.h"
 #include "oag/input/gamepad_state.h"
 #include "oag/input/keyboard_state.h"
@@ -114,6 +115,7 @@ public:
         serviceXgipInit();
         servicePrimaryControllerChords();
         serviceKeyboardMouseModeToggle();
+        serviceUsbKmPersonaReenumeration();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
         servicePlatformFeedback();
@@ -1115,6 +1117,9 @@ private:
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 3000000ull;
+    static constexpr std::uint64_t kUsbPersonaDisconnectUs = 100000ull;
+    static constexpr std::uint64_t kUsbPersonaResubmitIntervalUs = 100000ull;
+    static constexpr std::uint8_t kUsbPersonaResubmitCount = 20;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
 
@@ -1714,6 +1719,10 @@ private:
             bluetoothRumbleRetryNotBeforeUs_[i] = 0;
         }
 
+        submitAllPcOutputs();
+    }
+
+    void submitAllPcOutputs() {
         sendComposedOutput();
 
         for (std::size_t pcSlot = 0;
@@ -1888,7 +1897,69 @@ private:
             nativeKmOutput_.releaseAll();
         }
 
+        requestUsbKmPersona(
+            keyboardMouseMode_ == KeyboardMouseOutputMode::Native
+        );
+
         sendComposedOutput();
+    }
+
+    void requestUsbKmPersona(bool exposeNativeKm) {
+        const std::uint64_t nowUs = time_us_64();
+
+        if (
+            !usbKmPersonaReconnectPending_ &&
+            oag::firmware::nativeKmUsbExposed() == exposeNativeKm
+        ) {
+            return;
+        }
+
+        // Release any native keys/buttons before the HID interfaces disappear.
+        nativeKmOutput_.releaseAll();
+        nativeKmOutput_.task(nowUs);
+
+        tud_disconnect();
+        oag::firmware::setNativeKmUsbExposed(exposeNativeKm);
+
+        usbKmPersonaReconnectPending_ = true;
+        usbKmPersonaReconnectNotBeforeUs_ =
+            nowUs + kUsbPersonaDisconnectUs;
+        usbKmPersonaResubmitRemaining_ = 0;
+    }
+
+    void serviceUsbKmPersonaReenumeration() {
+        const std::uint64_t nowUs = time_us_64();
+
+        if (usbKmPersonaReconnectPending_) {
+            if (nowUs < usbKmPersonaReconnectNotBeforeUs_) {
+                return;
+            }
+
+            tud_connect();
+            usbKmPersonaReconnectPending_ = false;
+            usbKmPersonaResubmitRemaining_ =
+                kUsbPersonaResubmitCount;
+            usbKmPersonaNextResubmitUs_ =
+                nowUs + kUsbPersonaResubmitIntervalUs;
+            return;
+        }
+
+        if (
+            usbKmPersonaResubmitRemaining_ == 0 ||
+            nowUs < usbKmPersonaNextResubmitUs_ ||
+            !tud_mounted()
+        ) {
+            return;
+        }
+
+        // A USB bus reset clears the custom receiver runtime. Re-submit every
+        // player briefly after enumeration so all XInput children recover
+        // without requiring any physical controller movement.
+        submitAllPcOutputs();
+
+        --usbKmPersonaResubmitRemaining_;
+        usbKmPersonaNextResubmitUs_ =
+            nowUs + kUsbPersonaResubmitIntervalUs;
     }
 
     void serviceNativeKeyboardMouseOutput() {
@@ -2168,6 +2239,11 @@ private:
         KeyboardMouseOutputMode::Native;
     std::uint64_t keyboardMouseModeChordStartedUs_ = 0;
     bool keyboardMouseModeChordLatched_ = false;
+
+    bool usbKmPersonaReconnectPending_ = false;
+    std::uint64_t usbKmPersonaReconnectNotBeforeUs_ = 0;
+    std::uint64_t usbKmPersonaNextResubmitUs_ = 0;
+    std::uint8_t usbKmPersonaResubmitRemaining_ = 0;
 
     std::int16_t currentNativeWheel_ = 0;
     std::int16_t currentNativePan_ = 0;
