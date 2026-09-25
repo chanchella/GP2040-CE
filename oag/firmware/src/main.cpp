@@ -16,6 +16,7 @@
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
+#include "oag/firmware/pc_native_km_output.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
 #include "oag/input/gamepad_state.h"
@@ -23,6 +24,7 @@
 #include "oag/input/mouse_state.h"
 #include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 #include "oag/mapping/logical_slot_manager.h"
+#include "oag/mapping/native_km_combo_engine.h"
 #include "oag/mapping/pass_through_mapping.h"
 #include "oag/protocol/hid/boot_keyboard_input_driver.h"
 #include "oag/protocol/hid/boot_mouse_input_driver.h"
@@ -32,6 +34,11 @@
 #include "oag/transport/host_root_reconciler.h"
 
 namespace {
+
+enum class KeyboardMouseOutputMode : std::uint8_t {
+    Native = 0,
+    Controller,
+};
 
 enum class XgipInitPhase : std::uint8_t {
     None = 0,
@@ -106,6 +113,8 @@ public:
         maintainXinputTransport();
         serviceXgipInit();
         servicePrimaryControllerChords();
+        serviceKeyboardMouseModeToggle();
+        serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
         servicePlatformFeedback();
     }
@@ -602,6 +611,8 @@ public:
                     mouseState.dx,
                     mouseState.dy,
                 };
+                currentNativeWheel_ = mouseState.wheel;
+                currentNativePan_ = mouseState.pan;
 
                 mouseAimActive_ =
                     currentMouseMotion_.dx != 0 ||
@@ -661,6 +672,8 @@ public:
                     mouseState.dx,
                     mouseState.dy,
                 };
+                currentNativeWheel_ = mouseState.wheel;
+                currentNativePan_ = mouseState.pan;
 
                 mouseAimActive_ =
                     currentMouseMotion_.dx != 0 ||
@@ -1101,6 +1114,9 @@ private:
     static constexpr std::uint64_t kMouseAimHoldUs = 10000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
+    static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 3000000ull;
+    static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
+    static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
 
     void serviceBluetoothHostV2() {
         const std::uint64_t nowUs =
@@ -1781,11 +1797,32 @@ private:
     }
 
     void sendComposedOutput() {
-        const oag::KeyboardState keyboard = combinedKeyboard();
+        oag::KeyboardState keyboard = combinedKeyboard();
         const oag::MouseState mouse = combinedMouse();
 
         const bool hasKeyboard = keyboard.connected;
         const bool hasMouse = mouse.connected;
+
+        // In Native mode K/M never create or modify the XInput player.
+        // Physical gamepads keep their normal route while K/M are forwarded
+        // through the standard HID keyboard/mouse interfaces.
+        if (keyboardMouseMode_ == KeyboardMouseOutputMode::Native) {
+            platformOutput_.submit(
+                hostPrimaryOutputSlot_,
+                basePrimaryOutput()
+            );
+            return;
+        }
+
+        // F4+F5 is a reserved global system chord. Even in Controller mode,
+        // the chord itself must never leak into any mapping or combo.
+        if (
+            keyboard.pressed(kModeToggleF4Usage) &&
+            keyboard.pressed(kModeToggleF5Usage)
+        ) {
+            keyboard.setPressed(kModeToggleF4Usage, false);
+            keyboard.setPressed(kModeToggleF5Usage, false);
+        }
 
         oag::LogicalGamepadState output =
             keyboardMouse_.apply(
@@ -1798,8 +1835,6 @@ private:
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
-            // A true wireless receiver must report Player 1 absent when there
-            // is no routed gamepad and no keyboard/mouse virtual input.
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
                 oag::LogicalGamepadState {}
@@ -1808,6 +1843,102 @@ private:
         }
 
         platformOutput_.submit(hostPrimaryOutputSlot_, output);
+    }
+
+    void serviceKeyboardMouseModeToggle() {
+        const oag::KeyboardState keyboard = combinedKeyboard();
+        const bool chordDown =
+            keyboard.pressed(kModeToggleF4Usage) &&
+            keyboard.pressed(kModeToggleF5Usage);
+
+        if (!chordDown) {
+            keyboardMouseModeChordStartedUs_ = 0;
+            keyboardMouseModeChordLatched_ = false;
+            return;
+        }
+
+        const std::uint64_t nowUs = time_us_64();
+
+        if (keyboardMouseModeChordStartedUs_ == 0) {
+            keyboardMouseModeChordStartedUs_ = nowUs;
+            return;
+        }
+
+        if (
+            keyboardMouseModeChordLatched_ ||
+            nowUs - keyboardMouseModeChordStartedUs_ <
+                kKeyboardMouseModeHoldUs
+        ) {
+            return;
+        }
+
+        keyboardMouseMode_ =
+            keyboardMouseMode_ == KeyboardMouseOutputMode::Native
+                ? KeyboardMouseOutputMode::Controller
+                : KeyboardMouseOutputMode::Native;
+
+        keyboardMouseModeChordLatched_ = true;
+        currentMouseMotion_ = {};
+        currentNativeWheel_ = 0;
+        currentNativePan_ = 0;
+        mouseAimActive_ = false;
+        mouseAimExpiresUs_ = 0;
+
+        if (keyboardMouseMode_ == KeyboardMouseOutputMode::Controller) {
+            nativeKmOutput_.releaseAll();
+        }
+
+        sendComposedOutput();
+    }
+
+    void serviceNativeKeyboardMouseOutput() {
+        const std::uint64_t nowUs = time_us_64();
+
+        if (keyboardMouseMode_ != KeyboardMouseOutputMode::Native) {
+            nativeKmOutput_.setEnabled(false);
+            nativeKmOutput_.task(nowUs);
+            return;
+        }
+
+        oag::KeyboardState keyboard = combinedKeyboard();
+        oag::MouseState mouse = combinedMouse();
+
+        // Never expose the reserved F4+F5 chord to the target host.
+        if (
+            keyboard.pressed(kModeToggleF4Usage) &&
+            keyboard.pressed(kModeToggleF5Usage)
+        ) {
+            keyboard.setPressed(kModeToggleF4Usage, false);
+            keyboard.setPressed(kModeToggleF5Usage, false);
+        }
+
+        const oag::NativeKmComboFrame frame =
+            nativeKmCombos_.apply(keyboard, mouse);
+
+        nativeKmOutput_.setEnabled(true);
+        nativeKmOutput_.updateState(frame.keyboard, frame.mouse);
+
+        if (
+            currentMouseMotion_.dx != 0 ||
+            currentMouseMotion_.dy != 0 ||
+            currentNativeWheel_ != 0 ||
+            currentNativePan_ != 0
+        ) {
+            nativeKmOutput_.addMouseMotion(
+                currentMouseMotion_.dx,
+                currentMouseMotion_.dy,
+                currentNativeWheel_,
+                currentNativePan_
+            );
+
+            currentMouseMotion_ = {};
+            currentNativeWheel_ = 0;
+            currentNativePan_ = 0;
+            mouseAimActive_ = false;
+            mouseAimExpiresUs_ = 0;
+        }
+
+        nativeKmOutput_.task(nowUs);
     }
 
     void serviceMouseAimRelease() {
@@ -2021,7 +2152,9 @@ private:
     oag::GenericHidGamepadDriver genericHid_;
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
+    oag::NativeKmComboEngine nativeKmCombos_;
     oag::firmware::PcXinputPlatformDriver platformOutput_;
+    oag::firmware::PcNativeKmOutput nativeKmOutput_;
 
     std::array<
         std::optional<oag::LogicalSlotId>,
@@ -2030,6 +2163,14 @@ private:
 
     oag::DeviceId primaryBluetoothGamepad_ {};
     oag::DeviceId manualPrimaryGamepad_ {};
+
+    KeyboardMouseOutputMode keyboardMouseMode_ =
+        KeyboardMouseOutputMode::Native;
+    std::uint64_t keyboardMouseModeChordStartedUs_ = 0;
+    bool keyboardMouseModeChordLatched_ = false;
+
+    std::int16_t currentNativeWheel_ = 0;
+    std::int16_t currentNativePan_ = 0;
 
     // Receiver child currently assigned by Windows/xusb22 to XInput Player 1.
     std::uint8_t hostPrimaryOutputSlot_ = 0;
