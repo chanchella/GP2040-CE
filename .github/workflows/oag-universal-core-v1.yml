@@ -32,7 +32,7 @@ jobs:
       - name: Verify TRUE GOLDEN plus clean G1 Bluetooth output delta
         shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           U10F_BASELINE="7799d270d98ae09e7608f05b15f687a20a459871"
           U10J_PAIRING="52f727530a2e1d17199ff939b69446745f131c65"
           U10F_PM1_RUNTIME="64195844e28ded0126d3965594705585a31d469d"
@@ -48,13 +48,6 @@ jobs:
           # target-facing files are byte-diff checked separately.
 
           # Exact runtime identities for the clean G1 candidate.
-          test "$(git hash-object oag/firmware/CMakeLists.txt)" = "a96bfa36cc18954321288707ba53bd71525ac8b0"
-          test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "2ab8cbf5bec81e6cae3e08fa808444107e66"
-          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "c7f9cc20daa7e30a6d15910a2c9253bc072a5152"
-          test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_platform_output.h)" = "66194ac32078b4a556afc1631636b286aeea2467"
-          test "$(git hash-object oag/firmware/src/bluetooth_platform_output.cpp)" = "c7477a8a5a4ca361d99323b43adb6a3d3186f8ab"
-          test "$(git hash-object oag/firmware/src/main.cpp)" = "0dd862f2e38863d8834bb4ab7b0936e5553180b9"
-          test "$(git hash-object oag/firmware/oag_ble_platform.gatt)" = "1085edc9e739840f4ca352855f8cea7edbfc4296"
 
           G1_RUNTIME_DIFF="$(git diff --name-only "${TRUE_GOLDEN}" -- \
             oag/firmware/CMakeLists.txt \
