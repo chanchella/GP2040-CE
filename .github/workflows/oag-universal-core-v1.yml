@@ -55,6 +55,7 @@ jobs:
             'oag/firmware/src/pc_hid_output.cpp' \
             'oag/firmware/src/pc_hid_platform_driver.cpp' \
             'oag/firmware/src/pc_native_km_output.cpp' \
+            'oag/firmware/src/pc_xinput_device.cpp' \
             'oag/firmware/src/usb_descriptors.cpp' \
             'oag/firmware/tusb_config.h' \
             'oag/include/oag/device/usb_device_classifier.h' \
