@@ -1827,11 +1827,14 @@ private:
             return;
         }
 
-        // F4+F5 is a reserved global system chord. Even in Controller mode,
-        // the chord itself must never leak into any mapping or combo.
+        // F4/F5 are reserved once the mode chord is engaged. Keep both
+        // suppressed until both physical keys are released.
         if (
-            keyboard.pressed(kModeToggleF4Usage) &&
-            keyboard.pressed(kModeToggleF5Usage)
+            keyboardMouseModeSuppressChordUntilRelease_ ||
+            (
+                keyboard.pressed(kModeToggleF4Usage) &&
+                keyboard.pressed(kModeToggleF5Usage)
+            )
         ) {
             keyboard.setPressed(kModeToggleF4Usage, false);
             keyboard.setPressed(kModeToggleF5Usage, false);
