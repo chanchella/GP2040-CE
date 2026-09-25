@@ -61,6 +61,31 @@ int main() {
     assert(xboxOneS.profile == UsbDeviceProfile::XboxOneS045e02ea);
     assert(xboxOneS.protocol == ProtocolKind::XgipXboxOne);
 
+
+    const UsbDeviceClassification bootKeyboard = classifier.classify({
+        0x1234, 0x0001, 0x03, 0x01, 0x01, 1
+    });
+    assert(bootKeyboard.protocol == ProtocolKind::HidKeyboard);
+    assert(bootKeyboard.profile == UsbDeviceProfile::GenericHidKeyboard);
+
+    const UsbDeviceClassification bootMouse = classifier.classify({
+        0x1234, 0x0002, 0x03, 0x01, 0x02, 1
+    });
+    assert(bootMouse.protocol == ProtocolKind::HidMouse);
+    assert(bootMouse.profile == UsbDeviceProfile::GenericHidMouse);
+
+    const UsbDeviceClassification dualshock4 = classifier.classify({
+        0x054C, 0x09CC, 0x03, 0x00, 0x00, 2
+    });
+    assert(dualshock4.profile == UsbDeviceProfile::SonyDualShock4);
+    assert(dualshock4.hasQuirk(UsbQuirkSonyButtonLayout));
+
+    const UsbDeviceClassification aog = classifier.classify({
+        0xCAFE, 0x4012, 0x03, 0x00, 0x00, 1
+    });
+    assert(aog.profile == UsbDeviceProfile::AogUniversalHid2);
+    assert(aog.hasQuirk(UsbQuirkModernButtonLayout));
+
     XgipInputDriver parser;
     UniversalGamepadState state {};
 

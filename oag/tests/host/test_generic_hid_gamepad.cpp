@@ -230,5 +230,38 @@ int main() {
     assert(recoveredVendor.valid);
     assert(recoveredVendor.fieldCount >= 12);
 
+
+    GenericHidGamepadQuirks sonyQuirks {};
+    sonyQuirks.buttonLayout =
+        GenericHidButtonLayout::SonyPlayStation;
+
+    GenericHidGamepadDescriptor sonyParsed {};
+    assert(driver.parseDescriptor(
+        descriptor,
+        sizeof(descriptor),
+        sonyQuirks,
+        sonyParsed
+    ));
+
+    const std::uint8_t sonyReport[] = {
+        0x80, 0x80, 0x80, 0x80,
+        0x0F,
+        0x03, 0x01
+    };
+
+    UniversalGamepadState sonyState {};
+    assert(driver.parseReport(
+        DeviceId {5, 1},
+        sonyParsed,
+        sonyQuirks,
+        sonyReport,
+        sizeof(sonyReport),
+        310000,
+        sonyState
+    ));
+    assert((sonyState.buttons & ButtonWest) != 0);
+    assert((sonyState.buttons & ButtonSouth) != 0);
+    assert((sonyState.buttons & ButtonBack) != 0);
+
     return 0;
 }

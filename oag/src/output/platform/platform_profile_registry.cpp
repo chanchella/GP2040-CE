@@ -53,7 +53,19 @@ constexpr std::array<PlatformProfile, 11> kProfiles {{
     makeProfile(
         PlatformId::PcGenericHid,
         PlatformWireProtocol::GenericHid,
-        PlatformImplementationStatus::SoftwareFoundation,
+        PlatformImplementationStatus::RuntimeAvailable,
+        kNoAuth,
+        4,
+        false,
+        false,
+        false,
+        false,
+        true
+    ),
+    makeProfile(
+        PlatformId::AndroidGamepad,
+        PlatformWireProtocol::MobileHid,
+        PlatformImplementationStatus::RuntimeAvailable,
         kNoAuth,
         4,
         false,
@@ -63,21 +75,9 @@ constexpr std::array<PlatformProfile, 11> kProfiles {{
         false
     ),
     makeProfile(
-        PlatformId::AndroidGamepad,
-        PlatformWireProtocol::MobileHid,
-        PlatformImplementationStatus::Planned,
-        kNoAuth,
-        1,
-        true,
-        false,
-        false,
-        false,
-        false
-    ),
-    makeProfile(
         PlatformId::IosGameController,
         PlatformWireProtocol::MobileHid,
-        PlatformImplementationStatus::Planned,
+        PlatformImplementationStatus::SoftwareFoundation,
         kNoAuth,
         1,
         true,

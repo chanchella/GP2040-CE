@@ -23,6 +23,22 @@ int main() {
         "PC_XINPUT_360"
     ) == 0);
 
+
+    const PlatformProfile& pcHid =
+        PlatformProfileRegistry::profile(PlatformId::PcGenericHid);
+    assert(pcHid.implementation ==
+        PlatformImplementationStatus::RuntimeAvailable);
+    assert(pcHid.hardwareVerified);
+    assert(pcHid.maxLogicalGamepads == 4);
+
+    const PlatformProfile& android =
+        PlatformProfileRegistry::profile(PlatformId::AndroidGamepad);
+    assert(android.implementation ==
+        PlatformImplementationStatus::RuntimeAvailable);
+    assert(!android.auth.required());
+    assert(android.maxLogicalGamepads == 4);
+    assert(!android.hardwareVerified);
+
     const PlatformProfile& series =
         PlatformProfileRegistry::profile(
             PlatformId::XboxSeriesConsole

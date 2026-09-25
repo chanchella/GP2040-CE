@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 
 #include "pico/stdlib.h"
@@ -251,6 +252,9 @@ public:
                 return;
             }
 
+            usbHidDescriptors_[id->index] = {};
+            usbHidRawDescriptorLengths_[id->index] = 0;
+
             keyboardStates_[id->index] = {};
             keyboardStates_[id->index].source = *id;
             keyboardStates_[id->index].connected = true;
@@ -276,6 +280,9 @@ public:
                 return;
             }
 
+            usbHidDescriptors_[id->index] = {};
+            usbHidRawDescriptorLengths_[id->index] = 0;
+
             mouseStates_[id->index] = {};
             mouseStates_[id->index].source = *id;
             mouseStates_[id->index].connected = true;
@@ -284,75 +291,146 @@ public:
 
         if (
             reportDescriptor == nullptr ||
-            reportDescriptorLength == 0
+            reportDescriptorLength == 0 ||
+            reportDescriptorLength > kMaxUsbHidDescriptorBytes
         ) {
             return;
         }
 
+        oag::firmware::BluetoothHidDescriptorV2 hidInfo {};
+        const bool hidInfoValid =
+            bluetoothHidParser_.parseDescriptor(
+                reportDescriptor,
+                reportDescriptorLength,
+                hidInfo
+            );
+
         oag::GenericHidGamepadQuirks quirks =
             genericHidQuirksFor(vid, pid);
 
-        oag::GenericHidGamepadDescriptor descriptor {};
+        oag::GenericHidGamepadDescriptor gamepadDescriptor {};
+        bool parsedGamepad = false;
 
-        bool parsed = genericHid_.parseDescriptor(
-            reportDescriptor,
-            reportDescriptorLength,
-            quirks,
-            descriptor
-        );
-
-        if (!parsed &&
+        if (
+            (hidInfoValid && hidInfo.hasGamepad) ||
             genericHid_.looksLikeGamepadDescriptor(
                 reportDescriptor,
                 reportDescriptorLength
-            )) {
-            // Some inexpensive controllers expose correct gamepad fields
-            // under a vendor/composite top-level collection. Force only after
-            // structural X/Y + buttons/hat evidence is present.
-            quirks.forceGamepad = true;
-
-            parsed = genericHid_.parseDescriptor(
+            )
+        ) {
+            parsedGamepad = genericHid_.parseDescriptor(
                 reportDescriptor,
                 reportDescriptorLength,
                 quirks,
-                descriptor
+                gamepadDescriptor
             );
+
+            if (
+                !parsedGamepad &&
+                genericHid_.looksLikeGamepadDescriptor(
+                    reportDescriptor,
+                    reportDescriptorLength
+                )
+            ) {
+                quirks.forceGamepad = true;
+                parsedGamepad = genericHid_.parseDescriptor(
+                    reportDescriptor,
+                    reportDescriptorLength,
+                    quirks,
+                    gamepadDescriptor
+                );
+            }
         }
 
-        if (!parsed) {
+        const bool hasKeyboard =
+            hidInfoValid && hidInfo.hasKeyboard;
+        const bool hasMouse =
+            hidInfoValid && hidInfo.hasMouse;
+
+        if (!parsedGamepad && !hasKeyboard && !hasMouse) {
             return;
+        }
+
+        oag::ProtocolKind primaryProtocol =
+            oag::ProtocolKind::Unknown;
+
+        if (parsedGamepad) {
+            primaryProtocol = oag::ProtocolKind::HidGamepad;
+        } else if (hasKeyboard) {
+            primaryProtocol = oag::ProtocolKind::HidKeyboard;
+        } else {
+            primaryProtocol = oag::ProtocolKind::HidMouse;
         }
 
         const auto id = registry_.connectUsb(
             handle,
             vid,
             pid,
-            oag::ProtocolKind::HidGamepad
+            primaryProtocol
         );
 
         if (!id || id->index >= oag::DeviceRegistry::kCapacity) {
             return;
         }
 
-        const auto slot = slots_.bindFirstFree(*id);
-        if (!slot) {
-            registry_.disconnect(*id);
-            return;
+        usbHidDescriptors_[id->index] =
+            hidInfoValid
+                ? hidInfo
+                : oag::firmware::BluetoothHidDescriptorV2 {};
+
+        std::memcpy(
+            usbHidRawDescriptors_[id->index].data(),
+            reportDescriptor,
+            reportDescriptorLength
+        );
+        usbHidRawDescriptorLengths_[id->index] =
+            reportDescriptorLength;
+
+        if (parsedGamepad) {
+            const auto slot = slots_.bindFirstFree(*id);
+
+            if (!slot) {
+                if (!hasKeyboard && !hasMouse) {
+                    usbHidDescriptors_[id->index] = {};
+                    usbHidRawDescriptorLengths_[id->index] = 0;
+                    registry_.disconnect(*id);
+                    return;
+                }
+            } else {
+                genericHidDescriptors_[id->index] =
+                    gamepadDescriptor;
+                genericHidQuirks_[id->index] = quirks;
+
+                states_[*slot] = {};
+                states_[*slot].source = *id;
+                states_[*slot].connected = true;
+
+                if (*slot < pendingRumbleValid_.size()) {
+                    pendingRumble_[*slot] = {};
+                    pendingRumbleValid_[*slot] = false;
+                }
+
+                rebuildPcOutputRouting();
+            }
         }
 
-        genericHidDescriptors_[id->index] = descriptor;
-        genericHidQuirks_[id->index] = quirks;
+        if (hasKeyboard) {
+            keyboardStates_[id->index] = {};
+            keyboardStates_[id->index].source = *id;
+            keyboardStates_[id->index].connected = true;
 
-        states_[*slot] = {};
-        states_[*slot].source = *id;
-        states_[*slot].connected = true;
-
-        if (*slot < pendingRumbleValid_.size()) {
-            pendingRumble_[*slot] = {};
-            pendingRumbleValid_[*slot] = false;
+            keyboardLedStates_[id->index].reset();
+            keyboardLedDesired_[id->index] = 0;
+            keyboardLedApplied_[id->index] = 0;
+            keyboardLedInFlight_[id->index] = 0;
+            keyboardLedTxPending_[id->index] = false;
         }
 
-        rebuildPcOutputRouting();
+        if (hasMouse) {
+            mouseStates_[id->index] = {};
+            mouseStates_[id->index].source = *id;
+            mouseStates_[id->index].connected = true;
+        }
     }
 
     void onHidUnmounted(
@@ -374,31 +452,24 @@ public:
             return;
         }
 
-        if (record->protocol == oag::ProtocolKind::HidKeyboard) {
+        bool composedChanged = false;
+        bool routingChanged = false;
+
+        if (keyboardStates_[id->index].connected) {
             keyboardStates_[id->index] = {};
             keyboardLedStates_[id->index].reset();
             keyboardLedDesired_[id->index] = 0;
             keyboardLedApplied_[id->index] = 0;
             keyboardLedInFlight_[id->index] = 0;
             keyboardLedTxPending_[id->index] = false;
-
-            registry_.disconnect(*id);
-            sendComposedOutput();
-            return;
+            composedChanged = true;
         }
 
-        if (record->protocol == oag::ProtocolKind::HidMouse) {
+        if (mouseStates_[id->index].connected) {
             mouseStates_[id->index] = {};
-            registry_.disconnect(*id);
-
             currentMouseMotion_ = {};
             mouseAimActive_ = false;
-            sendComposedOutput();
-            return;
-        }
-
-        if (record->protocol != oag::ProtocolKind::HidGamepad) {
-            return;
+            composedChanged = true;
         }
 
         const auto slot = slots_.slotFor(*id);
@@ -410,19 +481,27 @@ public:
                 pendingRumble_[*slot] = {};
                 pendingRumbleValid_[*slot] = false;
             }
+
+            bluetoothHost_.notifyWiredGamepadDetached(
+                record->vid,
+                record->pid
+            );
+
+            slots_.release(*id);
+            routingChanged = true;
         }
 
-        bluetoothHost_.notifyWiredGamepadDetached(
-            record->vid,
-            record->pid
-        );
-
-        slots_.release(*id);
         genericHidDescriptors_[id->index] = {};
         genericHidQuirks_[id->index] = {};
+        usbHidDescriptors_[id->index] = {};
+        usbHidRawDescriptorLengths_[id->index] = 0;
         registry_.disconnect(*id);
 
-        rebuildPcOutputRouting();
+        if (routingChanged) {
+            rebuildPcOutputRouting();
+        } else if (composedChanged) {
+            sendComposedOutput();
+        }
     }
 
     void onHidReport(
@@ -443,6 +522,103 @@ public:
 
         const oag::DeviceRecord* record = registry_.find(*id);
         if (record == nullptr) {
+            return;
+        }
+
+        const auto& hidInfo =
+            usbHidDescriptors_[id->index];
+
+        if (hidInfo.valid) {
+            const std::uint16_t descriptorLength =
+                usbHidRawDescriptorLengths_[id->index];
+
+            if (
+                descriptorLength == 0 ||
+                descriptorLength > kMaxUsbHidDescriptorBytes
+            ) {
+                return;
+            }
+
+            const std::uint8_t* descriptor =
+                usbHidRawDescriptors_[id->index].data();
+
+            const std::uint64_t nowUs = time_us_64();
+            bool composedChanged = false;
+
+            if (hidInfo.hasGamepad) {
+                const auto slot = slots_.slotFor(*id);
+
+                if (
+                    slot &&
+                    *slot < states_.size() &&
+                    genericHidDescriptors_[id->index].valid &&
+                    genericHid_.parseReport(
+                        *id,
+                        genericHidDescriptors_[id->index],
+                        genericHidQuirks_[id->index],
+                        report,
+                        length,
+                        nowUs,
+                        states_[*slot]
+                    )
+                ) {
+                    sendSlotOutput(*slot);
+                }
+            }
+
+            if (
+                hidInfo.hasKeyboard &&
+                bluetoothHidParser_.parseKeyboard(
+                    *id,
+                    hidInfo,
+                    descriptor,
+                    descriptorLength,
+                    report,
+                    length,
+                    nowUs,
+                    keyboardStates_[id->index]
+                )
+            ) {
+                composedChanged = true;
+            }
+
+            if (
+                hidInfo.hasMouse &&
+                bluetoothHidParser_.parseMouse(
+                    *id,
+                    hidInfo,
+                    descriptor,
+                    descriptorLength,
+                    report,
+                    length,
+                    nowUs,
+                    mouseStates_[id->index]
+                )
+            ) {
+                const oag::MouseState& mouseState =
+                    mouseStates_[id->index];
+
+                currentMouseMotion_ = {
+                    mouseState.dx,
+                    mouseState.dy,
+                };
+
+                mouseAimActive_ =
+                    currentMouseMotion_.dx != 0 ||
+                    currentMouseMotion_.dy != 0;
+
+                if (mouseAimActive_) {
+                    mouseAimExpiresUs_ =
+                        nowUs + kMouseAimHoldUs;
+                }
+
+                composedChanged = true;
+            }
+
+            if (composedChanged) {
+                sendComposedOutput();
+            }
+
             return;
         }
 
@@ -630,8 +806,11 @@ public:
         }
 
         const oag::DeviceRecord* record = registry_.find(*id);
-        if (record == nullptr ||
-            record->protocol != oag::ProtocolKind::HidKeyboard) {
+        if (
+            record == nullptr ||
+            record->protocol != oag::ProtocolKind::HidKeyboard ||
+            usbHidDescriptors_[id->index].valid
+        ) {
             return;
         }
 
@@ -971,6 +1150,16 @@ private:
         quirks.zRzAsRightStick =
             classification.hasQuirk(oag::UsbQuirkZRzAsRightStick);
 
+        if (classification.hasQuirk(oag::UsbQuirkSonyButtonLayout)) {
+            quirks.buttonLayout =
+                oag::GenericHidButtonLayout::SonyPlayStation;
+        } else if (
+            classification.hasQuirk(oag::UsbQuirkModernButtonLayout)
+        ) {
+            quirks.buttonLayout =
+                oag::GenericHidButtonLayout::ModernCanonical;
+        }
+
         return quirks;
     }
 
@@ -1027,7 +1216,8 @@ private:
             if (
                 record == nullptr ||
                 record->transport != oag::TransportType::UsbPioHost ||
-                record->protocol != oag::ProtocolKind::HidKeyboard
+                record->protocol != oag::ProtocolKind::HidKeyboard ||
+                usbHidDescriptors_[i].valid
             ) {
                 continue;
             }
@@ -1908,6 +2098,23 @@ private:
         oag::GenericHidGamepadQuirks,
         oag::DeviceRegistry::kCapacity
     > genericHidQuirks_ {};
+
+    static constexpr std::size_t kMaxUsbHidDescriptorBytes = 1024;
+
+    std::array<
+        oag::firmware::BluetoothHidDescriptorV2,
+        oag::DeviceRegistry::kCapacity
+    > usbHidDescriptors_ {};
+
+    std::array<
+        std::array<std::uint8_t, kMaxUsbHidDescriptorBytes>,
+        oag::DeviceRegistry::kCapacity
+    > usbHidRawDescriptors_ {};
+
+    std::array<
+        std::uint16_t,
+        oag::DeviceRegistry::kCapacity
+    > usbHidRawDescriptorLengths_ {};
 
     std::array<
         oag::firmware::BluetoothHidDescriptorV2,
