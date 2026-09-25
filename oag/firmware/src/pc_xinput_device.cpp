@@ -8,7 +8,6 @@
 #include "pico/time.h"
 #include "pico/unique_id.h"
 #include "tusb.h"
-#include "oag/firmware/usb_composite_xusb.h"
 #include "device/usbd_pvt.h"
 
 namespace {
@@ -633,15 +632,6 @@ extern "C" bool tud_vendor_control_xfer_cb(
     tusb_control_request_t const* request
 ) {
     if (stage != CONTROL_STAGE_SETUP) {
-        return true;
-    }
-
-    if (
-        oag::firmware::handleCompositeXusbOsDescriptorRequest(
-            rhport,
-            request
-        )
-    ) {
         return true;
     }
 
