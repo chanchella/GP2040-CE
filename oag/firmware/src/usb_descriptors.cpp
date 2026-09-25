@@ -9,6 +9,7 @@
 
 #include "oag/core/product_identity.h"
 #include "oag/firmware/pc_xinput_device.h"
+#include "oag/firmware/usb_km_persona.h"
 
 namespace {
 
@@ -53,7 +54,7 @@ const std::uint8_t kDeviceDescriptor[] = {
     0x01,
 };
 
-const std::uint8_t kConfigurationDescriptor[] = {
+std::uint8_t kConfigurationDescriptor[] = {
     // Xbox receiver core = 321 bytes. Two standard HID interfaces add
     // 25 bytes each, giving 371 bytes total (0x0173).
     0x09, 0x02, 0x73, 0x01,
@@ -152,6 +153,7 @@ static_assert(sizeof(kConfigurationDescriptor) == 0x0173);
 
 std::uint16_t gStringDescriptor[32] {};
 char gSerial[24] {};
+bool gNativeKmUsbExposed = true;
 
 const char* stringValue(std::uint8_t index) {
     switch (index) {
@@ -270,3 +272,30 @@ extern "C" void tud_hid_set_report_cb(
     (void)buffer;
     (void)bufferSize;
 }
+
+
+namespace oag::firmware {
+
+void setNativeKmUsbExposed(bool exposed) {
+    gNativeKmUsbExposed = exposed;
+
+    if (exposed) {
+        // Composite receiver + native keyboard + native mouse.
+        kConfigurationDescriptor[2] = 0x73;
+        kConfigurationDescriptor[3] = 0x01;
+        kConfigurationDescriptor[4] = 0x0A;
+        return;
+    }
+
+    // Controller-only persona. The trailing HID descriptor bytes remain in
+    // flash, but wTotalLength/bNumInterfaces make them invisible to the host.
+    kConfigurationDescriptor[2] = 0x41;
+    kConfigurationDescriptor[3] = 0x01;
+    kConfigurationDescriptor[4] = 0x08;
+}
+
+bool nativeKmUsbExposed() {
+    return gNativeKmUsbExposed;
+}
+
+} // namespace oag::firmware
