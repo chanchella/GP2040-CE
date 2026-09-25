@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "oag/input/gamepad_state.h"
+#include "oag/output/logical_gamepad_state.h"
 
 namespace oag::firmware {
 
