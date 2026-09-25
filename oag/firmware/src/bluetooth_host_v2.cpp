@@ -80,6 +80,15 @@ constexpr std::uint32_t kU9FreshBondVersion = 3u; // U9D SDK 2.3 / HIDS Host res
 constexpr std::uint32_t kLeScanWindowMs = 5000u;
 constexpr std::uint64_t kPairingAssistWindowUs = 30000000ull;
 
+// U10F-PM1-L1: BLE-only latency preference.
+// BLE connection interval units are 1.25 ms, so 6..12 requests 7.5..15 ms.
+// This is best-effort only: rejection must never disconnect the controller or
+// alter pairing/bond semantics.
+constexpr std::uint16_t kLeLowLatencyIntervalMin = 6u;
+constexpr std::uint16_t kLeLowLatencyIntervalMax = 12u;
+constexpr std::uint16_t kLeLowLatencyConnLatency = 0u;
+constexpr std::uint16_t kLeLowLatencySupervisionTimeout = 400u; // 4 seconds
+
 // Minimal GAP Device Name ATT database. This mirrors the historical
 // BluetoothHCI behavior where the Pico exposes a local GAP service even while
 // acting as the BLE HID Host/Central.
@@ -1056,6 +1065,29 @@ void BluetoothHostV2::handleLeHidPacket(
                     peer->connectionHandle
                 );
                 break;
+            }
+
+            // U10F-PM1-L1 latency optimization:
+            // Once HIDS is fully ready, prefer a lower BLE connection interval
+            // only when the current link is slower than 15 ms. The controller
+            // is free to reject this request; rejection is deliberately
+            // non-fatal so compatibility remains identical to U10F-PM1.
+            const std::uint16_t currentInterval =
+                gap_le_connection_interval(
+                    peer->connectionHandle
+                );
+
+            if (
+                currentInterval >
+                    kLeLowLatencyIntervalMax
+            ) {
+                (void)gap_request_connection_parameter_update(
+                    peer->connectionHandle,
+                    kLeLowLatencyIntervalMin,
+                    kLeLowLatencyIntervalMax,
+                    kLeLowLatencyConnLatency,
+                    kLeLowLatencySupervisionTimeout
+                );
             }
 
             // HIDS-ready, not merely a solid controller LED, is the success
