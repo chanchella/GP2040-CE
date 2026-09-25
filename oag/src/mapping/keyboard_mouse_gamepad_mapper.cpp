@@ -135,15 +135,15 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
 
     rebuildExtraBindings();
 
-    // Responsive mouse->right-stick curve for games with analog deadzones.
-    // One or two mouse counts now produce a meaningful stick value instead
-    // of being swallowed by the game's deadzone, while larger movements still
-    // ramp smoothly toward full stick deflection.
-    mouseConfig_.sensitivityX = 0.024;
-    mouseConfig_.sensitivityY = 0.024;
-    mouseConfig_.exponent = 0.72;
-    mouseConfig_.deadzoneX = 0.12;
-    mouseConfig_.deadzoneY = 0.12;
+    // Strong-response mouse->right-stick curve for games with analog
+    // deadzones. A one-count movement deliberately clears typical game
+    // deadzones with a strong initial response, while the sub-linear curve
+    // still preserves control and ramps progressively toward full stick.
+    mouseConfig_.sensitivityX = 0.035;
+    mouseConfig_.sensitivityY = 0.035;
+    mouseConfig_.exponent = 0.60;
+    mouseConfig_.deadzoneX = 0.16;
+    mouseConfig_.deadzoneY = 0.16;
     mouseConfig_.boundary = StickBoundary::Circle;
     mouseConfig_.invertY = false;
 }

@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI4-KM-EXTRA6-MOUSE-AIM",
+    "phase": "U10F-PM1-UI4B-KM-EXTRA6-MOUSE-AIM-STRONG",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -223,11 +223,11 @@ manifest = {
         "km_extra_default_keyboard_usages": ["F1", "F2", "F3", "F4"],
         "km_extra_default_mouse_buttons": ["BACK", "FORWARD"],
         "km_extra_runtime_reconfigurable_in_mapper": True,
-        "km_mouse_sensitivity_x": 0.024,
-        "km_mouse_sensitivity_y": 0.024,
-        "km_mouse_response_exponent": 0.72,
-        "km_mouse_anti_deadzone_x": 0.12,
-        "km_mouse_anti_deadzone_y": 0.12,
+        "km_mouse_sensitivity_x": 0.035,
+        "km_mouse_sensitivity_y": 0.035,
+        "km_mouse_response_exponent": 0.60,
+        "km_mouse_anti_deadzone_x": 0.16,
+        "km_mouse_anti_deadzone_y": 0.16,
         "km_mouse_overlay_primary_only": True,
         "pc_generic_hid_profile_runtime": False,
         "android_generic_hid_profile_runtime": False,
@@ -296,6 +296,7 @@ manifest = {
         "u10f_pm1_ui2_pc_xinput": "PENDING_HARDWARE",
         "u10f_pm1_ui3_razer_easysmx_input": "PENDING_HARDWARE",
         "u10f_pm1_ui4_km_extra6_mouse_aim": "PENDING_HARDWARE",
+        "u10f_pm1_ui4b_km_extra6_mouse_aim_strong": "PENDING_HARDWARE",
     },
 }
 

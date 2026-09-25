@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui4-km-extra6-mouse-aim-policy-and-tests:
+  ui4b-km-extra6-mouse-aim-strong-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -61,7 +61,7 @@ jobs:
             'oag/include/oag/mapping/keyboard_mouse_gamepad_mapper.h' \
             'oag/src/mapping/keyboard_mouse_gamepad_mapper.cpp' | sort)"
 
-          echo "=== UI4_KM_EXTRA6_MOUSE_AIM_RUNTIME_DIFF ==="
+          echo "=== UI4B_KM_EXTRA6_MOUSE_AIM_STRONG_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -143,16 +143,16 @@ jobs:
           assert "keyboardUsage(0x3D)" in km
           assert "mouseButton(MouseButtonBack)" in km
           assert "mouseButton(MouseButtonForward)" in km
-          assert "mouseConfig_.sensitivityX = 0.024" in km
-          assert "mouseConfig_.exponent = 0.72" in km
-          assert "mouseConfig_.deadzoneX = 0.12" in km
+          assert "mouseConfig_.sensitivityX = 0.035" in km
+          assert "mouseConfig_.exponent = 0.60" in km
+          assert "mouseConfig_.deadzoneX = 0.16" in km
 
           assert "requestPairingAssist()" in host
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI4_KM_EXTRA6_MOUSE_AIM_POLICY=PASS")
+          print("UI4B_KM_EXTRA6_MOUSE_AIM_STRONG_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -177,8 +177,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui4-km-extra6-mouse-aim:
-    needs: ui4-km-extra6-mouse-aim-policy-and-tests
+  firmware-ui4b-km-extra6-mouse-aim-strong:
+    needs: ui4b-km-extra6-mouse-aim-strong-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -253,7 +253,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI4-KM-EXTRA6-MOUSE-AIM"
+          assert manifest["phase"] == "U10F-PM1-UI4B-KM-EXTRA6-MOUSE-AIM-STRONG"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -273,9 +273,9 @@ jobs:
           assert f["km_primary_extra_mouse_slots"] == 2
           assert f["km_extra_runtime_reconfigurable_in_mapper"] is True
           assert f["km_mouse_overlay_primary_only"] is True
-          assert f["km_mouse_sensitivity_x"] == 0.024
-          assert f["km_mouse_response_exponent"] == 0.72
-          assert f["km_mouse_anti_deadzone_x"] == 0.12
+          assert f["km_mouse_sensitivity_x"] == 0.035
+          assert f["km_mouse_response_exponent"] == 0.60
+          assert f["km_mouse_anti_deadzone_x"] == 0.16
 
           assert f["pc_generic_hid_output"] is False
           assert f["pc_generic_hid_output_slots"] == 0
@@ -291,18 +291,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI4_KM_EXTRA6_MOUSE_AIM=PASS")
+          print("BUILD_MANIFEST_UI4B_KM_EXTRA6_MOUSE_AIM_STRONG=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4-KM-EXTRA6-MOUSE-AIM_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4-KM-EXTRA6-MOUSE-AIM_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4-KM-EXTRA6-MOUSE-AIM_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI4-KM-EXTRA6-MOUSE-AIM_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4B-KM-EXTRA6-MOUSE-AIM-STRONG_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4B-KM-EXTRA6-MOUSE-AIM-STRONG_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI4B-KM-EXTRA6-MOUSE-AIM-STRONG_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI4B-KM-EXTRA6-MOUSE-AIM-STRONG_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI4 KM Extra6 Mouse Aim candidate bundle
+      - name: Upload UI4B Strong Mouse Aim candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI4-KM-EXTRA6-MOUSE-AIM-${{ github.sha }}
+          name: OAG-U10F-PM1-UI4B-KM-EXTRA6-MOUSE-AIM-STRONG-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

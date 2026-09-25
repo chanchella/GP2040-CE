@@ -160,9 +160,8 @@ int main() {
     assert((output.buttons & ButtonLeftBumper) != 0);
     assert((output.buttons & ButtonRightBumper) != 0);
 
-    // The new default mouse curve must make a one-count movement materially
-    // larger than the old conservative ~8% response while remaining below
-    // half-stick for precision.
+    // UI4B strong curve: one mouse count must already produce a substantial
+    // right-stick response while remaining below half-stick for control.
     output = mapper.apply(
         nullptr,
         &mouse,
@@ -176,8 +175,8 @@ int main() {
             std::numeric_limits<std::int32_t>::max()
         );
 
-    assert(oneCount > fullScale / 7);  // > ~14%
-    assert(oneCount < fullScale / 2);  // < 50%
+    assert(oneCount > fullScale / 4);  // > 25%
+    assert(oneCount < (fullScale * 2) / 5);  // < 40%
 
     return 0;
 }
