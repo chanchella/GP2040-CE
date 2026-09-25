@@ -9,11 +9,13 @@
 
 #include "oag/core/product_identity.h"
 #include "oag/firmware/pc_xinput_device.h"
+#include "oag/firmware/windows_xusb20_compat.h"
 
 namespace {
 
-constexpr std::uint16_t kReceiverVid = 0x045E;
-constexpr std::uint16_t kReceiverPid = 0x0719;
+constexpr std::uint16_t kReceiverVid = 0xCAFE;
+constexpr std::uint16_t kReceiverPid = 0x4016;
+constexpr std::uint8_t kMsOsVendorCode = 0x90;
 constexpr std::size_t kOutputSlots =
     oag::firmware::PcXinputDevice::kOutputSlots;
 
@@ -44,10 +46,10 @@ const std::uint8_t kMouseReportDescriptor[] = {
 const std::uint8_t kDeviceDescriptor[] = {
     0x12, 0x01,
     0x00, 0x02,
-    0xFF, 0xFF, 0xFF,
+    0x00, 0x00, 0x00,
     0x08,
-    0x5E, 0x04,
-    0x19, 0x07,
+    0xFE, 0xCA,
+    0x16, 0x40,
     0x00, 0x01,
     0x01, 0x02, 0x03,
     0x01,
@@ -150,6 +152,35 @@ static_assert(sizeof(kDeviceDescriptor) == 18);
 static_assert(kOutputSlots == 4);
 static_assert(sizeof(kConfigurationDescriptor) == 0x0173);
 
+alignas(2) const std::uint8_t kMsOsStringDescriptor[] = {
+    0x12, 0x03,
+    0x4D, 0x00, 0x53, 0x00, 0x46, 0x00,
+    0x54, 0x00, 0x31, 0x00, 0x30, 0x00, 0x30, 0x00,
+    kMsOsVendorCode,
+    0x00,
+};
+
+// Microsoft OS 1.0 Extended Compatible ID.
+// Function 0 begins at interface 0 and owns the eight receiver interfaces.
+// XUSB20 maps to the Windows Xbox 360 wireless receiver class driver.
+// Interfaces 8/9 remain ordinary HID keyboard/mouse functions.
+const std::uint8_t kExtendedCompatIdDescriptor[] = {
+    0x28, 0x00, 0x00, 0x00,
+    0x00, 0x01,
+    0x04, 0x00,
+    0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00,
+    0x08,
+    0x58, 0x55, 0x53, 0x42, 0x32, 0x30, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static_assert(sizeof(kMsOsStringDescriptor) == 18);
+static_assert(sizeof(kExtendedCompatIdDescriptor) == 0x28);
+
 std::uint16_t gStringDescriptor[32] {};
 char gSerial[24] {};
 
@@ -199,6 +230,12 @@ extern "C" std::uint16_t const* tud_descriptor_string_cb(
     std::uint16_t langid
 ) {
     (void)langid;
+
+    if (index == 0xEE) {
+        return reinterpret_cast<std::uint16_t const*>(
+            kMsOsStringDescriptor
+        );
+    }
 
     if (index == 0) {
         gStringDescriptor[1] = 0x0409;
@@ -270,3 +307,40 @@ extern "C" void tud_hid_set_report_cb(
     (void)buffer;
     (void)bufferSize;
 }
+
+
+namespace oag::firmware {
+
+bool handleWindowsXusb20CompatIdRequest(
+    std::uint8_t rhport,
+    tusb_control_request_t const* request
+) {
+    if (
+        request == nullptr ||
+        request->bmRequestType != 0xC0 ||
+        request->bRequest != kMsOsVendorCode ||
+        request->wValue != 0x0000 ||
+        request->wIndex != 0x0004
+    ) {
+        return false;
+    }
+
+    const std::uint16_t transferLength =
+        std::min<std::uint16_t>(
+            request->wLength,
+            static_cast<std::uint16_t>(
+                sizeof(kExtendedCompatIdDescriptor)
+            )
+        );
+
+    return tud_control_xfer(
+        rhport,
+        request,
+        const_cast<std::uint8_t*>(
+            kExtendedCompatIdDescriptor
+        ),
+        transferLength
+    );
+}
+
+} // namespace oag::firmware
