@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui5b-global-km-hard-switch-policy-and-tests:
+  ui5c-global-km-logical-switch-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -50,7 +50,6 @@ jobs:
             'oag/firmware/include/oag/firmware/pc_hid_output.h' \
             'oag/firmware/include/oag/firmware/pc_hid_platform_driver.h' \
             'oag/firmware/include/oag/firmware/pc_native_km_output.h' \
-            'oag/firmware/include/oag/firmware/usb_km_persona.h' \
             'oag/firmware/src/main.cpp' \
             'oag/firmware/src/pc_hid_output.cpp' \
             'oag/firmware/src/pc_hid_platform_driver.cpp' \
@@ -67,7 +66,7 @@ jobs:
             'oag/include/oag/mapping/native_km_combo_engine.h' \
             'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI5B_GLOBAL_KM_HARD_SWITCH_RUNTIME_DIFF ==="
+          echo "=== UI5C_GLOBAL_KM_LOGICAL_SWITCH_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -128,10 +127,6 @@ jobs:
           assert "TUD_HID_REPORT_DESC_MOUSE" in desc
           assert "0x89" in desc
           assert "0x8A" in desc
-          assert "kConfigurationDescriptor[2] = 0x41" in desc
-          assert "kConfigurationDescriptor[4] = 0x08" in desc
-          assert "kConfigurationDescriptor[2] = 0x73" in desc
-          assert "kConfigurationDescriptor[4] = 0x0A" in desc
 
           assert "sendPresence" in xdev
           assert "sendInput" in xdev
@@ -166,17 +161,13 @@ jobs:
           assert "serviceNativeKeyboardMouseOutput()" in main
           assert "PcNativeKmOutput nativeKmOutput_" in main
           assert "NativeKmComboEngine nativeKmCombos_" in main
-          assert "requestUsbKmPersona(" in main
-          assert "tud_disconnect();" in main
-          assert "tud_connect();" in main
-          assert "serviceUsbKmPersonaReenumeration()" in main
 
           assert "requestPairingAssist()" in host
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5B_GLOBAL_KM_HARD_SWITCH_POLICY=PASS")
+          print("UI5C_GLOBAL_KM_LOGICAL_SWITCH_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -201,8 +192,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui5b-global-km-hard-switch:
-    needs: ui5b-global-km-hard-switch-policy-and-tests
+  firmware-ui5c-global-km-logical-switch:
+    needs: ui5c-global-km-logical-switch-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -277,7 +268,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5B-GLOBAL-KM-HARD-SWITCH"
+          assert manifest["phase"] == "U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -306,10 +297,6 @@ jobs:
           assert f["pc_native_hid_interfaces"] == 2
           assert f["native_km_combo_engine"] is True
           assert f["native_km_combo_slots"] == 8
-          assert f["controller_mode_hides_native_hid_interfaces"] is True
-          assert f["usb_reenumerates_on_km_mode_switch"] is True
-          assert f["usb_controller_only_interface_count"] == 8
-          assert f["usb_native_km_interface_count"] == 10
           assert f["km_mouse_sensitivity_x"] == 1.0
           assert f["km_mouse_response_exponent"] == 0.58
           assert f["km_mouse_anti_deadzone_x"] == 0.0
@@ -330,18 +317,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5B_GLOBAL_KM_HARD_SWITCH=PASS")
+          print("BUILD_MANIFEST_UI5C_GLOBAL_KM_LOGICAL_SWITCH=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5B-GLOBAL-KM-HARD-SWITCH_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5B-GLOBAL-KM-HARD-SWITCH_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5B-GLOBAL-KM-HARD-SWITCH_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5B-GLOBAL-KM-HARD-SWITCH_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5B Global KM Hard Switch candidate bundle
+      - name: Upload UI5C Global KM Logical Switch candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5B-GLOBAL-KM-HARD-SWITCH-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
