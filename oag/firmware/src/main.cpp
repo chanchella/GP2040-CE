@@ -14,6 +14,7 @@
 #include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
+#include "oag/firmware/bluetooth_platform_output.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
@@ -936,12 +937,14 @@ private:
             }
 
             if (bluetoothHost_.initialize(*this)) {
+                // External Bluetooth output is fail-soft and layered on top of
+                // the already-initialized TRUE GOLDEN BTstack runtime.
+                (void)bluetoothPlatformOutput_.initialize(
+                    bluetoothHost_
+                );
+
                 bluetoothInitialized_ = true;
                 bluetoothInitNotBeforeUs_ = 0;
-
-                // Seed the new BLE output with the exact same Primary/KM
-                // composed state already used by the stable PC output.
-                sendComposedOutput();
                 return;
             }
 
@@ -951,6 +954,7 @@ private:
         }
 
         bluetoothHost_.poll();
+        bluetoothPlatformOutput_.poll();
     }
 
     static oag::GenericHidGamepadQuirks genericHidQuirksFor(
@@ -1614,28 +1618,17 @@ private:
         if (!output.connected && !hasKeyboard && !hasMouse) {
             // A true wireless receiver must report Player 1 absent when there
             // is no routed gamepad and no keyboard/mouse virtual input.
-            const oag::LogicalGamepadState neutral {};
-
+            const oag::LogicalGamepadState disconnected {};
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                neutral
+                disconnected
             );
-
-            if (bluetoothInitialized_) {
-                bluetoothHost_.submitBluetoothPlatformGamepad(
-                    neutral
-                );
-            }
+            bluetoothPlatformOutput_.submit(disconnected);
             return;
         }
 
         platformOutput_.submit(hostPrimaryOutputSlot_, output);
-
-        if (bluetoothInitialized_) {
-            bluetoothHost_.submitBluetoothPlatformGamepad(
-                output
-            );
-        }
+        bluetoothPlatformOutput_.submit(output);
     }
 
     void serviceMouseAimRelease() {
@@ -1836,6 +1829,7 @@ private:
     oag::firmware::UsbPioHost usbHost_;
 
     oag::firmware::BluetoothHostV2 bluetoothHost_;
+    oag::firmware::BluetoothPlatformOutput bluetoothPlatformOutput_;
     oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
     bool bluetoothInitialized_ = false;
     std::uint64_t bluetoothInitNotBeforeUs_ = 0;
