@@ -308,6 +308,7 @@ bool BluetoothHostV2::initialize(
     );
 
     sm_set_authentication_requirements(
+        SM_AUTHREQ_SECURE_CONNECTION |
         SM_AUTHREQ_BONDING
     );
 
@@ -1206,9 +1207,40 @@ void BluetoothHostV2::handleSmPacket(
                 sm_event_reencryption_complete_get_status(packet);
 
             if (handle == platformConnectionHandle_) {
-                if (status != ERROR_CODE_SUCCESS) {
-                    gap_disconnect(handle);
+                if (status == ERROR_CODE_SUCCESS) {
+                    break;
                 }
+
+                if (status == ERROR_CODE_PIN_OR_KEY_MISSING) {
+                    // BT-OUT1-P2: platform-side stale-bond repair.
+                    // If Android/host forgot its LTK while the Pico retained
+                    // the bond, delete only that peer identity and restart
+                    // SMP on the same live link. This mirrors the existing
+                    // hardware-proven input-peer recovery policy and never
+                    // performs a global bond reset.
+                    bd_addr_t identityAddress {};
+                    sm_event_reencryption_complete_get_address(
+                        packet,
+                        identityAddress
+                    );
+
+                    const bd_addr_type_t identityAddressType =
+                        static_cast<bd_addr_type_t>(
+                            sm_event_reencryption_started_get_addr_type(
+                                packet
+                            )
+                        );
+
+                    gap_delete_bonding(
+                        identityAddressType,
+                        identityAddress
+                    );
+
+                    sm_request_pairing(handle);
+                    break;
+                }
+
+                gap_disconnect(handle);
                 break;
             }
 
