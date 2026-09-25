@@ -14,7 +14,7 @@
 namespace {
 
 constexpr std::uint16_t kReceiverVid = 0xCAFE;
-constexpr std::uint16_t kReceiverPid = 0x4018;
+constexpr std::uint16_t kReceiverPid = 0x4016;
 constexpr std::uint8_t kMsOsVendorCode = 0x90;
 constexpr std::size_t kOutputSlots =
     oag::firmware::PcXinputDevice::kOutputSlots;
@@ -46,18 +46,19 @@ const std::uint8_t kMouseReportDescriptor[] = {
 const std::uint8_t kDeviceDescriptor[] = {
     0x12, 0x01,
     0x00, 0x02,
-    0xEF, 0x02, 0x01,
+    0x00, 0x00, 0x00,
     0x08,
     0xFE, 0xCA,
-    0x18, 0x40,
+    0x16, 0x40,
     0x00, 0x01,
     0x01, 0x02, 0x03,
     0x01,
 };
 
 const std::uint8_t kConfigurationDescriptor[] = {
-    // Xbox receiver core = 321 bytes. One 8-byte IAD plus two standard
-    // HID interfaces (25 bytes each) gives 379 bytes total (0x017B).
+    // Xbox receiver core = 321 bytes. One 8-byte IAD groups receiver
+    // interfaces 0..7 as one XUSB function. Two standard HID interfaces
+    // add 25 bytes each, giving 379 bytes total (0x017B).
     0x09, 0x02, 0x7B, 0x01,
     0x0A,
     0x01,
@@ -65,9 +66,8 @@ const std::uint8_t kConfigurationDescriptor[] = {
     0xA0,
     0x82, // 260 mA
 
-    // Windows composite function collection: interfaces 0..7 together form
-    // one XUSB wireless receiver function. The IAD must immediately precede
-    // the first interface in the collection.
+    // Minimal Windows function grouping only: interfaces 0..7 remain the
+    // exact UI5G receiver descriptors/endpoints.
     0x08, 0x0B, 0x00, 0x08, 0xFF, 0x5D, 0x81, 0x00,
 
     // Controller 1 — interface 0 — EP 81 / 01
