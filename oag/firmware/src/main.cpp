@@ -1564,6 +1564,130 @@ private:
         return mapping_.process(states_[slot]);
     }
 
+    static std::int32_t mergeAxisByMagnitude(
+        std::int32_t current,
+        std::int32_t candidate
+    ) {
+        const std::int64_t currentMagnitude =
+            current < 0
+                ? -static_cast<std::int64_t>(current)
+                : static_cast<std::int64_t>(current);
+
+        const std::int64_t candidateMagnitude =
+            candidate < 0
+                ? -static_cast<std::int64_t>(candidate)
+                : static_cast<std::int64_t>(candidate);
+
+        return candidateMagnitude > currentMagnitude
+            ? candidate
+            : current;
+    }
+
+    oag::LogicalGamepadState bluetoothUniversalGamepadBase() const {
+        oag::LogicalGamepadState merged {};
+
+        for (std::size_t i = 0;
+             i < oag::LogicalSlotManager::kGamepadSlots;
+             ++i) {
+            if (!states_[i].connected) {
+                continue;
+            }
+
+            const oag::LogicalGamepadState input =
+                mapping_.process(states_[i]);
+
+            if (!input.connected) {
+                continue;
+            }
+
+            merged.connected = true;
+            merged.buttons |= input.buttons;
+            merged.dpad |= input.dpad;
+
+            merged.lx = mergeAxisByMagnitude(
+                merged.lx,
+                input.lx
+            );
+            merged.ly = mergeAxisByMagnitude(
+                merged.ly,
+                input.ly
+            );
+            merged.rx = mergeAxisByMagnitude(
+                merged.rx,
+                input.rx
+            );
+            merged.ry = mergeAxisByMagnitude(
+                merged.ry,
+                input.ry
+            );
+
+            if (input.leftTrigger > merged.leftTrigger) {
+                merged.leftTrigger = input.leftTrigger;
+            }
+
+            if (input.rightTrigger > merged.rightTrigger) {
+                merged.rightTrigger = input.rightTrigger;
+            }
+
+            if (input.generation > merged.generation) {
+                merged.generation = input.generation;
+            }
+
+            if (input.timestampUs > merged.timestampUs) {
+                merged.timestampUs = input.timestampUs;
+            }
+        }
+
+        const std::uint8_t vertical =
+            static_cast<std::uint8_t>(
+                oag::DpadBits::Up |
+                oag::DpadBits::Down
+            );
+
+        if ((merged.dpad & vertical) == vertical) {
+            merged.dpad &= static_cast<std::uint8_t>(~vertical);
+        }
+
+        const std::uint8_t horizontal =
+            static_cast<std::uint8_t>(
+                oag::DpadBits::Left |
+                oag::DpadBits::Right
+            );
+
+        if ((merged.dpad & horizontal) == horizontal) {
+            merged.dpad &= static_cast<std::uint8_t>(~horizontal);
+        }
+
+        return merged;
+    }
+
+    void sendBluetoothUniversalOutput() {
+        const oag::KeyboardState keyboard = combinedKeyboard();
+        const oag::MouseState mouse = combinedMouse();
+
+        const bool hasKeyboard = keyboard.connected;
+        const bool hasMouse = mouse.connected;
+
+        // G3 Bluetooth Universal Input Merge:
+        // - every wired/USB/Bluetooth gamepad contributes to one BLE gamepad;
+        // - buttons/dpad are merged;
+        // - strongest analogue deflection wins per axis;
+        // - strongest trigger wins;
+        // - keyboard/mouse are then overlaid through the existing proven
+        //   KeyboardMouseGamepadMapper, so the phone sees only a gamepad.
+        const oag::LogicalGamepadState output =
+            keyboardMouse_.apply(
+                hasKeyboard ? &keyboard : nullptr,
+                hasMouse ? &mouse : nullptr,
+                mouseAimActive_
+                    ? currentMouseMotion_
+                    : oag::MouseMotion {},
+                bluetoothUniversalGamepadBase()
+            );
+
+        bluetoothPlatformOutput_.submit(output);
+    }
+
     void sendSlotOutput(oag::LogicalSlotId slot) {
         if (slot >= states_.size()) {
             return;
@@ -1594,8 +1718,13 @@ private:
                 static_cast<std::uint8_t>(pcSlot),
                 output
             );
-            return;
+            break;
         }
+
+        // BLE output is intentionally independent from the PC's four receiver
+        // routes: even gamepads beyond the PC-visible route count contribute
+        // to the single universal Bluetooth gamepad.
+        sendBluetoothUniversalOutput();
     }
 
     void sendComposedOutput() {
@@ -1605,7 +1734,9 @@ private:
         const bool hasKeyboard = keyboard.connected;
         const bool hasMouse = mouse.connected;
 
-        oag::LogicalGamepadState output =
+        // Preserve the TRUE GOLDEN PC Player-1 behavior exactly: primary
+        // physical gamepad + keyboard/mouse overlay.
+        const oag::LogicalGamepadState pcOutput =
             keyboardMouse_.apply(
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
@@ -1615,20 +1746,19 @@ private:
                 basePrimaryOutput()
             );
 
-        if (!output.connected && !hasKeyboard && !hasMouse) {
-            // A true wireless receiver must report Player 1 absent when there
-            // is no routed gamepad and no keyboard/mouse virtual input.
-            const oag::LogicalGamepadState disconnected {};
+        if (!pcOutput.connected && !hasKeyboard && !hasMouse) {
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                disconnected
+                oag::LogicalGamepadState {}
             );
-            bluetoothPlatformOutput_.submit(disconnected);
-            return;
+        } else {
+            platformOutput_.submit(
+                hostPrimaryOutputSlot_,
+                pcOutput
+            );
         }
 
-        platformOutput_.submit(hostPrimaryOutputSlot_, output);
-        bluetoothPlatformOutput_.submit(output);
+        sendBluetoothUniversalOutput();
     }
 
     void serviceMouseAimRelease() {
