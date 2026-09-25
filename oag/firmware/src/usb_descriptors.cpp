@@ -17,6 +17,14 @@ constexpr std::uint16_t kReceiverPid = 0x0719;
 constexpr std::size_t kOutputSlots =
     oag::firmware::PcXinputDevice::kOutputSlots;
 
+const std::uint8_t kKeyboardReportDescriptor[] = {
+    TUD_HID_REPORT_DESC_KEYBOARD()
+};
+
+const std::uint8_t kMouseReportDescriptor[] = {
+    TUD_HID_REPORT_DESC_MOUSE()
+};
+
 // U10E emulates the full-speed Microsoft Xbox 360 Wireless Receiver USB
 // topology instead of repeating wired-controller interfaces.
 //
@@ -46,9 +54,10 @@ const std::uint8_t kDeviceDescriptor[] = {
 };
 
 const std::uint8_t kConfigurationDescriptor[] = {
-    // 9 + 4 * ((9+20+7+7) + (9+12+7+7)) = 321 = 0x0141.
-    0x09, 0x02, 0x41, 0x01,
-    0x08,
+    // Xbox receiver core = 321 bytes. Two standard HID interfaces add
+    // 25 bytes each, giving 371 bytes total (0x0173).
+    0x09, 0x02, 0x73, 0x01,
+    0x0A,
     0x01,
     0x00,
     0xA0,
@@ -113,11 +122,33 @@ const std::uint8_t kConfigurationDescriptor[] = {
     0x01, 0x08, 0x20, 0x00,
     0x07, 0x05, 0x88, 0x03, 0x20, 0x00, 0x02,
     0x07, 0x05, 0x08, 0x03, 0x20, 0x00, 0x04,
+
+    // Native keyboard — interface 8 — EP 89
+    TUD_HID_DESCRIPTOR(
+        0x08,
+        0,
+        HID_ITF_PROTOCOL_KEYBOARD,
+        sizeof(kKeyboardReportDescriptor),
+        0x89,
+        8,
+        1
+    ),
+
+    // Native mouse — interface 9 — EP 8A
+    TUD_HID_DESCRIPTOR(
+        0x09,
+        0,
+        HID_ITF_PROTOCOL_MOUSE,
+        sizeof(kMouseReportDescriptor),
+        0x8A,
+        8,
+        1
+    ),
 };
 
 static_assert(sizeof(kDeviceDescriptor) == 18);
 static_assert(kOutputSlots == 4);
-static_assert(sizeof(kConfigurationDescriptor) == 0x0141);
+static_assert(sizeof(kConfigurationDescriptor) == 0x0173);
 
 std::uint16_t gStringDescriptor[32] {};
 char gSerial[24] {};
@@ -195,4 +226,47 @@ extern "C" std::uint16_t const* tud_descriptor_string_cb(
     );
 
     return gStringDescriptor;
+}
+
+
+extern "C" std::uint8_t const* tud_hid_descriptor_report_cb(
+    std::uint8_t instance
+) {
+    switch (instance) {
+        case 0:
+            return kKeyboardReportDescriptor;
+        case 1:
+            return kMouseReportDescriptor;
+        default:
+            return nullptr;
+    }
+}
+
+extern "C" std::uint16_t tud_hid_get_report_cb(
+    std::uint8_t instance,
+    std::uint8_t reportId,
+    hid_report_type_t reportType,
+    std::uint8_t* buffer,
+    std::uint16_t requestedLength
+) {
+    (void)instance;
+    (void)reportId;
+    (void)reportType;
+    (void)buffer;
+    (void)requestedLength;
+    return 0;
+}
+
+extern "C" void tud_hid_set_report_cb(
+    std::uint8_t instance,
+    std::uint8_t reportId,
+    hid_report_type_t reportType,
+    std::uint8_t const* buffer,
+    std::uint16_t bufferSize
+) {
+    (void)instance;
+    (void)reportId;
+    (void)reportType;
+    (void)buffer;
+    (void)bufferSize;
 }
