@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui5c-global-km-logical-switch-policy-and-tests:
+  ui5d-dual-usb-persona-2s-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -50,6 +50,7 @@ jobs:
             'oag/firmware/include/oag/firmware/pc_hid_output.h' \
             'oag/firmware/include/oag/firmware/pc_hid_platform_driver.h' \
             'oag/firmware/include/oag/firmware/pc_native_km_output.h' \
+            'oag/firmware/include/oag/firmware/target_usb_persona.h' \
             'oag/firmware/src/main.cpp' \
             'oag/firmware/src/pc_hid_output.cpp' \
             'oag/firmware/src/pc_hid_platform_driver.cpp' \
@@ -66,7 +67,7 @@ jobs:
             'oag/include/oag/mapping/native_km_combo_engine.h' \
             'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI5C_GLOBAL_KM_LOGICAL_SWITCH_RUNTIME_DIFF ==="
+          echo "=== UI5D_DUAL_USB_PERSONA_2S_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -119,14 +120,21 @@ jobs:
           assert "#define CFG_TUD_ENDPOINT0_SIZE 8" in tusb
 
           assert "AOG Abo Gemi ultra gaming" in desc
+          assert "AOG Abo Gemi Keyboard Mouse" in desc
           assert "kReceiverVid = 0x045E" in desc
           assert "kReceiverPid = 0x0719" in desc
+          assert "kControllerDeviceDescriptor" in desc
+          assert "kNativeKmDeviceDescriptor" in desc
+          assert "kControllerConfigurationDescriptor" in desc
+          assert "kNativeKmConfigurationDescriptor" in desc
+          assert "0xFE, 0xCA" in desc
+          assert "0x14, 0x40" in desc
           assert "0xFF, 0x5D, 0x81" in desc
           assert "0xFF, 0x5D, 0x82" in desc
           assert "TUD_HID_REPORT_DESC_KEYBOARD" in desc
           assert "TUD_HID_REPORT_DESC_MOUSE" in desc
-          assert "0x89" in desc
-          assert "0x8A" in desc
+          assert "sizeof(kControllerConfigurationDescriptor) == 0x0141" in desc
+          assert "sizeof(kNativeKmConfigurationDescriptor) == 0x003B" in desc
 
           assert "sendPresence" in xdev
           assert "sendInput" in xdev
@@ -155,7 +163,12 @@ jobs:
           assert "mouseConfig_.exponent = 0.58" in km
           assert "mouseConfig_.deadzoneX = 0.0" in km
           assert "kMouseAimHoldUs = 10000" in main
-          assert "kKeyboardMouseModeHoldUs = 3000000ull" in main
+          assert "kKeyboardMouseModeHoldUs = 2000000ull" in main
+          assert "TargetUsbPersona::NativeKeyboardMouse" in main
+          assert "TargetUsbPersona::Xbox360Receiver" in main
+          assert "tud_disconnect();" in main
+          assert "tud_connect();" in main
+          assert "serviceUsbPersonaReenumeration()" in main
           assert "KeyboardMouseOutputMode::Native" in main
           assert "serviceKeyboardMouseModeToggle()" in main
           assert "serviceNativeKeyboardMouseOutput()" in main
@@ -167,7 +180,7 @@ jobs:
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5C_GLOBAL_KM_LOGICAL_SWITCH_POLICY=PASS")
+          print("UI5D_DUAL_USB_PERSONA_2S_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -192,8 +205,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui5c-global-km-logical-switch:
-    needs: ui5c-global-km-logical-switch-policy-and-tests
+  firmware-ui5d-dual-usb-persona-2s:
+    needs: ui5d-dual-usb-persona-2s-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -268,7 +281,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH"
+          assert manifest["phase"] == "U10F-PM1-UI5D-DUAL-USB-PERSONA-2S"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -289,12 +302,19 @@ jobs:
           assert f["km_extra_runtime_reconfigurable_in_mapper"] is True
           assert f["km_mouse_overlay_primary_only"] is True
           assert f["km_global_mode_toggle"] == "F4+F5"
-          assert f["km_global_mode_hold_ms"] == 3000
+          assert f["km_global_mode_hold_ms"] == 2000
           assert f["km_default_mode"] == "NATIVE_KEYBOARD_MOUSE"
           assert f["km_reserved_chord_never_forwarded"] is True
           assert f["pc_native_keyboard_output"] is True
           assert f["pc_native_mouse_output"] is True
           assert f["pc_native_hid_interfaces"] == 2
+          assert f["usb_persona_native_vid"] == "CAFE"
+          assert f["usb_persona_native_pid"] == "4014"
+          assert f["usb_persona_native_interfaces"] == 2
+          assert f["usb_persona_controller_vid"] == "045E"
+          assert f["usb_persona_controller_pid"] == "0719"
+          assert f["usb_persona_controller_interfaces"] == 8
+          assert f["usb_persona_switch_reenumerates"] is True
           assert f["native_km_combo_engine"] is True
           assert f["native_km_combo_slots"] == 8
           assert f["km_mouse_sensitivity_x"] == 1.0
@@ -317,18 +337,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5C_GLOBAL_KM_LOGICAL_SWITCH=PASS")
+          print("BUILD_MANIFEST_UI5D_DUAL_USB_PERSONA_2S=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5D-DUAL-USB-PERSONA-2S_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5D-DUAL-USB-PERSONA-2S_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5D-DUAL-USB-PERSONA-2S_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5D-DUAL-USB-PERSONA-2S_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5C Global KM Logical Switch candidate bundle
+      - name: Upload UI5D Dual USB Persona 2s candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5C-GLOBAL-KM-LOGICAL-SWITCH-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5D-DUAL-USB-PERSONA-2S-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
