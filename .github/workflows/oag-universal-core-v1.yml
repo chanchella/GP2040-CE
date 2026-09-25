@@ -134,11 +134,10 @@ jobs:
           assert "U10F-PM1-L1-BT-OUT1" in cmake
 
           gatt = Path("oag/firmware/oag_ble_gamepad.gatt").read_text()
-          assert "ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE" in gatt
+          assert "#import <hids.gatt>" in gatt
           assert "C4 03" in gatt
           assert "#import <battery_service.gatt>" in gatt
           assert "#import <device_information_service.gatt>" in gatt
-          assert "#import <hids.gatt>" in gatt
 
           tusb = Path("oag/firmware/tusb_config.h").read_text()
           assert "#define CFG_TUD_HID 0" in tusb
