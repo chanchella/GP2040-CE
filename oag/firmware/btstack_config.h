@@ -23,7 +23,12 @@
 #endif
 
 #if defined(ENABLE_CLASSIC) && defined(ENABLE_BLE)
-#define ENABLE_CROSS_TRANSPORT_KEY_DERIVATION
+// G2 external BLE-output compatibility:
+// Keep Classic + BLE dual-mode enabled, but do not advertise/derive CTKD
+// credentials. Android gamepad pairing only needs LE bonding + LE Secure
+// Connections; CTKD adds CT2/LinkKey negotiation that is not required for
+// this generic BLE HID persona and caused Command Not Supported failures in
+// the earlier experimental output path.
 #endif
 
 #define HCI_OUTGOING_PRE_BUFFER_SIZE 4
