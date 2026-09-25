@@ -1814,14 +1814,11 @@ private:
             return;
         }
 
-        // F4/F5 are reserved once the mode chord is engaged. Keep both
-        // suppressed until both physical keys are released.
+        // F4+F5 is a reserved global system chord. Even in Controller mode,
+        // the chord itself must never leak into any mapping or combo.
         if (
-            keyboardMouseModeSuppressChordUntilRelease_ ||
-            (
-                keyboard.pressed(kModeToggleF4Usage) &&
-                keyboard.pressed(kModeToggleF5Usage)
-            )
+            keyboard.pressed(kModeToggleF4Usage) &&
+            keyboard.pressed(kModeToggleF5Usage)
         ) {
             keyboard.setPressed(kModeToggleF4Usage, false);
             keyboard.setPressed(kModeToggleF5Usage, false);
@@ -1850,15 +1847,9 @@ private:
 
     void serviceKeyboardMouseModeToggle() {
         const oag::KeyboardState keyboard = combinedKeyboard();
-        const bool f4Down = keyboard.pressed(kModeToggleF4Usage);
-        const bool f5Down = keyboard.pressed(kModeToggleF5Usage);
-        const bool chordDown = f4Down && f5Down;
-
-        if (keyboardMouseModeSuppressChordUntilRelease_) {
-            if (!f4Down && !f5Down) {
-                keyboardMouseModeSuppressChordUntilRelease_ = false;
-            }
-        }
+        const bool chordDown =
+            keyboard.pressed(kModeToggleF4Usage) &&
+            keyboard.pressed(kModeToggleF5Usage);
 
         if (!chordDown) {
             keyboardMouseModeChordStartedUs_ = 0;
@@ -1887,7 +1878,6 @@ private:
                 : KeyboardMouseOutputMode::Native;
 
         keyboardMouseModeChordLatched_ = true;
-        keyboardMouseModeSuppressChordUntilRelease_ = true;
         currentMouseMotion_ = {};
         currentNativeWheel_ = 0;
         currentNativePan_ = 0;
@@ -1913,13 +1903,10 @@ private:
         oag::KeyboardState keyboard = combinedKeyboard();
         oag::MouseState mouse = combinedMouse();
 
-        // Never expose the reserved F4/F5 chord or its release tail.
+        // Never expose the reserved F4+F5 chord to the target host.
         if (
-            keyboardMouseModeSuppressChordUntilRelease_ ||
-            (
-                keyboard.pressed(kModeToggleF4Usage) &&
-                keyboard.pressed(kModeToggleF5Usage)
-            )
+            keyboard.pressed(kModeToggleF4Usage) &&
+            keyboard.pressed(kModeToggleF5Usage)
         ) {
             keyboard.setPressed(kModeToggleF4Usage, false);
             keyboard.setPressed(kModeToggleF5Usage, false);
@@ -2181,7 +2168,6 @@ private:
         KeyboardMouseOutputMode::Native;
     std::uint64_t keyboardMouseModeChordStartedUs_ = 0;
     bool keyboardMouseModeChordLatched_ = false;
-    bool keyboardMouseModeSuppressChordUntilRelease_ = false;
 
     std::int16_t currentNativeWheel_ = 0;
     std::int16_t currentNativePan_ = 0;
