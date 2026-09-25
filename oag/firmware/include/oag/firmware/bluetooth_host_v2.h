@@ -52,11 +52,6 @@ public:
     void poll();
     bool beginDiscovery();
 
-    // External BLE output uses the same BTstack instance. This only pauses
-    // discovery while a platform/phone is connected as our LE peripheral;
-    // existing input peers and their bonds remain untouched.
-    void setPlatformOutputLinkActive(bool active);
-
     // Cable Pairing Assist starts only after a known Bluetooth-capable
     // controller leaves USB. While the controller is wired, U10F USB Host
     // behavior is left completely undisturbed.
@@ -173,7 +168,6 @@ private:
     BluetoothHostV2Observer* observer_ = nullptr;
     bool initialized_ = false;
     bool hciWorking_ = false;
-    bool platformOutputLinkActive_ = false;
 
     DiscoveryPhase discoveryPhase_ = DiscoveryPhase::Idle;
     PendingKind pendingKind_ = PendingKind::None;

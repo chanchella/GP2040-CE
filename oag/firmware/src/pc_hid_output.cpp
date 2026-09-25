@@ -11,19 +11,6 @@
 namespace oag::firmware {
 namespace {
 
-constexpr std::uint8_t kGamepadReportId = 1;
-
-struct __attribute__((packed)) PcGamepadReport {
-    std::uint16_t buttons;
-    std::uint8_t hat;
-    std::int8_t lx;
-    std::int8_t ly;
-    std::int8_t rx;
-    std::int8_t ry;
-    std::uint8_t leftTrigger;
-    std::uint8_t rightTrigger;
-};
-
 std::int8_t axisToI8(std::int32_t value) {
     const std::int64_t scaled =
         static_cast<std::int64_t>(value) * 127 /
@@ -70,18 +57,28 @@ std::uint16_t buttonsToHid(std::uint64_t buttons) {
     if (buttons & ButtonLeftStick) out |= 1u << 8;
     if (buttons & ButtonRightStick) out |= 1u << 9;
     if (buttons & ButtonGuide) out |= 1u << 10;
+    if (buttons & ButtonShare) out |= 1u << 11;
 
     return out;
 }
 
 } // namespace
 
-bool PcHidOutput::send(const LogicalGamepadState& state) const {
-    if (!tud_hid_ready()) {
+void PcHidOutput::task() {
+    for (std::size_t slot = 0; slot < kOutputSlots; ++slot) {
+        flush(slot);
+    }
+}
+
+bool PcHidOutput::send(
+    std::uint8_t logicalSlot,
+    const LogicalGamepadState& state
+) {
+    if (logicalSlot >= kOutputSlots) {
         return false;
     }
 
-    PcGamepadReport report {};
+    Report report {};
     report.buttons = buttonsToHid(state.buttons);
     report.hat = hatFromDpad(state.dpad);
     report.lx = axisToI8(state.lx);
@@ -93,15 +90,39 @@ bool PcHidOutput::send(const LogicalGamepadState& state) const {
     report.rightTrigger =
         static_cast<std::uint8_t>(state.rightTrigger >> 24);
 
-    return tud_hid_report(
-        kGamepadReportId,
-        &report,
-        sizeof(report)
-    );
+    reports_[logicalSlot] = report;
+    pending_[logicalSlot] = true;
+
+    // Endpoint busy is not a data-loss condition. The latest report remains
+    // buffered and poll() retries it as soon as this HID instance is ready.
+    flush(logicalSlot);
+    return true;
 }
 
-bool PcHidOutput::sendNeutral() const {
-    return send(LogicalGamepadState {});
+bool PcHidOutput::sendNeutral(std::uint8_t logicalSlot) {
+    return send(logicalSlot, LogicalGamepadState {});
+}
+
+bool PcHidOutput::flush(std::size_t slot) {
+    if (slot >= kOutputSlots || !pending_[slot]) {
+        return true;
+    }
+
+    if (!tud_hid_n_ready(static_cast<std::uint8_t>(slot))) {
+        return false;
+    }
+
+    if (!tud_hid_n_report(
+            static_cast<std::uint8_t>(slot),
+            0,
+            &reports_[slot],
+            sizeof(Report)
+        )) {
+        return false;
+    }
+
+    pending_[slot] = false;
+    return true;
 }
 
 } // namespace oag::firmware

@@ -14,8 +14,7 @@
 #include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
-#include "oag/firmware/bluetooth_platform_output.h"
-#include "oag/firmware/pc_xinput_platform_driver.h"
+#include "oag/firmware/pc_hid_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
 #include "oag/input/gamepad_state.h"
@@ -937,12 +936,6 @@ private:
             }
 
             if (bluetoothHost_.initialize(*this)) {
-                // External Bluetooth output is fail-soft and layered on top of
-                // the already-initialized TRUE GOLDEN BTstack runtime.
-                (void)bluetoothPlatformOutput_.initialize(
-                    bluetoothHost_
-                );
-
                 bluetoothInitialized_ = true;
                 bluetoothInitNotBeforeUs_ = 0;
                 return;
@@ -954,7 +947,6 @@ private:
         }
 
         bluetoothHost_.poll();
-        bluetoothPlatformOutput_.poll();
     }
 
     static oag::GenericHidGamepadQuirks genericHidQuirksFor(
@@ -1379,7 +1371,7 @@ private:
     void rebuildPcOutputRouting() {
         std::array<
             std::optional<oag::LogicalSlotId>,
-            oag::firmware::PcXinputDevice::kOutputSlots
+            oag::firmware::PcHidPlatformDriver::kOutputSlots
         > nextRoutes {};
 
         if (hostPrimaryOutputSlot_ >= nextRoutes.size()) {
@@ -1618,17 +1610,14 @@ private:
         if (!output.connected && !hasKeyboard && !hasMouse) {
             // A true wireless receiver must report Player 1 absent when there
             // is no routed gamepad and no keyboard/mouse virtual input.
-            const oag::LogicalGamepadState disconnected {};
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                disconnected
+                oag::LogicalGamepadState {}
             );
-            bluetoothPlatformOutput_.submit(disconnected);
             return;
         }
 
         platformOutput_.submit(hostPrimaryOutputSlot_, output);
-        bluetoothPlatformOutput_.submit(output);
     }
 
     void serviceMouseAimRelease() {
@@ -1829,7 +1818,6 @@ private:
     oag::firmware::UsbPioHost usbHost_;
 
     oag::firmware::BluetoothHostV2 bluetoothHost_;
-    oag::firmware::BluetoothPlatformOutput bluetoothPlatformOutput_;
     oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
     bool bluetoothInitialized_ = false;
     std::uint64_t bluetoothInitNotBeforeUs_ = 0;
@@ -1843,11 +1831,11 @@ private:
     oag::GenericHidGamepadDriver genericHid_;
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
-    oag::firmware::PcXinputPlatformDriver platformOutput_;
+    oag::firmware::PcHidPlatformDriver platformOutput_;
 
     std::array<
         std::optional<oag::LogicalSlotId>,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::PcHidPlatformDriver::kOutputSlots
     > pcOutputRoutes_ {};
 
     oag::DeviceId primaryBluetoothGamepad_ {};
@@ -1954,22 +1942,22 @@ private:
 
     std::array<
         std::uint8_t,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::PcHidPlatformDriver::kOutputSlots
     > xgipRumbleSequence_ {1, 1, 1, 1};
 
     std::array<
         oag::RumbleCommand,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::PcHidPlatformDriver::kOutputSlots
     > pendingRumble_ {};
 
     std::array<
         bool,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::PcHidPlatformDriver::kOutputSlots
     > pendingRumbleValid_ {};
 
     std::array<
         std::uint64_t,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::PcHidPlatformDriver::kOutputSlots
     > bluetoothRumbleRetryNotBeforeUs_ {};
 };
 
