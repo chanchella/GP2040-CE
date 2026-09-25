@@ -291,6 +291,16 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     );
 
     initialized_ = true;
+
+    // BluetoothHostV2 powers HCI before this peripheral layer is registered.
+    // Usually HCI_STATE_WORKING arrives asynchronously afterwards, but do not
+    // leave advertising dependent on that timing. If the controller is already
+    // working, enter the exact same advertising path immediately.
+    hciWorking_ = hci_get_state() == HCI_STATE_WORKING;
+    if (hciWorking_) {
+        startAdvertising();
+    }
+
     return true;
 }
 
