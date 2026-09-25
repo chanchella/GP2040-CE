@@ -1098,7 +1098,7 @@ public:
 
 private:
     static constexpr std::uint8_t kRootCount = 3;
-    static constexpr std::uint64_t kMouseAimHoldUs = 6000;
+    static constexpr std::uint64_t kMouseAimHoldUs = 10000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
 
