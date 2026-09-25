@@ -97,7 +97,7 @@ int main() {
 
 
     // UI4: six isolated extra bind slots exist and default to four keyboard
-    // keys plus the two mouse side buttons.
+    // number keys plus the two mouse side buttons.
     assert(KeyboardMouseGamepadMapper::kExtraBindSlots == 6);
 
     for (std::size_t i = 0;
@@ -112,13 +112,13 @@ int main() {
     const ExtraBindSlot* extra4 = mapper.extraBind(4);
     const ExtraBindSlot* extra5 = mapper.extraBind(5);
 
-    assert(extra0->source == keyboardUsage(0x3A));
+    assert(extra0->source == keyboardUsage(0x1E));
     assert(extra4->source == mouseButton(MouseButtonBack));
     assert(extra5->source == mouseButton(MouseButtonForward));
 
     keyboard = {};
     keyboard.connected = true;
-    keyboard.setPressed(0x3A, true); // F1 default -> Guide.
+    keyboard.setPressed(0x1E, true); // 1 default -> Guide.
 
     output = mapper.apply(
         &keyboard,
@@ -132,7 +132,7 @@ int main() {
     // keyboard/mouse profile.
     assert(mapper.configureExtraBind(
         0,
-        keyboardUsage(0x3A),
+        keyboardUsage(0x1E),
         LogicalDigitalControl::North
     ));
 
