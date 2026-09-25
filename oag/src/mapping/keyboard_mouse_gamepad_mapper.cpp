@@ -98,28 +98,28 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
     );
 
     // Six isolated extra bind slots:
-    //   0..3 = keyboard F1..F4
+    //   0..3 = keyboard 1..4
     //   4..5 = mouse Back / Forward side buttons.
     // Defaults are intentionally useful but every slot can be reassigned with
     // configureExtraBind() without touching the base FPS mapping.
     extraBindSlots_[0] = {
         true,
-        keyboardUsage(0x3A), // F1
+        keyboardUsage(0x1E), // 1
         LogicalDigitalControl::Guide,
     };
     extraBindSlots_[1] = {
         true,
-        keyboardUsage(0x3B), // F2
+        keyboardUsage(0x1F), // 2
         LogicalDigitalControl::Back,
     };
     extraBindSlots_[2] = {
         true,
-        keyboardUsage(0x3C), // F3
+        keyboardUsage(0x20), // 3
         LogicalDigitalControl::Start,
     };
     extraBindSlots_[3] = {
         true,
-        keyboardUsage(0x3D), // F4
+        keyboardUsage(0x21), // 4
         LogicalDigitalControl::LeftStickClick,
     };
     extraBindSlots_[4] = {
