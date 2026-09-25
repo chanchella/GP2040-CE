@@ -1,7 +1,6 @@
 #include "oag/firmware/bluetooth_host_v2.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cstring>
 #include <limits>
 
@@ -10,14 +9,9 @@
 
 #include "btstack.h"
 #include "btstack_tlv.h"
-#include "hci_dump.h"
 #include "ble/gatt-service/hids_host.h"
-#include "ble/gatt-service/hids_device.h"
-#include "ble/gatt-service/battery_service_server.h"
-#include "ble/gatt-service/device_information_service_server.h"
 
-#include "oag/input/gamepad_state.h"
-#include "oag_ble_gamepad.h"
+#include "oag_ble_platform.h"
 
 namespace {
 
@@ -75,22 +69,6 @@ void leHidPacketThunk(
     }
 }
 
-void platformHidPacketThunk(
-    std::uint8_t packetType,
-    std::uint16_t channel,
-    std::uint8_t* packet,
-    std::uint16_t size
-) {
-    if (gBluetoothHostV2 != nullptr) {
-        gBluetoothHostV2->handlePlatformHidPacket(
-            packetType,
-            channel,
-            packet,
-            size
-        );
-    }
-}
-
 void discoveryTimerThunk(btstack_timer_source_t* timer) {
     (void)timer;
 
@@ -113,302 +91,7 @@ constexpr std::uint16_t kLeLowLatencyIntervalMax = 12u;
 constexpr std::uint16_t kLeLowLatencyConnLatency = 0u;
 constexpr std::uint16_t kLeLowLatencySupervisionTimeout = 400u; // 4 seconds
 
-// BT-OUT1 uses BTstack's HID-over-GATT Device service while preserving the
-// existing HIDS Host/Central path. The GATT database is generated at build
-// time from oag_ble_gamepad.gatt (Pico SDK / BTstack supported path).
-constexpr std::uint8_t kPlatformReportId = 1u;
 
-constexpr std::uint8_t kPlatformHidDescriptor[] = {
-    0x05, 0x01,       // Usage Page (Generic Desktop)
-    0x09, 0x05,       // Usage (Game Pad)
-    0xA1, 0x01,       // Collection (Application)
-    0x85, 0x01,       //   Report ID 1
-
-    0x05, 0x09,       //   Usage Page (Button)
-    0x19, 0x01,       //   Usage Minimum (Button 1)
-    0x29, 0x10,       //   Usage Maximum (Button 16)
-    0x15, 0x00,
-    0x25, 0x01,
-    0x75, 0x01,
-    0x95, 0x10,
-    0x81, 0x02,       //   Input (Data,Var,Abs)
-
-    0x05, 0x01,       //   Usage Page (Generic Desktop)
-    0x09, 0x39,       //   Usage (Hat switch)
-    0x15, 0x00,
-    0x25, 0x07,
-    0x35, 0x00,
-    0x46, 0x3B, 0x01, //   Physical Maximum 315
-    0x65, 0x14,       //   Unit: degrees
-    0x75, 0x04,
-    0x95, 0x01,
-    0x81, 0x42,       //   Input (Data,Var,Abs,Null)
-    0x65, 0x00,
-    0x75, 0x04,
-    0x95, 0x01,
-    0x81, 0x03,       //   Padding
-
-    0x05, 0x01,       //   Usage Page (Generic Desktop)
-    0x09, 0x30,       //   X  - left stick X
-    0x09, 0x31,       //   Y  - left stick Y
-    0x09, 0x32,       //   Z  - right stick X
-    0x09, 0x35,       //   Rz - right stick Y
-    0x16, 0x00, 0x80, //   Logical Minimum -32768
-    0x26, 0xFF, 0x7F, //   Logical Maximum  32767
-    0x75, 0x10,
-    0x95, 0x04,
-    0x81, 0x02,
-
-    0x05, 0x02,       //   Usage Page (Simulation Controls)
-    0x09, 0xC5,       //   Brake       - left trigger
-    0x09, 0xC4,       //   Accelerator - right trigger
-    0x15, 0x00,
-    0x26, 0xFF, 0x00,
-    0x75, 0x08,
-    0x95, 0x02,
-    0x81, 0x02,
-
-    0xC0
-};
-
-// 30-byte legacy advertising payload: General Discoverable + HIDS UUID +
-// official Generic HID/Gamepad Appearance (0x03C4) + compact product name.
-std::array<std::uint8_t, 31> gPlatformAdvData {};
-std::uint8_t gPlatformAdvDataLen = 0;
-std::uint8_t gPlatformDiagStage = 0;
-std::uint8_t gPlatformDiagStatus = 0;
-std::uint8_t gPlatformDiagReason = 0;
-bool gPlatformSecurityComplete = false;
-std::uint8_t gLastOutgoingSmpOpcode = 0;
-std::uint8_t gLastIncomingSmpOpcode = 0;
-std::uint16_t gLastOutgoingSmpHandle = HCI_CON_HANDLE_INVALID;
-std::uint16_t gLastIncomingSmpHandle = HCI_CON_HANDLE_INVALID;
-
-void oagHciDumpReset() {}
-
-void oagHciDumpLogMessage(
-    int logLevel,
-    const char* format,
-    va_list args
-) {
-    (void)logLevel;
-    (void)format;
-    (void)args;
-}
-
-void oagHciDumpLogPacket(
-    std::uint8_t packetType,
-    std::uint8_t incoming,
-    std::uint8_t* packet,
-    std::uint16_t length
-) {
-    if (
-        packetType != HCI_ACL_DATA_PACKET ||
-        packet == nullptr ||
-        length < 9
-    ) {
-        return;
-    }
-
-    // ACL header (4) + L2CAP length (2) + CID (2) + SMP opcode (1).
-    // SMP over LE uses fixed CID 0x0006. Pairing PDUs are tiny and fit in
-    // a single ACL start fragment, so the first payload byte is the opcode.
-    const std::uint16_t cid =
-        little_endian_read_16(packet, 6);
-
-    if (cid != L2CAP_CID_SECURITY_MANAGER_PROTOCOL) {
-        return;
-    }
-
-    const std::uint16_t handle =
-        static_cast<std::uint16_t>(
-            little_endian_read_16(packet, 0) & 0x0FFFu
-        );
-    const std::uint8_t opcode = packet[8];
-
-    if (incoming != 0) {
-        gLastIncomingSmpOpcode = opcode;
-        gLastIncomingSmpHandle = handle;
-    } else {
-        gLastOutgoingSmpOpcode = opcode;
-        gLastOutgoingSmpHandle = handle;
-    }
-}
-
-const hci_dump_t gOagSmpTraceDump = {
-    &oagHciDumpReset,
-    &oagHciDumpLogPacket,
-    &oagHciDumpLogMessage
-};
-
-void buildPlatformAdvertisingName(const char* name) {
-    const std::size_t maxNameLength = 18;
-    const std::size_t nameLength = std::min<std::size_t>(
-        std::strlen(name),
-        maxNameLength
-    );
-
-    std::size_t i = 0;
-    gPlatformAdvData[i++] = 0x02;
-    gPlatformAdvData[i++] = BLUETOOTH_DATA_TYPE_FLAGS;
-    gPlatformAdvData[i++] = 0x02;
-
-    gPlatformAdvData[i++] =
-        static_cast<std::uint8_t>(nameLength + 1);
-    gPlatformAdvData[i++] =
-        BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME;
-
-    std::memcpy(
-        &gPlatformAdvData[i],
-        name,
-        nameLength
-    );
-    i += nameLength;
-
-    gPlatformAdvData[i++] = 0x03;
-    gPlatformAdvData[i++] =
-        BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS;
-    gPlatformAdvData[i++] = static_cast<std::uint8_t>(
-        ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE & 0xFF
-    );
-    gPlatformAdvData[i++] = static_cast<std::uint8_t>(
-        ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE >> 8
-    );
-
-    gPlatformAdvData[i++] = 0x03;
-    gPlatformAdvData[i++] = BLUETOOTH_DATA_TYPE_APPEARANCE;
-    gPlatformAdvData[i++] = 0xC4;
-    gPlatformAdvData[i++] = 0x03;
-
-    gPlatformAdvDataLen = static_cast<std::uint8_t>(i);
-}
-
-void setPlatformDiagnosticAdvertising(
-    std::uint8_t stage,
-    std::uint8_t status,
-    std::uint8_t reason
-) {
-    gPlatformDiagStage = stage;
-    gPlatformDiagStatus = status;
-    gPlatformDiagReason = reason;
-
-    char name[19] {};
-    std::snprintf(
-        name,
-        sizeof(name),
-        "P6S%uE%02XR%02XO%02XI%02X",
-        static_cast<unsigned>(stage),
-        static_cast<unsigned>(status),
-        static_cast<unsigned>(reason),
-        static_cast<unsigned>(gLastOutgoingSmpOpcode),
-        static_cast<unsigned>(gLastIncomingSmpOpcode)
-    );
-
-    buildPlatformAdvertisingName(name);
-    gap_advertisements_set_data(
-        gPlatformAdvDataLen,
-        gPlatformAdvData.data()
-    );
-}
-
-std::int16_t encodePlatformAxis(std::int32_t value) {
-    if (value == std::numeric_limits<std::int32_t>::min()) {
-        return std::numeric_limits<std::int16_t>::min();
-    }
-
-    if (value <= 0) {
-        return static_cast<std::int16_t>(value / 65536);
-    }
-
-    const std::int64_t scaled =
-        static_cast<std::int64_t>(value) *
-        std::numeric_limits<std::int16_t>::max() /
-        std::numeric_limits<std::int32_t>::max();
-
-    return static_cast<std::int16_t>(scaled);
-}
-
-void storeLe16(
-    std::array<std::uint8_t, 13>& report,
-    std::size_t offset,
-    std::int16_t value
-) {
-    const auto raw = static_cast<std::uint16_t>(value);
-    report[offset] = static_cast<std::uint8_t>(raw & 0xFFu);
-    report[offset + 1] = static_cast<std::uint8_t>(raw >> 8);
-}
-
-std::uint8_t encodePlatformHat(std::uint8_t dpad) {
-    const bool up =
-        (dpad & static_cast<std::uint8_t>(oag::DpadBits::Up)) != 0;
-    const bool down =
-        (dpad & static_cast<std::uint8_t>(oag::DpadBits::Down)) != 0;
-    const bool left =
-        (dpad & static_cast<std::uint8_t>(oag::DpadBits::Left)) != 0;
-    const bool right =
-        (dpad & static_cast<std::uint8_t>(oag::DpadBits::Right)) != 0;
-
-    if (up && !down) {
-        if (right && !left) return 1;
-        if (left && !right) return 7;
-        return 0;
-    }
-    if (down && !up) {
-        if (right && !left) return 3;
-        if (left && !right) return 5;
-        return 4;
-    }
-    if (right && !left) return 2;
-    if (left && !right) return 6;
-    return 8; // Null/center state.
-}
-
-std::array<std::uint8_t, 13> encodePlatformReport(
-    const oag::LogicalGamepadState& state
-) {
-    std::array<std::uint8_t, 13> report {};
-    report[2] = 8;
-
-    if (!state.connected) {
-        return report;
-    }
-
-    std::uint16_t buttons = 0;
-    const auto addButton = [&](std::uint64_t sourceMask, std::uint8_t bit) {
-        if ((state.buttons & sourceMask) != 0) {
-            buttons |= static_cast<std::uint16_t>(1u << bit);
-        }
-    };
-
-    addButton(oag::ButtonSouth, 0);
-    addButton(oag::ButtonEast, 1);
-    addButton(oag::ButtonWest, 2);
-    addButton(oag::ButtonNorth, 3);
-    addButton(oag::ButtonLeftBumper, 4);
-    addButton(oag::ButtonRightBumper, 5);
-    addButton(oag::ButtonLeftStick, 6);
-    addButton(oag::ButtonRightStick, 7);
-    addButton(oag::ButtonBack, 8);
-    addButton(oag::ButtonStart, 9);
-    addButton(oag::ButtonGuide, 10);
-    addButton(oag::ButtonShare, 11);
-
-    report[0] = static_cast<std::uint8_t>(buttons & 0xFFu);
-    report[1] = static_cast<std::uint8_t>(buttons >> 8);
-    report[2] = encodePlatformHat(state.dpad);
-
-    storeLe16(report, 3, encodePlatformAxis(state.lx));
-    storeLe16(report, 5, encodePlatformAxis(state.ly));
-    storeLe16(report, 7, encodePlatformAxis(state.rx));
-    storeLe16(report, 9, encodePlatformAxis(state.ry));
-
-    report[11] =
-        static_cast<std::uint8_t>(state.leftTrigger >> 24);
-    report[12] =
-        static_cast<std::uint8_t>(state.rightTrigger >> 24);
-
-    return report;
-}
 
 } // namespace
 
@@ -428,13 +111,6 @@ bool BluetoothHostV2::initialize(
     observer_ = &observer;
     gBluetoothHostV2 = this;
 
-    // P6 diagnostic only: trace raw HCI ACL packets so a failed SMP exchange
-    // can expose the exact last outgoing/incoming SMP opcodes. This logger is
-    // passive and does not alter packets, connection state, USB/XInput, or
-    // controller input behavior.
-    hci_dump_init(&gOagSmpTraceDump);
-    hci_dump_enable_packet_log(true);
-
     l2cap_init();
     sm_init();
 
@@ -443,7 +119,6 @@ bool BluetoothHostV2::initialize(
     );
 
     sm_set_authentication_requirements(
-        SM_AUTHREQ_SECURE_CONNECTION |
         SM_AUTHREQ_BONDING
     );
 
@@ -475,57 +150,8 @@ bool BluetoothHostV2::initialize(
         )
     );
 
-    // BT-OUT1-P5 peripheral: mirror BTstack's official HOG setup.
-    // HOGP HID Device requires Battery Service + Device Information Service
-    // in addition to HID Service. Windows tolerated the reduced profile,
-    // while Android rejected it; keep the services local to the platform
-    // peripheral ATT server and leave all input-host paths untouched.
-    battery_service_server_init(100);
-    device_information_service_server_init();
-    device_information_service_server_set_manufacturer_name("OAG");
-    device_information_service_server_set_model_number("Universal Pad");
-    device_information_service_server_set_firmware_revision(
-        "U10F-PM1-L1-BT-OUT1-P5"
-    );
-    // PnP ID characteristic is mandatory for HOGP Device Information.
-    // Use an unassigned prototype USB-IF vendor/product pair rather than
-    // impersonating any third-party controller vendor.
-    device_information_service_server_set_pnp_id(
-        2,
-        0x0000,
-        0x0000,
-        0x0100
-    );
-
-    hids_device_init(
-        0,
-        kPlatformHidDescriptor,
-        sizeof(kPlatformHidDescriptor)
-    );
-    hids_device_register_packet_handler(
-        platformHidPacketThunk
-    );
-
     gap_set_local_name(
-        "OAG Universal Gamepad"
-    );
-
-    bd_addr_t platformAdvAddress {};
-    gap_advertisements_set_params(
-        0x0020,
-        0x0030,
-        0,
-        0,
-        platformAdvAddress,
-        0x07,
-        0x00
-    );
-    buildPlatformAdvertisingName(
-        "OAG Universal Pad"
-    );
-    gap_advertisements_set_data(
-        gPlatformAdvDataLen,
-        gPlatformAdvData.data()
+        "OAG Abo Gemi Ultra Gaming"
     );
 
     gap_set_default_link_policy_settings(
@@ -578,6 +204,7 @@ void BluetoothHostV2::poll() {
     if (
         initialized_ &&
         hciWorking_ &&
+        !platformOutputLinkActive_ &&
         hasCapacity() &&
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
@@ -597,41 +224,6 @@ std::size_t BluetoothHostV2::connectedPeerCount() const {
     }
 
     return count;
-}
-
-bool BluetoothHostV2::bluetoothPlatformConnected() const {
-    return
-        platformConnectionHandle_ != kInvalidPlatformHandle &&
-        platformInputSubscribed_;
-}
-
-bool BluetoothHostV2::submitBluetoothPlatformGamepad(
-    const oag::LogicalGamepadState& state
-) {
-    const auto next = encodePlatformReport(state);
-
-    if (
-        next == platformLatestReport_ &&
-        !platformReportDirty_
-    ) {
-        return true;
-    }
-
-    platformLatestReport_ = next;
-    platformReportDirty_ = true;
-
-    if (!bluetoothPlatformConnected()) {
-        return true;
-    }
-
-    const std::uint8_t status =
-        hids_device_request_can_send_now_event(
-            platformConnectionHandle_
-        );
-
-    return
-        status == ERROR_CODE_SUCCESS ||
-        status == ERROR_CODE_COMMAND_DISALLOWED;
 }
 
 BluetoothHidOutputResult BluetoothHostV2::sendLeOutputReport(
@@ -1030,6 +622,7 @@ void BluetoothHostV2::stopDiscovery() {
 void BluetoothHostV2::startLeScan() {
     if (
         !hciWorking_ ||
+        platformOutputLinkActive_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -1064,6 +657,7 @@ void BluetoothHostV2::startLeScan() {
 void BluetoothHostV2::startClassicInquiry() {
     if (
         !hciWorking_ ||
+        platformOutputLinkActive_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -1082,7 +676,7 @@ void BluetoothHostV2::startClassicInquiry() {
 }
 
 void BluetoothHostV2::resumeDiscovery() {
-    if (!hciWorking_) {
+    if (!hciWorking_ || platformOutputLinkActive_) {
         return;
     }
 
@@ -1107,8 +701,42 @@ bool BluetoothHostV2::beginDiscovery() {
     return true;
 }
 
+void BluetoothHostV2::setPlatformOutputLinkActive(bool active) {
+    if (platformOutputLinkActive_ == active) {
+        return;
+    }
+
+    platformOutputLinkActive_ = active;
+
+    if (active) {
+        // Do not disturb already-connected controllers or an in-flight input
+        // connection. Only quiesce background discovery while the phone/PC
+        // completes its peripheral-side HID pairing and GATT setup.
+        if (
+            pendingKind_ == PendingKind::None &&
+            !deferredBleCandidateValid_
+        ) {
+            stopDiscoveryTimer();
+            gap_stop_scan();
+            gap_inquiry_stop();
+            discoveryPhase_ =
+                DiscoveryPhase::PausedForConnection;
+        }
+        return;
+    }
+
+    if (
+        pendingKind_ == PendingKind::None &&
+        !deferredBleCandidateValid_
+    ) {
+        discoveryPhase_ = DiscoveryPhase::Idle;
+        resumeDiscovery();
+    }
+}
+
 void BluetoothHostV2::handleDiscoveryTimer() {
     if (
+        platformOutputLinkActive_ ||
         discoveryPhase_ != DiscoveryPhase::LeScan ||
         pendingKind_ != PendingKind::None
     ) {
@@ -1160,6 +788,7 @@ void BluetoothHostV2::serviceDeferredBleConnect() {
     if (
         !deferredBleCandidateValid_ ||
         !hciWorking_ ||
+        platformOutputLinkActive_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -1317,67 +946,25 @@ void BluetoothHostV2::handleSmPacket(
     }
 
     switch (hci_event_packet_get_type(packet)) {
-        case SM_EVENT_JUST_WORKS_REQUEST: {
-            const std::uint16_t handle =
-                sm_event_just_works_request_get_handle(packet);
-
-            if (handle == platformConnectionHandle_) {
-                gPlatformDiagStage = 3;
-            }
-
-            sm_just_works_confirm(handle);
+        case SM_EVENT_JUST_WORKS_REQUEST:
+            sm_just_works_confirm(
+                sm_event_just_works_request_get_handle(
+                    packet
+                )
+            );
             break;
-        }
 
-        case SM_EVENT_NUMERIC_COMPARISON_REQUEST: {
-            const std::uint16_t handle =
-                sm_event_numeric_comparison_request_get_handle(packet);
-
-            if (handle == platformConnectionHandle_) {
-                gPlatformDiagStage = 4;
-            }
-
-            sm_numeric_comparison_confirm(handle);
+        case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
+            sm_numeric_comparison_confirm(
+                sm_event_numeric_comparison_request_get_handle(
+                    packet
+                )
+            );
             break;
-        }
-
-        case SM_EVENT_PAIRING_STARTED: {
-            const std::uint16_t handle =
-                sm_event_pairing_started_get_handle(packet);
-
-            if (handle == platformConnectionHandle_) {
-                gPlatformDiagStage = 2;
-            }
-            break;
-        }
 
         case SM_EVENT_PAIRING_COMPLETE: {
             const std::uint16_t handle =
                 sm_event_pairing_complete_get_handle(packet);
-
-            if (handle == platformConnectionHandle_) {
-                const std::uint8_t status =
-                    sm_event_pairing_complete_get_status(packet);
-                const std::uint8_t reason =
-                    sm_event_pairing_complete_get_reason(packet);
-
-                gPlatformDiagStage = 5;
-                gPlatformDiagStatus = status;
-                gPlatformDiagReason = reason;
-
-                if (status != ERROR_CODE_SUCCESS) {
-                    setPlatformDiagnosticAdvertising(
-                        5,
-                        status,
-                        reason
-                    );
-                    gap_disconnect(handle);
-                } else {
-                    gPlatformSecurityComplete = true;
-                    resumeDiscovery();
-                }
-                break;
-            }
 
             if (
                 sm_event_pairing_complete_get_status(packet) ==
@@ -1390,71 +977,12 @@ void BluetoothHostV2::handleSmPacket(
             break;
         }
 
-        case SM_EVENT_REENCRYPTION_STARTED: {
-            const std::uint16_t handle =
-                sm_event_reencryption_started_get_handle(packet);
-
-            if (handle == platformConnectionHandle_) {
-                gPlatformDiagStage = 6;
-            }
-            break;
-        }
-
         case SM_EVENT_REENCRYPTION_COMPLETE: {
             const std::uint16_t handle =
                 sm_event_reencryption_complete_get_handle(packet);
 
             const std::uint8_t status =
                 sm_event_reencryption_complete_get_status(packet);
-
-            if (handle == platformConnectionHandle_) {
-                gPlatformDiagStage = 7;
-                gPlatformDiagStatus = status;
-                gPlatformDiagReason = 0;
-
-                if (status == ERROR_CODE_SUCCESS) {
-                    gPlatformSecurityComplete = true;
-                    resumeDiscovery();
-                    break;
-                }
-
-                if (status == ERROR_CODE_PIN_OR_KEY_MISSING) {
-                    // BT-OUT1-P2: platform-side stale-bond repair.
-                    // If Android/host forgot its LTK while the Pico retained
-                    // the bond, delete only that peer identity and restart
-                    // SMP on the same live link. This mirrors the existing
-                    // hardware-proven input-peer recovery policy and never
-                    // performs a global bond reset.
-                    bd_addr_t identityAddress {};
-                    sm_event_reencryption_complete_get_address(
-                        packet,
-                        identityAddress
-                    );
-
-                    const bd_addr_type_t identityAddressType =
-                        static_cast<bd_addr_type_t>(
-                            sm_event_reencryption_started_get_addr_type(
-                                packet
-                            )
-                        );
-
-                    gap_delete_bonding(
-                        identityAddressType,
-                        identityAddress
-                    );
-
-                    sm_request_pairing(handle);
-                    break;
-                }
-
-                setPlatformDiagnosticAdvertising(
-                    7,
-                    status,
-                    0
-                );
-                gap_disconnect(handle);
-                break;
-            }
 
             if (status == ERROR_CODE_SUCCESS) {
                 startLeHids(handle);
@@ -1722,92 +1250,6 @@ void BluetoothHostV2::handleLeHidPacket(
     }
 }
 
-void BluetoothHostV2::handlePlatformHidPacket(
-    std::uint8_t packetType,
-    std::uint16_t channel,
-    std::uint8_t* packet,
-    std::uint16_t size
-) {
-    (void)channel;
-    (void)size;
-
-    if (
-        packetType != HCI_EVENT_PACKET ||
-        packet == nullptr ||
-        hci_event_packet_get_type(packet) != HCI_EVENT_HIDS_META
-    ) {
-        return;
-    }
-
-    switch (hci_event_hids_meta_get_subevent_code(packet)) {
-        case HIDS_SUBEVENT_INPUT_REPORT_ENABLE: {
-            const std::uint16_t handle =
-                hids_subevent_input_report_enable_get_con_handle(
-                    packet
-                );
-
-            if (handle != platformConnectionHandle_) {
-                break;
-            }
-
-            platformInputSubscribed_ =
-                hids_subevent_input_report_enable_get_enable(
-                    packet
-                ) != 0;
-
-            if (!platformInputSubscribed_) {
-                break;
-            }
-
-            platformReportDirty_ = true;
-
-            const std::uint16_t currentInterval =
-                gap_le_connection_interval(
-                    platformConnectionHandle_
-                );
-
-            if (currentInterval > kLeLowLatencyIntervalMax) {
-                (void)gap_request_connection_parameter_update(
-                    platformConnectionHandle_,
-                    kLeLowLatencyIntervalMin,
-                    kLeLowLatencyIntervalMax,
-                    kLeLowLatencyConnLatency,
-                    kLeLowLatencySupervisionTimeout
-                );
-            }
-
-            (void)hids_device_request_can_send_now_event(
-                platformConnectionHandle_
-            );
-            break;
-        }
-
-        case HIDS_SUBEVENT_CAN_SEND_NOW:
-            if (
-                bluetoothPlatformConnected() &&
-                platformReportDirty_
-            ) {
-                const std::uint8_t status =
-                    hids_device_send_input_report_for_id(
-                        platformConnectionHandle_,
-                        kPlatformReportId,
-                        platformLatestReport_.data(),
-                        static_cast<std::uint16_t>(
-                            platformLatestReport_.size()
-                        )
-                    );
-
-                if (status == ERROR_CODE_SUCCESS) {
-                    platformReportDirty_ = false;
-                }
-            }
-            break;
-
-        default:
-            break;
-    }
-}
-
 void BluetoothHostV2::handlePacket(
     std::uint8_t packetType,
     std::uint16_t channel,
@@ -1832,11 +1274,6 @@ void BluetoothHostV2::handlePacket(
             ) {
                 hciWorking_ = true;
                 pendingKind_ = PendingKind::None;
-
-                // Advertising is independent from the existing Central scan.
-                // This makes the Pico visible as a BLE Gamepad platform target
-                // while it continues discovering controller inputs.
-                (void)gap_advertisements_enable(1);
                 startLeScan();
             }
             break;
@@ -1959,52 +1396,6 @@ void BluetoothHostV2::handlePacket(
                     );
 
                 if (role == HCI_ROLE_SLAVE) {
-                    // Incoming platform connection to our BLE HID Gamepad.
-                    // Never allocate it as an input Peer and never consume the
-                    // four-controller Bluetooth Host budget.
-                    if (
-                        platformConnectionHandle_ !=
-                            kInvalidPlatformHandle &&
-                        platformConnectionHandle_ !=
-                            connectionHandle
-                    ) {
-                        gap_disconnect(connectionHandle);
-                        break;
-                    }
-
-                    platformConnectionHandle_ = connectionHandle;
-                    platformInputSubscribed_ = false;
-                    platformReportDirty_ = true;
-
-                    gPlatformDiagStage = 1;
-                    gPlatformDiagStatus = 0;
-                    gPlatformDiagReason = 0;
-                    gPlatformSecurityComplete = false;
-                    gLastOutgoingSmpOpcode = 0;
-                    gLastIncomingSmpOpcode = 0;
-                    gLastOutgoingSmpHandle = connectionHandle;
-                    gLastIncomingSmpHandle = connectionHandle;
-
-                    // BT-OUT1-P3: quiesce controller discovery only while the
-                    // platform link completes SMP/HOGP security setup. The
-                    // previous candidates kept BLE scan / Classic inquiry
-                    // running during Android pairing, which can create a
-                    // dual-role radio scheduling race. Do not touch existing
-                    // peers or global bonds; discovery resumes after security
-                    // succeeds or after this platform link disconnects.
-                    stopDiscoveryTimer();
-                    gap_stop_scan();
-                    gap_inquiry_stop();
-                    if (
-                        pendingKind_ == PendingKind::None &&
-                        !deferredBleCandidateValid_
-                    ) {
-                        discoveryPhase_ = DiscoveryPhase::Idle;
-                    }
-
-                    // Do not force SMP immediately from the peripheral side.
-                    // Android/other hosts trigger security when they access
-                    // the encrypted HIDS report CCC/characteristic.
                     break;
                 }
 
@@ -2083,42 +1474,6 @@ void BluetoothHostV2::handlePacket(
                 hci_event_disconnection_complete_get_connection_handle(
                     packet
                 );
-
-            if (handle == platformConnectionHandle_) {
-                const std::uint8_t disconnectReason =
-                    hci_event_disconnection_complete_get_reason(packet);
-
-                if (!gPlatformSecurityComplete) {
-                    // Preserve a real SMP/reencryption reason captured before
-                    // the ACL disconnect. Only use the HCI disconnect reason
-                    // when security never produced its own failure status.
-                    const std::uint8_t diagnosticReason =
-                        gPlatformDiagStatus == ERROR_CODE_SUCCESS
-                            ? disconnectReason
-                            : gPlatformDiagReason;
-
-                    setPlatformDiagnosticAdvertising(
-                        gPlatformDiagStage,
-                        gPlatformDiagStatus,
-                        diagnosticReason
-                    );
-                } else {
-                    buildPlatformAdvertisingName(
-                        "OAG Universal Pad"
-                    );
-                    gap_advertisements_set_data(
-                        gPlatformAdvDataLen,
-                        gPlatformAdvData.data()
-                    );
-                }
-
-                platformConnectionHandle_ = kInvalidPlatformHandle;
-                platformInputSubscribed_ = false;
-                platformReportDirty_ = true;
-                (void)gap_advertisements_enable(1);
-                resumeDiscovery();
-                break;
-            }
 
             Peer* peer =
                 findBleByHandle(handle);
