@@ -29,49 +29,44 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "chatgpt/oag-universal-core-v1"
 
-      - name: Verify U10L proven three-root PIO and locked XInput policy
+      - name: Verify U10F-PM1 exact U10F runtime plus pairing only
         shell: bash
         run: |
           set -euo pipefail
-          U10J_BASELINE="278da5b28020f1c335dfba21e644407ad7c1df4b"
-          U10K_BASELINE="8ee98cbe9e23edffcb855188c0de8721ea974deb"
+          U10F_BASELINE="7799d270d98ae09e7608f05b15f687a20a459871"
+          U10J_PAIRING="52f727530a2e1d17199ff939b69446745f131c65"
 
-          git merge-base --is-ancestor "${U10J_BASELINE}" HEAD
-          git merge-base --is-ancestor "${U10K_BASELINE}" HEAD
+          git merge-base --is-ancestor "${U10F_BASELINE}" HEAD
+          git merge-base --is-ancestor "${U10J_PAIRING}" HEAD
 
-          # U10L runtime differs from the current branch only by:
-          # 1) restoring main.cpp exactly to U10J (removes failed U10K watchdog)
-          # 2) applying the proven Pico2W PIO/DMA tuple in usb_pio_host.cpp.
-          RUNTIME_CHANGED="$(git diff --name-only "${U10K_BASELINE}" -- \
+          EXPECTED_RUNTIME="$(printf '%s\n' \
+            'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
+            'oag/firmware/src/bluetooth_host_v2.cpp' \
+            'oag/firmware/src/main.cpp' | sort)"
+
+          ACTUAL_RUNTIME="$(git diff --name-only "${U10F_BASELINE}" -- \
             oag/firmware/include \
             oag/firmware/src \
             oag/firmware/tusb_config.h \
             oag/include \
             oag/src | sort)"
 
-          EXPECTED="$(printf '%s\n' \
-            'oag/firmware/src/main.cpp' \
-            'oag/firmware/src/usb_pio_host.cpp' | sort)"
+          test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
-          test "${RUNTIME_CHANGED}" = "${EXPECTED}"
+          # These three files are exact U10J pairing-isolated files.
+          test "$(git hash-object oag/firmware/src/main.cpp)" = "df839d9998c5c3c559a569ad0541e81e2b4ba03c"
+          test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "41aeb22ae1af4576d291b11b70834f84b7f96e93"
+          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "ef92ce0ae51f669919623fbe978761c2f24c63d1"
 
-          # Pairing/routing runtime is exactly the accepted U10J baseline.
-          git diff --exit-code "${U10J_BASELINE}" -- oag/firmware/src/main.cpp
-
-          # Bluetooth, receiver persona, parser, XInput output and K/M mapping
-          # are frozen. This also locks supported gamepad PC output to XInput.
-          git diff --exit-code "${U10K_BASELINE}" -- \
-            oag/firmware/include/oag/firmware/bluetooth_host_v2.h \
-            oag/firmware/src/bluetooth_host_v2.cpp \
-            oag/firmware/include/oag/firmware/bluetooth_hid_parser_v2.h \
-            oag/firmware/src/bluetooth_hid_parser_v2.cpp \
-            oag/firmware/include/oag/firmware/pc_xinput_device.h \
-            oag/firmware/src/pc_xinput_device.cpp \
-            oag/firmware/include/oag/firmware/pc_xinput_platform_driver.h \
-            oag/firmware/src/pc_xinput_platform_driver.cpp \
-            oag/firmware/src/usb_descriptors.cpp \
-            oag/firmware/tusb_config.h \
+          # Everything target-facing/USB-facing is exactly U10F.
+          git diff --exit-code "${U10F_BASELINE}" -- \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/usb_pio_probe.c \
             oag/firmware/src/xinput_host.cpp \
+            oag/firmware/src/usb_descriptors.cpp \
+            oag/firmware/src/pc_xinput_device.cpp \
+            oag/firmware/src/pc_xinput_platform_driver.cpp \
+            oag/firmware/tusb_config.h \
             oag/firmware/src/bluetooth_hid_parser_v2.cpp \
             oag/src/mapping/keyboard_mouse_gamepad_mapper.cpp \
             oag/src/protocol/hid/generic_hid_gamepad_driver.cpp \
@@ -81,41 +76,27 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("oag/firmware/src/usb_pio_host.cpp").read_text()
-          required = [
-              "config.pin_dp = kPort1Dp;",
-              "config.pinout = PIO_USB_PINOUT_DPDM;",
-              "config.sm_tx = 3;",
-              "config.sm_rx = 2;",
-              "config.sm_eop = 3;",
-              "config.pio_rx_num = 0;",
-              "config.pio_tx_num = 1;",
-              "config.tx_ch = 9;",
-              "pio_usb_host_add_port(kPort2Dp, PIO_USB_PINOUT_DPDM)",
-              "pio_usb_host_add_port(kPort3Dp, PIO_USB_PINOUT_DPDM)",
-          ]
-          for item in required:
-              if item not in p:
-                  raise SystemExit(f"missing U10L proven PIO setting: {item}")
-
           main = Path("oag/firmware/src/main.cpp").read_text()
-          if "serviceMissingRootAttachRecovery" in main:
-              raise SystemExit("failed U10K synthetic attach watchdog leaked into U10L")
+          assert main.count("notifyWiredGamepadDetached(") == 2
+          assert "notifyWiredGamepadAttached(" not in main
 
-          platform = Path("oag/firmware/src/pc_xinput_platform_driver.cpp").read_text()
-          if "return PlatformId::PcXinput360;" not in platform:
-              raise SystemExit("PC gamepad output is not locked to Xbox 360/XInput")
+          bt = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
+          assert "requestPairingAssist()" in bt
+          assert "ERROR_CODE_PIN_OR_KEY_MISSING" in bt
 
           tusb = Path("oag/firmware/tusb_config.h").read_text()
-          if "#define CFG_TUD_HID 0" not in tusb:
-              raise SystemExit("generic HID target output unexpectedly enabled")
+          assert "#define CFG_TUD_HID 0" in tusb
 
-          print("U10L_PROVEN_3PORT_PIO_CONFIG=PASS")
-          print("U10L_XBOX360_XINPUT_OUTPUT_POLICY_LOCK=PASS")
+          desc = Path("oag/firmware/src/usb_descriptors.cpp").read_text()
+          assert "0x0719" in desc
+
+          platform = Path("oag/firmware/src/pc_xinput_platform_driver.cpp").read_text()
+          assert "return PlatformId::PcXinput360;" in platform
+
+          print("U10F_PM1_EXACT_U10F_USB_RUNTIME=PASS")
+          print("U10F_PM1_U10J_PAIRING_ONLY=PASS")
+          print("U10F_PM1_XBOX360_XINPUT_TARGET=PASS")
           PY
-
-          echo "U10L_PAIRING_BT_ROUTING_FREEZE=PASS"
-          echo "U10L_USB_HUB_SUPPORT_FREEZE=PASS"
 
       - name: Verify no Antigravity coupling
         shell: bash
@@ -149,7 +130,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-u10l:
+  firmware-u10f-pm1:
     needs: core-policy-and-tests
     runs-on: ubuntu-22.04
 
@@ -177,7 +158,7 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Verify exact U10L SDK and Bluetooth dependencies
+      - name: Verify exact U10F-PM1 SDK and Bluetooth dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -185,8 +166,8 @@ jobs:
           test "$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
           test "$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
           echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-u9d" >> "${GITHUB_ENV}"
-          echo "U10L_PICO_SDK_230=PASS"
-          echo "U10L_BTSTACK_HIDS_HOST=PASS"
+          echo "U10F_PICO_SDK_230=PASS"
+          echo "U10F_BTSTACK_HIDS_HOST=PASS"
 
       - name: Verify and prepare pinned dependencies
         shell: bash
@@ -194,7 +175,7 @@ jobs:
           set -euo pipefail
           python3 oag/tools/prepare_dependencies.py
 
-      - name: Configure Pico 2 W U10L firmware
+      - name: Configure Pico 2 W U10F-PM1 firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -204,7 +185,7 @@ jobs:
             -DPICO_BOARD=pico2_w \
             -DPICO_PLATFORM=rp2350-arm-s
 
-      - name: Build Pico 2 W U10L firmware
+      - name: Build Pico 2 W U10F-PM1 firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -250,7 +231,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U10L"
+          assert manifest["phase"] == "U10F-PM1"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -345,51 +326,18 @@ jobs:
           assert manifest["features"]["u10f_keyboard_mouse_follow_host_player1"] is True
           assert manifest["features"]["u10f_primary_chord_guide_fallback"] is True
           assert manifest["features"]["u10f_receiver_persona_frozen_from_u10e"] is True
-          assert manifest["features"]["u10i_rebased_directly_on_u10f_tree"] is True
-          assert manifest["features"]["u10i_pairing_assist_window_ms"] == 30000
-          assert manifest["features"]["u10i_pairing_assist_active_ble_scan"] is True
-          assert manifest["features"]["u10i_pairing_assist_no_proactive_bond_delete"] is True
-          assert manifest["features"]["u10i_btstack_pin_or_key_missing_repair_only"] is True
-          assert manifest["features"]["u10i_wired_attach_detach_pairing_assist"] is True
-          assert manifest["features"]["u10i_existing_bt_peers_untouched"] is True
-          assert manifest["features"]["u10i_receiver_primary_km_frozen_from_u10f"] is True
-          assert manifest["features"]["u10j_pairing_mode_preserved_from_u10i"] is True
-          assert manifest["features"]["u10j_pairing_assist_on_usb_detach_only"] is True
-          assert manifest["features"]["u10j_pairing_assist_scan_type"] == "passive"
-          assert manifest["features"]["u10j_pairing_assist_ble_only_window_ms"] == 30000
-          assert manifest["features"]["u10j_u10f_usb_host_runtime_frozen"] is True
-          assert manifest["features"]["u10j_u10f_keyboard_mouse_runtime_frozen"] is True
-          assert manifest["features"]["u10j_wired_gamepad_mount_does_not_touch_bt_discovery"] is True
-          assert manifest["features"]["u10k_missing_root_attach_recovery"] is True
-          assert manifest["features"]["u10k_root_probe_period_ms"] == 250
-          assert manifest["features"]["u10k_missing_root_stable_ms"] == 2000
-          assert manifest["features"]["u10k_root_attach_retry_ms"] == 5000
-          assert manifest["features"]["u10k_synthetic_root_remove_events"] is False
-          assert manifest["features"]["u10k_root_dp_pins"] == [2, 4, 6]
-          assert manifest["features"]["u10k_usb_hub_support_frozen"] is True
-          assert manifest["features"]["u10k_pairing_mode_frozen_from_u10j"] is True
-          assert manifest["features"]["u10k_bluetooth_max_peers_frozen"] == 4
-          assert manifest["features"]["u10k_bluetooth_primary_player1_frozen"] is True
-          assert manifest["features"]["u10k_keyboard_mouse_follow_primary_frozen"] is True
-          assert manifest["features"]["u10l_pio_config_source"] == "KNOWN_WORKING_3PORT_DIAGNOSTIC"
-          assert manifest["features"]["u10l_pio_tx_num"] == 1
-          assert manifest["features"]["u10l_pio_sm_tx"] == 3
-          assert manifest["features"]["u10l_pio_dma_tx_ch"] == 9
-          assert manifest["features"]["u10l_pio_rx_num"] == 0
-          assert manifest["features"]["u10l_pio_sm_rx"] == 2
-          assert manifest["features"]["u10l_pio_sm_eop"] == 3
-          assert manifest["features"]["u10l_root_dp_pins"] == [2, 4, 6]
-          assert manifest["features"]["u10l_failed_u10k_synthetic_attach_removed"] is True
-          assert manifest["features"]["u10l_usb_hub_support_frozen"] is True
-          assert manifest["features"]["u10l_pairing_mode_frozen_from_u10j"] is True
-          assert manifest["features"]["u10l_bluetooth_max_peers_frozen"] == 4
-          assert manifest["features"]["u10l_bluetooth_primary_player1_frozen"] is True
-          assert manifest["features"]["u10l_keyboard_mouse_follow_primary_frozen"] is True
-          assert manifest["features"]["u10l_supported_gamepad_pc_output_policy"] == "XBOX360_XINPUT_ONLY"
-          assert manifest["features"]["u10l_all_supported_gamepads_normalized_to_xbox360"] is True
-          assert manifest["features"]["u10l_pc_generic_hid_gamepad_output"] is False
-          assert manifest["features"]["u10l_pc_xinput_receiver_children"] == 4
-          assert manifest["features"]["u10l_gamepad_output_policy_locked"] is True
+          assert manifest["features"]["u10f_pm1_exact_u10f_runtime_base"] is True
+          assert manifest["features"]["u10f_pm1_pairing_source"] == "U10J"
+          assert manifest["features"]["u10f_pm1_pairing_assist_on_usb_detach_only"] is True
+          assert manifest["features"]["u10f_pm1_pairing_assist_ble_only_window_ms"] == 30000
+          assert manifest["features"]["u10f_pm1_pairing_assist_scan_type"] == "passive"
+          assert manifest["features"]["u10f_pm1_existing_bluetooth_peers_preserved"] is True
+          assert manifest["features"]["u10f_pm1_pin_or_key_missing_single_bond_repair"] is True
+          assert manifest["features"]["u10f_pm1_usb_host_exact_u10f"] is True
+          assert manifest["features"]["u10f_pm1_receiver_exact_u10f"] is True
+          assert manifest["features"]["u10f_pm1_pc_gamepad_output"] == "XBOX360_XINPUT_RECEIVER"
+          assert manifest["features"]["u10f_pm1_pc_generic_hid_gamepad_output"] is False
+          assert manifest["features"]["u10f_pm1_supported_gamepads_normalized_to_xbox360"] is True
           assert manifest["verification"]["hardware_verified"] is False
           assert manifest["verification"]["hardware_verified_baseline_phase"] == "U9G"
           assert manifest["verification"]["hardware_verified_baseline_sha"] == "3fffa9484f159df6cfbeb807c3acbdf46bdbe52e"
@@ -402,26 +350,10 @@ jobs:
           assert manifest["verification"]["u10d_independent_controller_output"] == "REJECTED_HARDWARE"
           assert manifest["verification"]["u10e_true_xbox360_wireless_receiver"] == "PARTIAL_HARDWARE_VERIFIED_PRIMARY_NUMBERING_MISMATCH"
           assert manifest["verification"]["u10f_host_player1_primary_alignment"] == "HARDWARE_VERIFIED_BY_USER"
-          assert manifest["verification"]["u10g_bluetooth_recovery"] == "REJECTED_LINK_ONLY_NO_HIDS"
-          assert manifest["verification"]["u10h_bluetooth_recovery"] == "REJECTED_REBASED_TO_U10F"
-          assert manifest["verification"]["u10i_pairing_mode_recovery"] == "HARDWARE_VERIFIED_BY_USER"
-          assert manifest["verification"]["u10i_wired_pairing_assist"] == "NOT_SEPARATELY_VERIFIED"
-          assert manifest["verification"]["u10i_u10f_regression"] == "FAILED_USB_HOST_PORTS_AND_GAMEPADS"
-          assert manifest["verification"]["u10j_pairing_mode_preservation"] == "HARDWARE_VERIFIED_BY_USER"
-          assert manifest["verification"]["u10j_three_usb_root_ports"] == "FAILED_PORT3"
-          assert manifest["verification"]["u10j_wired_gamepads"] == "PARTIAL_HARDWARE"
-          assert manifest["verification"]["u10j_keyboard_mouse_all_ports"] == "PARTIAL_P1_P2_ONLY"
-          assert manifest["verification"]["u10k_pairing_mode_preservation"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10k_three_usb_root_ports"] == "FAILED_PORT3"
-          assert manifest["verification"]["u10k_usb_hub"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10k_four_bluetooth_peers"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10k_primary_and_keyboard_mouse_routing"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10l_three_usb_root_ports"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10l_usb_hub"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10l_gamepad_xinput_output_policy"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10l_pairing_mode_preservation"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10l_four_bluetooth_peers"] == "PENDING_HARDWARE"
-          assert manifest["verification"]["u10l_primary_and_keyboard_mouse_routing"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10f_pm1_u10f_runtime_regression"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10f_pm1_pairing_mode"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10f_pm1_usb_three_roots"] == "PENDING_HARDWARE"
+          assert manifest["verification"]["u10f_pm1_xbox360_output_policy"] == "PENDING_HARDWARE"
           assert manifest["dependencies"]["pico_sdk"] == "98a542c1a62fb549ffb5d66a3e5892b06276b670"
           assert manifest["dependencies"]["btstack"] == "075a0780f0fad7ff67d58ac19f46e8953656a752"
           assert manifest["dependencies"]["cyw43_driver"] == "055d64274b014dd7b1c2fc94d26e8a18face7124"
@@ -442,53 +374,17 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::8}"
 
           cp "${OAG_UF2_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10L_${SHORT_SHA}_Pico2W.uf2"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_${SHORT_SHA}_Pico2W.uf2"
 
           cp "${OAG_ELF_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10L_${SHORT_SHA}_Pico2W.elf"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_${SHORT_SHA}_Pico2W.elf"
 
           cp "${OAG_MAP_PATH}" \
-            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10L_${SHORT_SHA}_Pico2W.map"
+            "artifacts/OAG_Abo_Gemi_Ultra_Gaming_U10F_PM1_${SHORT_SHA}_Pico2W.map"
 
-          # Exact Bluetooth stock sources requested for offline safekeeping.
-          mkdir -p artifacts/bluetooth-stock
-
-          cp oag/firmware/src/bluetooth_host_v2.cpp \
-            artifacts/bluetooth-stock/bluetooth_host_v2.cpp
-          cp oag/firmware/include/oag/firmware/bluetooth_host_v2.h \
-            artifacts/bluetooth-stock/bluetooth_host_v2.h
-          cp oag/firmware/src/bluetooth_hid_parser_v2.cpp \
-            artifacts/bluetooth-stock/bluetooth_hid_parser_v2.cpp
-          cp oag/firmware/include/oag/firmware/bluetooth_hid_parser_v2.h \
-            artifacts/bluetooth-stock/bluetooth_hid_parser_v2.h
-
-          cat > artifacts/bluetooth-stock/README.txt <<EOF
-          OAG Universal Core V1 - U10L Bluetooth Stock Source
-          Exact repository commit: ${GITHUB_SHA}
-
-          bluetooth_host_v2.cpp / .h
-            Bluetooth transport, discovery, pairing, BLE/Classic HID Host,
-            persistent bonding and up-to-4 peer management.
-
-          bluetooth_hid_parser_v2.cpp / .h
-            HID descriptor/report parsing into OAG gamepad/keyboard/mouse state.
-
-          These files are packaged unchanged from the exact U10L source tree.
-          EOF
-
-          (
-            cd artifacts/bluetooth-stock
-            zip -q "../OAG_U10L_Bluetooth_Stock_${SHORT_SHA}.zip" \
-              bluetooth_host_v2.cpp \
-              bluetooth_host_v2.h \
-              bluetooth_hid_parser_v2.cpp \
-              bluetooth_hid_parser_v2.h \
-              README.txt
-          )
-
-      - name: Upload U10L firmware bundle
+      - name: Upload U10F-PM1 firmware bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-Abo-Gemi-Ultra-Gaming-U10L-${{ github.sha }}
+          name: OAG-Abo-Gemi-Ultra-Gaming-U10F-PM1-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
