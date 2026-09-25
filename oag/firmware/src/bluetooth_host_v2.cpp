@@ -12,6 +12,8 @@
 #include "btstack_tlv.h"
 #include "ble/gatt-service/hids_host.h"
 #include "ble/gatt-service/hids_device.h"
+#include "ble/gatt-service/battery_service_server.h"
+#include "ble/gatt-service/device_information_service_server.h"
 
 #include "oag/input/gamepad_state.h"
 #include "oag_ble_gamepad.h"
@@ -232,7 +234,7 @@ void setPlatformDiagnosticAdvertising(
     std::snprintf(
         name,
         sizeof(name),
-        "OAGP4 S%u E%02X R%02X",
+        "OAGP5 S%u E%02X R%02X",
         static_cast<unsigned>(stage),
         static_cast<unsigned>(status),
         static_cast<unsigned>(reason)
@@ -402,7 +404,28 @@ bool BluetoothHostV2::initialize(
         )
     );
 
-    // BT-OUT1 peripheral: same BTstack instance, separate HIDS Device role.
+    // BT-OUT1-P5 peripheral: mirror BTstack's official HOG setup.
+    // HOGP HID Device requires Battery Service + Device Information Service
+    // in addition to HID Service. Windows tolerated the reduced profile,
+    // while Android rejected it; keep the services local to the platform
+    // peripheral ATT server and leave all input-host paths untouched.
+    battery_service_server_init(100);
+    device_information_service_server_init();
+    device_information_service_server_set_manufacturer_name("OAG");
+    device_information_service_server_set_model_number("Universal Pad");
+    device_information_service_server_set_firmware_revision(
+        "U10F-PM1-L1-BT-OUT1-P5"
+    );
+    // PnP ID characteristic is mandatory for HOGP Device Information.
+    // Use an unassigned prototype USB-IF vendor/product pair rather than
+    // impersonating any third-party controller vendor.
+    device_information_service_server_set_pnp_id(
+        2,
+        0x0000,
+        0x0000,
+        0x0100
+    );
+
     hids_device_init(
         0,
         kPlatformHidDescriptor,
