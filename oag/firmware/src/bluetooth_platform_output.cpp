@@ -470,6 +470,16 @@ void BluetoothPlatformOutput::handleHciPacket(
                 canSendPending_ = false;
                 reportDirty_ = true;
 
+                // G2: Android-compatible Just Works Secure Connections.
+                // This policy is activated only while a central owns our
+                // peripheral/output link. Background controller discovery is
+                // already paused for this interval, so new input-peer pairing
+                // continues to use the TRUE GOLDEN Bonding-only policy.
+                sm_set_authentication_requirements(
+                    SM_AUTHREQ_BONDING |
+                    SM_AUTHREQ_SECURE_CONNECTION
+                );
+
                 if (host_ != nullptr) {
                     host_->setPlatformOutputLinkActive(true);
                 }
@@ -490,6 +500,12 @@ void BluetoothPlatformOutput::handleHciPacket(
             inputSubscribed_ = false;
             canSendPending_ = false;
             reportDirty_ = true;
+
+            // Restore the exact TRUE GOLDEN security policy before controller
+            // discovery resumes.
+            sm_set_authentication_requirements(
+                SM_AUTHREQ_BONDING
+            );
 
             if (host_ != nullptr) {
                 host_->setPlatformOutputLinkActive(false);
