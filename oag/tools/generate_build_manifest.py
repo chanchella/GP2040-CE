@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI2-PC-XINPUT",
+    "phase": "U10F-PM1-UI3-RAZER-EASYSMX-INPUT",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -208,6 +208,15 @@ manifest = {
         "usb_hid_descriptor_buffer_bytes_per_device": 1024,
         "input_support_model": "PROTOCOL_FAMILY_PLUS_DESCRIPTOR_PLUS_QUIRK",
         "input_device_coverage_goal": "1000_PLUS_DEVICE_VARIANTS",
+        "razer_xbox_family_input_profiles": True,
+        "razer_wolverine_v3_pro_1532_0a3f": True,
+        "razer_wolverine_v3_tournament_1532_0a43": True,
+        "razer_wolverine_v2_1532_0a29": True,
+        "razer_wildcat_1532_0a03": True,
+        "razer_atrox_1532_0a00": True,
+        "easysmx_x15_receiver_1a34_f517": True,
+        "easysmx_legacy_receiver_2f24_0091": True,
+        "easysmx_generic_hid_bluetooth_fallback": True,
         "pc_generic_hid_profile_runtime": False,
         "android_generic_hid_profile_runtime": False,
         "ios_generic_hid_profile_foundation": True,
@@ -273,6 +282,7 @@ manifest = {
         "u10f_pm1_pc_hid2_universal_map": "HARDWARE_ENUMERATION_VERIFIED_MAPPING_PENDING",
         "u10f_pm1_ui1_universal_input": "HARDWARE_ENUMERATION_VERIFIED_INPUT_EXPANSION_PENDING",
         "u10f_pm1_ui2_pc_xinput": "PENDING_HARDWARE",
+        "u10f_pm1_ui3_razer_easysmx_input": "PENDING_HARDWARE",
     },
 }
 

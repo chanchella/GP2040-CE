@@ -24,6 +24,13 @@ enum class UsbDeviceProfile : std::uint8_t {
     SonyDualShock3,
     SonyDualShock4,
     SonyDualSense,
+    RazerAtrox,
+    RazerWildcat,
+    RazerWolverineV2,
+    RazerWolverineV3Pro,
+    RazerWolverineV3Tournament,
+    EasySmxX15Receiver,
+    EasySmxLegacy2f240091,
     AogUniversalHid2,
 };
 

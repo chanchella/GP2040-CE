@@ -86,6 +86,51 @@ int main() {
     assert(aog.profile == UsbDeviceProfile::AogUniversalHid2);
     assert(aog.hasQuirk(UsbQuirkModernButtonLayout));
 
+
+    const UsbDeviceClassification razerV3Pro = classifier.classify({
+        0x1532, 0x0A3F, 0xFF, 0x47, 0xD0, 2
+    });
+    assert(razerV3Pro.protocol == ProtocolKind::XgipXboxOne);
+    assert(razerV3Pro.driver == UsbDriverFamily::Xinput);
+    assert(
+        razerV3Pro.profile ==
+        UsbDeviceProfile::RazerWolverineV3Pro
+    );
+
+    const UsbDeviceClassification razerV3Tournament = classifier.classify({
+        0x1532, 0x0A43, 0xFF, 0x47, 0xD0, 2
+    });
+    assert(
+        razerV3Tournament.profile ==
+        UsbDeviceProfile::RazerWolverineV3Tournament
+    );
+
+    const UsbDeviceClassification easySmxX15 = classifier.classify({
+        0x1A34, 0xF517, 0xFF, 0x00, 0x00, 2
+    });
+    assert(easySmxX15.protocol == ProtocolKind::XusbXbox360);
+    assert(easySmxX15.driver == UsbDriverFamily::Xinput);
+    assert(
+        easySmxX15.profile ==
+        UsbDeviceProfile::EasySmxX15Receiver
+    );
+    assert(easySmxX15.hasQuirk(UsbQuirkXusbStartupOut));
+
+    const UsbDeviceClassification easySmxLegacy = classifier.classify({
+        0x2F24, 0x0091, 0xFF, 0x00, 0x00, 2
+    });
+    assert(easySmxLegacy.protocol == ProtocolKind::XusbXbox360);
+    assert(
+        easySmxLegacy.profile ==
+        UsbDeviceProfile::EasySmxLegacy2f240091
+    );
+
+    // Do not steal non-gameplay composite interfaces from Razer devices.
+    const UsbDeviceClassification razerVendorAux = classifier.classify({
+        0x1532, 0x0A3F, 0xFF, 0x00, 0x00, 1
+    });
+    assert(!razerVendorAux.recognized);
+
     XgipInputDriver parser;
     UniversalGamepadState state {};
 
