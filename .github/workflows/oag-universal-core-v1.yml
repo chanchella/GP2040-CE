@@ -59,7 +59,7 @@ jobs:
 
           # BT-OUT1 exact runtime identities.
           test "$(git hash-object oag/firmware/include/oag/firmware/bluetooth_host_v2.h)" = "272dea2861596dd4fc135e192c3e2be49bc08922"
-          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "309d6f6090f93db61f5a1d74dd030abea1a4f4b4"
+          test "$(git hash-object oag/firmware/src/bluetooth_host_v2.cpp)" = "3f5252273563242a18f3dd57512a44f52f7712c2"
           test "$(git hash-object oag/firmware/src/main.cpp)" = "7810fa18237b9e5ae9525b6fe8fb9e27fce38925"
           test "$(git hash-object oag/firmware/CMakeLists.txt)" = "df8cd047895715c262b1b0320a4cd86a537e9880"
           test "$(git hash-object oag/firmware/oag_ble_gamepad.gatt)" = "4480925ad1488ec054733b78a856f993e8935f97"
@@ -114,6 +114,7 @@ jobs:
           assert "HIDS_SUBEVENT_INPUT_REPORT_ENABLE" in bt
           assert "hids_device_send_input_report_for_id(" in bt
           assert "role == HCI_ROLE_SLAVE" in bt
+          assert "BT-OUT1-P1: do not force SMP immediately" in bt
 
           main = Path("oag/firmware/src/main.cpp").read_text()
           assert "submitBluetoothPlatformGamepad(" in main
@@ -438,7 +439,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          STOCK_SOURCE_SHA="a9dd844ed3360549811279e6af528d39e2efb7ce"
+          STOCK_SOURCE_SHA="e72053ced2222a6b79dc8dd0709efb8c439f895e"
           STOCK_SHORT="${STOCK_SOURCE_SHA::8}"
           STOCK_NAME="OAG_U10F_PM1_L1_BT_OUT1_FULL_PROJECT_${STOCK_SHORT}"
           STOCK_PARENT="${GITHUB_WORKSPACE}/stock"
