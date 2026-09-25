@@ -18,6 +18,7 @@
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/pc_native_km_output.h"
 #include "oag/firmware/usb_pio_host.h"
+#include "oag/firmware/target_usb_persona.h"
 #include "oag/firmware/xinput_host.h"
 #include "oag/input/gamepad_state.h"
 #include "oag/input/keyboard_state.h"
@@ -80,6 +81,10 @@ public:
             return false;
         }
 
+        oag::firmware::setTargetUsbPersona(
+            oag::firmware::TargetUsbPersona::NativeKeyboardMouse
+        );
+
         if (!tud_init(0)) {
             return false;
         }
@@ -114,6 +119,7 @@ public:
         serviceXgipInit();
         servicePrimaryControllerChords();
         serviceKeyboardMouseModeToggle();
+        serviceUsbPersonaReenumeration();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
         servicePlatformFeedback();
@@ -1114,7 +1120,10 @@ private:
     static constexpr std::uint64_t kMouseAimHoldUs = 10000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
-    static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 3000000ull;
+    static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
+    static constexpr std::uint64_t kUsbPersonaDisconnectUs = 120000ull;
+    static constexpr std::uint64_t kUsbPersonaResubmitIntervalUs = 100000ull;
+    static constexpr std::uint8_t kUsbPersonaResubmitCount = 20;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
 
@@ -1714,6 +1723,10 @@ private:
             bluetoothRumbleRetryNotBeforeUs_[i] = 0;
         }
 
+        submitAllPcOutputs();
+    }
+
+    void submitAllPcOutputs() {
         sendComposedOutput();
 
         for (std::size_t pcSlot = 0;
@@ -1847,9 +1860,15 @@ private:
 
     void serviceKeyboardMouseModeToggle() {
         const oag::KeyboardState keyboard = combinedKeyboard();
-        const bool chordDown =
-            keyboard.pressed(kModeToggleF4Usage) &&
-            keyboard.pressed(kModeToggleF5Usage);
+        const bool f4Down = keyboard.pressed(kModeToggleF4Usage);
+        const bool f5Down = keyboard.pressed(kModeToggleF5Usage);
+        const bool chordDown = f4Down && f5Down;
+
+        if (keyboardMouseModeSuppressChordUntilRelease_) {
+            if (!f4Down && !f5Down) {
+                keyboardMouseModeSuppressChordUntilRelease_ = false;
+            }
+        }
 
         if (!chordDown) {
             keyboardMouseModeChordStartedUs_ = 0;
@@ -1878,17 +1897,84 @@ private:
                 : KeyboardMouseOutputMode::Native;
 
         keyboardMouseModeChordLatched_ = true;
+        keyboardMouseModeSuppressChordUntilRelease_ = true;
         currentMouseMotion_ = {};
         currentNativeWheel_ = 0;
         currentNativePan_ = 0;
         mouseAimActive_ = false;
         mouseAimExpiresUs_ = 0;
 
-        if (keyboardMouseMode_ == KeyboardMouseOutputMode::Controller) {
-            nativeKmOutput_.releaseAll();
+        nativeKmOutput_.releaseAll();
+
+        const oag::firmware::TargetUsbPersona nextPersona =
+            keyboardMouseMode_ == KeyboardMouseOutputMode::Native
+                ? oag::firmware::TargetUsbPersona::NativeKeyboardMouse
+                : oag::firmware::TargetUsbPersona::Xbox360Receiver;
+
+        requestUsbPersona(nextPersona);
+    }
+
+    void requestUsbPersona(
+        oag::firmware::TargetUsbPersona persona
+    ) {
+        const std::uint64_t nowUs = time_us_64();
+
+        if (
+            !usbPersonaReconnectPending_ &&
+            oag::firmware::targetUsbPersona() == persona
+        ) {
+            return;
         }
 
-        sendComposedOutput();
+        nativeKmOutput_.releaseAll();
+        nativeKmOutput_.task(nowUs);
+
+        tud_disconnect();
+        oag::firmware::setTargetUsbPersona(persona);
+
+        usbPersonaReconnectPending_ = true;
+        usbPersonaReconnectNotBeforeUs_ =
+            nowUs + kUsbPersonaDisconnectUs;
+        usbPersonaResubmitRemaining_ = 0;
+    }
+
+    void serviceUsbPersonaReenumeration() {
+        const std::uint64_t nowUs = time_us_64();
+
+        if (usbPersonaReconnectPending_) {
+            if (nowUs < usbPersonaReconnectNotBeforeUs_) {
+                return;
+            }
+
+            tud_connect();
+            usbPersonaReconnectPending_ = false;
+
+            if (
+                oag::firmware::targetUsbPersona() ==
+                oag::firmware::TargetUsbPersona::Xbox360Receiver
+            ) {
+                usbPersonaResubmitRemaining_ =
+                    kUsbPersonaResubmitCount;
+                usbPersonaNextResubmitUs_ =
+                    nowUs + kUsbPersonaResubmitIntervalUs;
+            }
+
+            return;
+        }
+
+        if (
+            usbPersonaResubmitRemaining_ == 0 ||
+            nowUs < usbPersonaNextResubmitUs_ ||
+            !tud_mounted()
+        ) {
+            return;
+        }
+
+        submitAllPcOutputs();
+
+        --usbPersonaResubmitRemaining_;
+        usbPersonaNextResubmitUs_ =
+            nowUs + kUsbPersonaResubmitIntervalUs;
     }
 
     void serviceNativeKeyboardMouseOutput() {
@@ -1903,10 +1989,13 @@ private:
         oag::KeyboardState keyboard = combinedKeyboard();
         oag::MouseState mouse = combinedMouse();
 
-        // Never expose the reserved F4+F5 chord to the target host.
+        // Never expose the reserved F4/F5 system chord or its release tail.
         if (
-            keyboard.pressed(kModeToggleF4Usage) &&
-            keyboard.pressed(kModeToggleF5Usage)
+            keyboardMouseModeSuppressChordUntilRelease_ ||
+            (
+                keyboard.pressed(kModeToggleF4Usage) &&
+                keyboard.pressed(kModeToggleF5Usage)
+            )
         ) {
             keyboard.setPressed(kModeToggleF4Usage, false);
             keyboard.setPressed(kModeToggleF5Usage, false);
@@ -2168,6 +2257,12 @@ private:
         KeyboardMouseOutputMode::Native;
     std::uint64_t keyboardMouseModeChordStartedUs_ = 0;
     bool keyboardMouseModeChordLatched_ = false;
+    bool keyboardMouseModeSuppressChordUntilRelease_ = false;
+
+    bool usbPersonaReconnectPending_ = false;
+    std::uint64_t usbPersonaReconnectNotBeforeUs_ = 0;
+    std::uint64_t usbPersonaNextResubmitUs_ = 0;
+    std::uint8_t usbPersonaResubmitRemaining_ = 0;
 
     std::int16_t currentNativeWheel_ = 0;
     std::int16_t currentNativePan_ = 0;
