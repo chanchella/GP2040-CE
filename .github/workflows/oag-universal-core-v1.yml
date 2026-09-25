@@ -275,7 +275,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
-          assert manifest["phase"] == "U10F-PM1"
+          assert manifest["phase"] == "U10F-PM1-L1-BT-OUT1"
           assert manifest["features"]["usb_hub_host"] is True
           assert manifest["features"]["wired_xgip_input"] is True
           assert manifest["features"]["xgip_host_init_sequence"] is True
@@ -307,14 +307,20 @@ jobs:
           assert manifest["features"]["keyboard_mouse_runtime_gamepad"] is True
           assert manifest["features"]["bluetooth"] is True
           assert manifest["features"]["bluetooth_host_v2"] is True
-          assert manifest["features"]["bluetooth_host_only"] is True
-          assert manifest["features"]["bluetooth_peripheral_output"] is False
+          assert manifest["features"]["bluetooth_host_only"] is False
+          assert manifest["features"]["bluetooth_peripheral_output"] is True
           assert manifest["features"]["bluetooth_max_simultaneous_peers"] == 4
           assert manifest["features"]["bluetooth_ble_hid_host"] is True
           assert manifest["features"]["bluetooth_classic_hid_host"] is True
           assert manifest["features"]["bluetooth_gamepad_input"] is True
           assert manifest["features"]["bluetooth_keyboard_input"] is True
           assert manifest["features"]["bluetooth_mouse_input"] is True
+          assert manifest["features"]["bluetooth_platform_ble_hid_gamepad"] is True
+          assert manifest["features"]["bluetooth_platform_primary_mirror"] is True
+          assert manifest["features"]["bluetooth_platform_output_connections"] == 1
+          assert manifest["features"]["bluetooth_platform_gamepad_appearance"] == "0x03C4"
+          assert manifest["features"]["bluetooth_platform_rumble"] is False
+          assert manifest["features"]["bluetooth_dual_role_central_peripheral"] is True
           assert manifest["features"]["bluetooth_g2e3_transport_sequence"] is True
           assert manifest["features"]["bluetooth_init_after_usb_host_ms"] == 100
           assert manifest["features"]["bluetooth_historical_hidmaster_compatibility"] is True
@@ -326,7 +332,7 @@ jobs:
           assert manifest["features"]["bluetooth_deferred_connect_outside_adv_callback"] is True
           assert manifest["features"]["bluetooth_u9c_bond_reset_version"] == 2
           assert manifest["features"]["bluetooth_u9d_exact_stack_generation"] is True
-          assert manifest["features"]["bluetooth_hids_api"] == "hids_host"
+          assert manifest["features"]["bluetooth_hids_api"] == "hids_host+hids_device"
           assert manifest["features"]["bluetooth_sdk_23_migration"] is True
           assert manifest["features"]["bluetooth_u9d_bond_reset_version"] == 3
           assert manifest["features"]["bluetooth_u9e_live_hid_report_dispatch_fix"] is True
@@ -383,8 +389,9 @@ jobs:
           assert manifest["features"]["u10f_pm1_pc_generic_hid_gamepad_output"] is False
           assert manifest["features"]["u10f_pm1_supported_gamepads_normalized_to_xbox360"] is True
           assert manifest["verification"]["hardware_verified"] is False
-          assert manifest["verification"]["hardware_verified_baseline_phase"] == "U9G"
-          assert manifest["verification"]["hardware_verified_baseline_sha"] == "3fffa9484f159df6cfbeb807c3acbdf46bdbe52e"
+          assert manifest["verification"]["hardware_verified_baseline_phase"] == "U10F-PM1-L1 TRUE GOLDEN"
+          assert manifest["verification"]["hardware_verified_baseline_sha"] == "59182f30c2028f77c059666d6473487d90a82b64"
+          assert manifest["verification"]["bt_out1_ble_platform_output"] == "PENDING_HARDWARE"
           assert manifest["verification"]["u9f_simultaneous_wired_bluetooth_regression"] == "HARDWARE_VERIFIED"
           assert manifest["verification"]["u9g_xbox_ble_guide_rumble"] == "HARDWARE_VERIFIED"
           assert manifest["verification"]["u10a_single_bluetooth_primary_plus_wired_gamepad_keyboard_mouse"] == "HARDWARE_VERIFIED"
