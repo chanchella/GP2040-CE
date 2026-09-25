@@ -144,9 +144,6 @@ GenericHidButtonLayout resolveButtonLayout(
     bool hasAccelerator = false;
     bool hasBrake = false;
 
-    const GenericHidButtonLayout buttonLayout =
-        resolveButtonLayout(descriptor, quirks);
-
     for (std::uint8_t i = 0; i < descriptor.fieldCount; ++i) {
         const HidGamepadField& field = descriptor.fields[i];
         if (!field.used) continue;
@@ -587,6 +584,9 @@ bool GenericHidGamepadDriver::parseReport(
 
     bool hasAccelerator = false;
     bool hasBrake = false;
+
+    const GenericHidButtonLayout buttonLayout =
+        resolveButtonLayout(descriptor, quirks);
 
     std::int32_t acceleratorValue = 0;
     std::int32_t acceleratorMin = 0;
