@@ -14,7 +14,7 @@
 namespace {
 
 constexpr std::uint16_t kReceiverVid = 0xCAFE;
-constexpr std::uint16_t kReceiverPid = 0x4016;
+constexpr std::uint16_t kReceiverPid = 0x4017;
 constexpr std::uint8_t kMsOsVendorCode = 0x90;
 constexpr std::size_t kOutputSlots =
     oag::firmware::PcXinputDevice::kOutputSlots;
@@ -46,24 +46,29 @@ const std::uint8_t kMouseReportDescriptor[] = {
 const std::uint8_t kDeviceDescriptor[] = {
     0x12, 0x01,
     0x00, 0x02,
-    0x00, 0x00, 0x00,
+    0xEF, 0x02, 0x01,
     0x08,
     0xFE, 0xCA,
-    0x16, 0x40,
+    0x17, 0x40,
     0x00, 0x01,
     0x01, 0x02, 0x03,
     0x01,
 };
 
 const std::uint8_t kConfigurationDescriptor[] = {
-    // Xbox receiver core = 321 bytes. Two standard HID interfaces add
-    // 25 bytes each, giving 371 bytes total (0x0173).
-    0x09, 0x02, 0x73, 0x01,
+    // Xbox receiver core = 321 bytes. One 8-byte IAD plus two standard
+    // HID interfaces (25 bytes each) gives 379 bytes total (0x017B).
+    0x09, 0x02, 0x7B, 0x01,
     0x0A,
     0x01,
     0x00,
     0xA0,
     0x82, // 260 mA
+
+    // Windows composite function collection: interfaces 0..7 together form
+    // one XUSB wireless receiver function. The IAD must immediately precede
+    // the first interface in the collection.
+    0x08, 0x0B, 0x00, 0x08, 0xFF, 0x5D, 0x81, 0x00,
 
     // Controller 1 — interface 0 — EP 81 / 01
     0x09, 0x04, 0x00, 0x00, 0x02, 0xFF, 0x5D, 0x81, 0x00,
@@ -150,7 +155,7 @@ const std::uint8_t kConfigurationDescriptor[] = {
 
 static_assert(sizeof(kDeviceDescriptor) == 18);
 static_assert(kOutputSlots == 4);
-static_assert(sizeof(kConfigurationDescriptor) == 0x0173);
+static_assert(sizeof(kConfigurationDescriptor) == 0x017B);
 
 alignas(2) const std::uint8_t kMsOsStringDescriptor[] = {
     0x12, 0x03,
@@ -172,7 +177,7 @@ const std::uint8_t kExtendedCompatIdDescriptor[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 
     0x00,
-    0x08,
+    0x01,
     0x58, 0x55, 0x53, 0x42, 0x32, 0x30, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
