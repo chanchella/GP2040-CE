@@ -32,7 +32,7 @@ jobs:
       - name: Verify TRUE GOLDEN plus clean G1 Bluetooth output delta
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           U10F_BASELINE="7799d270d98ae09e7608f05b15f687a20a459871"
           U10J_PAIRING="52f727530a2e1d17199ff939b69446745f131c65"
           U10F_PM1_RUNTIME="64195844e28ded0126d3965594705585a31d469d"
