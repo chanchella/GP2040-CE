@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui5g-win-xusb20-km-composite-2s-policy-and-tests:
+  ui5h-xusb20-iad-4pad-km-2s-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -68,7 +68,7 @@ jobs:
             'oag/include/oag/mapping/native_km_combo_engine.h' \
             'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI5G_WIN_XUSB20_KM_COMPOSITE_2S_RUNTIME_DIFF ==="
+          echo "=== UI5H_XUSB20_IAD_4PAD_KM_2S_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -122,8 +122,10 @@ jobs:
 
           assert "AOG Abo Gemi ultra gaming" in desc
           assert "kReceiverVid = 0xCAFE" in desc
-          assert "kReceiverPid = 0x4016" in desc
-          assert "0x00, 0x00, 0x00" in desc
+          assert "kReceiverPid = 0x4017" in desc
+          assert "0xEF, 0x02, 0x01" in desc
+          assert "0x08, 0x0B, 0x00, 0x08, 0xFF, 0x5D, 0x81, 0x00" in desc
+          assert "sizeof(kConfigurationDescriptor) == 0x017B" in desc
           assert "0xFF, 0x5D, 0x81" in desc
           assert "0xFF, 0x5D, 0x82" in desc
           assert "TUD_HID_REPORT_DESC_KEYBOARD" in desc
@@ -134,6 +136,7 @@ jobs:
           assert "kMsOsVendorCode = 0x90" in desc
           assert "0x58, 0x55, 0x53, 0x42, 0x32, 0x30" in desc
           assert "sizeof(kExtendedCompatIdDescriptor) == 0x28" in desc
+          assert "0x00,\n    0x01,\n    0x58, 0x55, 0x53, 0x42, 0x32, 0x30" in desc
           assert "handleWindowsXusb20CompatIdRequest" in desc
 
           assert "sendPresence" in xdev
@@ -176,7 +179,7 @@ jobs:
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5G_WIN_XUSB20_KM_COMPOSITE_2S_POLICY=PASS")
+          print("UI5H_XUSB20_IAD_4PAD_KM_2S_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -201,8 +204,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui5g-win-xusb20-km-composite-2s:
-    needs: ui5g-win-xusb20-km-composite-2s-policy-and-tests
+  firmware-ui5h-xusb20-iad-4pad-km-2s:
+    needs: ui5h-xusb20-iad-4pad-km-2s-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -277,7 +280,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5G-WIN-XUSB20-KM-COMPOSITE-2S"
+          assert manifest["phase"] == "U10F-PM1-UI5H-XUSB20-IAD-4PAD-KM-2S"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -306,9 +309,12 @@ jobs:
           assert f["pc_native_hid_interfaces"] == 2
           assert f["windows_usb_parent_composite"] is True
           assert f["windows_usb_vid"] == "CAFE"
-          assert f["windows_usb_pid"] == "4016"
+          assert f["windows_usb_pid"] == "4017"
           assert f["windows_xusb20_compatible_id"] is True
           assert f["windows_xusb20_receiver_interfaces"] == 8
+          assert f["windows_xusb20_iad_grouped"] is True
+          assert f["windows_xusb20_iad_interface_count"] == 8
+          assert f["windows_ms_os_function_reserved_byte"] == 1
           assert f["windows_hid_interfaces"] == 2
           assert f["windows_usb_mode_switch_reenumerates"] is False
           assert f["native_km_combo_engine"] is True
@@ -333,18 +339,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5G_WIN_XUSB20_KM_COMPOSITE_2S=PASS")
+          print("BUILD_MANIFEST_UI5H_XUSB20_IAD_4PAD_KM_2S=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5G-WIN-XUSB20-KM-COMPOSITE-2S_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5G-WIN-XUSB20-KM-COMPOSITE-2S_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5G-WIN-XUSB20-KM-COMPOSITE-2S_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5G-WIN-XUSB20-KM-COMPOSITE-2S_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5H-XUSB20-IAD-4PAD-KM-2S_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5H-XUSB20-IAD-4PAD-KM-2S_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5H-XUSB20-IAD-4PAD-KM-2S_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5H-XUSB20-IAD-4PAD-KM-2S_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5G Windows XUSB20 K/M composite candidate bundle
+      - name: Upload UI5H XUSB20 IAD four-pad K/M candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5G-WIN-XUSB20-KM-COMPOSITE-2S-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5H-XUSB20-IAD-4PAD-KM-2S-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
