@@ -15,7 +15,7 @@
 #include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
-#include "oag/firmware/pc_hid_platform_driver.h"
+#include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
 #include "oag/input/gamepad_state.h"
@@ -1561,7 +1561,7 @@ private:
     void rebuildPcOutputRouting() {
         std::array<
             std::optional<oag::LogicalSlotId>,
-            oag::firmware::PcHidPlatformDriver::kOutputSlots
+            oag::firmware::PcXinputDevice::kOutputSlots
         > nextRoutes {};
 
         if (hostPrimaryOutputSlot_ >= nextRoutes.size()) {
@@ -2021,11 +2021,11 @@ private:
     oag::GenericHidGamepadDriver genericHid_;
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
-    oag::firmware::PcHidPlatformDriver platformOutput_;
+    oag::firmware::PcXinputPlatformDriver platformOutput_;
 
     std::array<
         std::optional<oag::LogicalSlotId>,
-        oag::firmware::PcHidPlatformDriver::kOutputSlots
+        oag::firmware::PcXinputDevice::kOutputSlots
     > pcOutputRoutes_ {};
 
     oag::DeviceId primaryBluetoothGamepad_ {};
@@ -2149,22 +2149,22 @@ private:
 
     std::array<
         std::uint8_t,
-        oag::firmware::PcHidPlatformDriver::kOutputSlots
+        oag::firmware::PcXinputDevice::kOutputSlots
     > xgipRumbleSequence_ {1, 1, 1, 1};
 
     std::array<
         oag::RumbleCommand,
-        oag::firmware::PcHidPlatformDriver::kOutputSlots
+        oag::firmware::PcXinputDevice::kOutputSlots
     > pendingRumble_ {};
 
     std::array<
         bool,
-        oag::firmware::PcHidPlatformDriver::kOutputSlots
+        oag::firmware::PcXinputDevice::kOutputSlots
     > pendingRumbleValid_ {};
 
     std::array<
         std::uint64_t,
-        oag::firmware::PcHidPlatformDriver::kOutputSlots
+        oag::firmware::PcXinputDevice::kOutputSlots
     > bluetoothRumbleRetryNotBeforeUs_ {};
 };
 
