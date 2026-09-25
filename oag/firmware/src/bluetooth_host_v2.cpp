@@ -10,6 +10,7 @@
 
 #include "btstack.h"
 #include "btstack_tlv.h"
+#include "hci_dump.h"
 #include "ble/gatt-service/hids_host.h"
 #include "ble/gatt-service/hids_device.h"
 #include "ble/gatt-service/battery_service_server.h"
@@ -178,6 +179,67 @@ std::uint8_t gPlatformDiagStage = 0;
 std::uint8_t gPlatformDiagStatus = 0;
 std::uint8_t gPlatformDiagReason = 0;
 bool gPlatformSecurityComplete = false;
+std::uint8_t gLastOutgoingSmpOpcode = 0;
+std::uint8_t gLastIncomingSmpOpcode = 0;
+std::uint16_t gLastOutgoingSmpHandle = HCI_CON_HANDLE_INVALID;
+std::uint16_t gLastIncomingSmpHandle = HCI_CON_HANDLE_INVALID;
+
+void oagHciDumpReset() {}
+
+void oagHciDumpLogMessage(
+    int logLevel,
+    const char* format,
+    va_list args
+) {
+    (void)logLevel;
+    (void)format;
+    (void)args;
+}
+
+void oagHciDumpLogPacket(
+    std::uint8_t packetType,
+    std::uint8_t incoming,
+    std::uint8_t* packet,
+    std::uint16_t length
+) {
+    if (
+        packetType != HCI_ACL_DATA_PACKET ||
+        packet == nullptr ||
+        length < 9
+    ) {
+        return;
+    }
+
+    // ACL header (4) + L2CAP length (2) + CID (2) + SMP opcode (1).
+    // SMP over LE uses fixed CID 0x0006. Pairing PDUs are tiny and fit in
+    // a single ACL start fragment, so the first payload byte is the opcode.
+    const std::uint16_t cid =
+        little_endian_read_16(packet, 6);
+
+    if (cid != L2CAP_CID_SECURITY_MANAGER_PROTOCOL) {
+        return;
+    }
+
+    const std::uint16_t handle =
+        static_cast<std::uint16_t>(
+            little_endian_read_16(packet, 0) & 0x0FFFu
+        );
+    const std::uint8_t opcode = packet[8];
+
+    if (incoming != 0) {
+        gLastIncomingSmpOpcode = opcode;
+        gLastIncomingSmpHandle = handle;
+    } else {
+        gLastOutgoingSmpOpcode = opcode;
+        gLastOutgoingSmpHandle = handle;
+    }
+}
+
+const hci_dump_t gOagSmpTraceDump = {
+    &oagHciDumpReset,
+    &oagHciDumpLogPacket,
+    &oagHciDumpLogMessage
+};
 
 void buildPlatformAdvertisingName(const char* name) {
     const std::size_t maxNameLength = 18;
@@ -234,10 +296,12 @@ void setPlatformDiagnosticAdvertising(
     std::snprintf(
         name,
         sizeof(name),
-        "OAGP5 S%u E%02X R%02X",
+        "P6S%uE%02XR%02XO%02XI%02X",
         static_cast<unsigned>(stage),
         static_cast<unsigned>(status),
-        static_cast<unsigned>(reason)
+        static_cast<unsigned>(reason),
+        static_cast<unsigned>(gLastOutgoingSmpOpcode),
+        static_cast<unsigned>(gLastIncomingSmpOpcode)
     );
 
     buildPlatformAdvertisingName(name);
@@ -363,6 +427,13 @@ bool BluetoothHostV2::initialize(
 
     observer_ = &observer;
     gBluetoothHostV2 = this;
+
+    // P6 diagnostic only: trace raw HCI ACL packets so a failed SMP exchange
+    // can expose the exact last outgoing/incoming SMP opcodes. This logger is
+    // passive and does not alter packets, connection state, USB/XInput, or
+    // controller input behavior.
+    hci_dump_init(&gOagSmpTraceDump);
+    hci_dump_enable_packet_log(true);
 
     l2cap_init();
     sm_init();
@@ -1909,6 +1980,10 @@ void BluetoothHostV2::handlePacket(
                     gPlatformDiagStatus = 0;
                     gPlatformDiagReason = 0;
                     gPlatformSecurityComplete = false;
+                    gLastOutgoingSmpOpcode = 0;
+                    gLastIncomingSmpOpcode = 0;
+                    gLastOutgoingSmpHandle = connectionHandle;
+                    gLastIncomingSmpHandle = connectionHandle;
 
                     // BT-OUT1-P3: quiesce controller discovery only while the
                     // platform link completes SMP/HOGP security setup. The
