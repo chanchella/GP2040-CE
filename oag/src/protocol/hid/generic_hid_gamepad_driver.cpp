@@ -12,6 +12,7 @@ namespace {
 constexpr std::uint16_t kUsagePageGenericDesktop = 0x01;
 constexpr std::uint16_t kUsagePageSimulation = 0x02;
 constexpr std::uint16_t kUsagePageButton = 0x09;
+constexpr std::uint16_t kUsagePageConsumer = 0x0C;
 
 constexpr std::uint16_t kUsageJoystick = 0x04;
 constexpr std::uint16_t kUsageGamepad = 0x05;
@@ -24,9 +25,15 @@ constexpr std::uint16_t kUsageRx = 0x33;
 constexpr std::uint16_t kUsageRy = 0x34;
 constexpr std::uint16_t kUsageRz = 0x35;
 constexpr std::uint16_t kUsageHat = 0x39;
+constexpr std::uint16_t kUsageDpadUp = 0x90;
+constexpr std::uint16_t kUsageDpadDown = 0x91;
+constexpr std::uint16_t kUsageDpadRight = 0x92;
+constexpr std::uint16_t kUsageDpadLeft = 0x93;
 
 constexpr std::uint16_t kUsageAccelerator = 0xC4;
 constexpr std::uint16_t kUsageBrake = 0xC5;
+constexpr std::uint16_t kUsageConsumerRecord = 0x00B2;
+constexpr std::uint16_t kUsageConsumerHome = 0x0223;
 
 constexpr std::size_t kMaxLocalUsages = 32;
 constexpr std::size_t kGlobalStackDepth = 4;
@@ -120,6 +127,50 @@ bool gamepadUsage(
             usage == kUsageGamepad ||
             usage == kUsageMultiAxis
         );
+}
+
+GenericHidButtonLayout resolveButtonLayout(
+    const GenericHidGamepadDescriptor& descriptor,
+    const GenericHidGamepadQuirks& quirks
+) {
+    if (quirks.buttonLayout != GenericHidButtonLayout::Auto) {
+        return quirks.buttonLayout;
+    }
+
+    bool hasRx = false;
+    bool hasRy = false;
+    bool hasUnsignedZ = false;
+    bool hasUnsignedRz = false;
+    bool hasAccelerator = false;
+    bool hasBrake = false;
+
+    const GenericHidButtonLayout buttonLayout =
+        resolveButtonLayout(descriptor, quirks);
+
+    for (std::uint8_t i = 0; i < descriptor.fieldCount; ++i) {
+        const HidGamepadField& field = descriptor.fields[i];
+        if (!field.used) continue;
+
+        if (field.usagePage == kUsagePageGenericDesktop) {
+            if (field.usage == kUsageRx) hasRx = true;
+            else if (field.usage == kUsageRy) hasRy = true;
+            else if (field.usage == kUsageZ) hasUnsignedZ = field.logicalMin >= 0;
+            else if (field.usage == kUsageRz) hasUnsignedRz = field.logicalMin >= 0;
+        } else if (field.usagePage == kUsagePageSimulation) {
+            hasAccelerator = hasAccelerator || field.usage == kUsageAccelerator;
+            hasBrake = hasBrake || field.usage == kUsageBrake;
+        }
+    }
+
+    if (
+        hasAccelerator ||
+        hasBrake ||
+        (hasRx && hasRy && hasUnsignedZ && hasUnsignedRz)
+    ) {
+        return GenericHidButtonLayout::ModernCanonical;
+    }
+
+    return GenericHidButtonLayout::LegacyDirectInput;
 }
 
 } // namespace
@@ -566,7 +617,12 @@ bool GenericHidGamepadDriver::parseReport(
             signedFieldValue(field, raw);
 
         if (field.usagePage == kUsagePageButton) {
-            applyButton(next, field.usage, value != 0);
+            applyButton(
+                next,
+                buttonLayout,
+                field.usage,
+                value != 0
+            );
             continue;
         }
 
@@ -588,6 +644,18 @@ bool GenericHidGamepadDriver::parseReport(
 
                 default:
                     break;
+            }
+            continue;
+        }
+
+        if (field.usagePage == kUsagePageConsumer) {
+            if (value != 0 && field.usage == kUsageConsumerHome) {
+                next.buttons |= ButtonGuide;
+            } else if (
+                value != 0 &&
+                field.usage == kUsageConsumerRecord
+            ) {
+                next.buttons |= ButtonShare;
             }
             continue;
         }
@@ -653,6 +721,19 @@ bool GenericHidGamepadDriver::parseReport(
                     field.logicalMin,
                     field.logicalMax
                 );
+                break;
+
+            case kUsageDpadUp:
+                if (value != 0) next.dpad |= static_cast<std::uint8_t>(DpadBits::Up);
+                break;
+            case kUsageDpadDown:
+                if (value != 0) next.dpad |= static_cast<std::uint8_t>(DpadBits::Down);
+                break;
+            case kUsageDpadRight:
+                if (value != 0) next.dpad |= static_cast<std::uint8_t>(DpadBits::Right);
+                break;
+            case kUsageDpadLeft:
+                if (value != 0) next.dpad |= static_cast<std::uint8_t>(DpadBits::Left);
                 break;
 
             default:
@@ -913,57 +994,66 @@ std::uint8_t GenericHidGamepadDriver::hatToDpad(
 
 void GenericHidGamepadDriver::applyButton(
     UniversalGamepadState& state,
+    GenericHidButtonLayout layout,
     std::uint16_t usage,
     bool pressed
 ) {
-    if (!pressed) {
+    if (!pressed) return;
+
+    if (layout == GenericHidButtonLayout::SonyPlayStation) {
+        switch (usage) {
+            case 1: state.buttons |= ButtonWest; break;
+            case 2: state.buttons |= ButtonSouth; break;
+            case 3: state.buttons |= ButtonEast; break;
+            case 4: state.buttons |= ButtonNorth; break;
+            case 5: state.buttons |= ButtonLeftBumper; break;
+            case 6: state.buttons |= ButtonRightBumper; break;
+            case 7: state.leftTrigger = std::numeric_limits<std::uint32_t>::max(); break;
+            case 8: state.rightTrigger = std::numeric_limits<std::uint32_t>::max(); break;
+            case 9: state.buttons |= ButtonBack; break;
+            case 10: state.buttons |= ButtonStart; break;
+            case 11: state.buttons |= ButtonLeftStick; break;
+            case 12: state.buttons |= ButtonRightStick; break;
+            case 13: state.buttons |= ButtonGuide; break;
+            case 14: state.buttons |= ButtonShare; break;
+            default: break;
+        }
         return;
     }
 
     switch (usage) {
-        case 1:
-            state.buttons |= ButtonSouth;
-            break;
-        case 2:
-            state.buttons |= ButtonEast;
-            break;
-        case 3:
-            state.buttons |= ButtonWest;
-            break;
-        case 4:
-            state.buttons |= ButtonNorth;
-            break;
-        case 5:
-            state.buttons |= ButtonLeftBumper;
-            break;
-        case 6:
-            state.buttons |= ButtonRightBumper;
-            break;
-        case 7:
-            state.leftTrigger =
-                std::numeric_limits<std::uint32_t>::max();
-            break;
-        case 8:
-            state.rightTrigger =
-                std::numeric_limits<std::uint32_t>::max();
-            break;
-        case 9:
-            state.buttons |= ButtonBack;
-            break;
-        case 10:
-            state.buttons |= ButtonStart;
-            break;
-        case 11:
-            state.buttons |= ButtonLeftStick;
-            break;
-        case 12:
-            state.buttons |= ButtonRightStick;
-            break;
-        case 13:
-            state.buttons |= ButtonGuide;
-            break;
-        default:
-            break;
+        case 1: state.buttons |= ButtonSouth; return;
+        case 2: state.buttons |= ButtonEast; return;
+        case 3: state.buttons |= ButtonWest; return;
+        case 4: state.buttons |= ButtonNorth; return;
+        case 5: state.buttons |= ButtonLeftBumper; return;
+        case 6: state.buttons |= ButtonRightBumper; return;
+        default: break;
+    }
+
+    if (layout == GenericHidButtonLayout::ModernCanonical) {
+        switch (usage) {
+            case 7: state.buttons |= ButtonBack; break;
+            case 8: state.buttons |= ButtonStart; break;
+            case 9: state.buttons |= ButtonLeftStick; break;
+            case 10: state.buttons |= ButtonRightStick; break;
+            case 11: state.buttons |= ButtonGuide; break;
+            case 12: state.buttons |= ButtonShare; break;
+            default: break;
+        }
+        return;
+    }
+
+    switch (usage) {
+        case 7: state.leftTrigger = std::numeric_limits<std::uint32_t>::max(); break;
+        case 8: state.rightTrigger = std::numeric_limits<std::uint32_t>::max(); break;
+        case 9: state.buttons |= ButtonBack; break;
+        case 10: state.buttons |= ButtonStart; break;
+        case 11: state.buttons |= ButtonLeftStick; break;
+        case 12: state.buttons |= ButtonRightStick; break;
+        case 13: state.buttons |= ButtonGuide; break;
+        case 14: state.buttons |= ButtonShare; break;
+        default: break;
     }
 }
 

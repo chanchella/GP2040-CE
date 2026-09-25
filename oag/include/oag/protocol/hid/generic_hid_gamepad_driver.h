@@ -32,9 +32,18 @@ struct GenericHidGamepadDescriptor {
     std::array<HidGamepadField, kMaxFields> fields {};
 };
 
+enum class GenericHidButtonLayout : std::uint8_t {
+    Auto = 0,
+    LegacyDirectInput,
+    ModernCanonical,
+    SonyPlayStation,
+};
+
 struct GenericHidGamepadQuirks {
     bool forceGamepad = false;
     bool zRzAsRightStick = false;
+    GenericHidButtonLayout buttonLayout =
+        GenericHidButtonLayout::Auto;
 };
 
 class GenericHidGamepadDriver {
@@ -94,6 +103,7 @@ private:
 
     static void applyButton(
         UniversalGamepadState& state,
+        GenericHidButtonLayout layout,
         std::uint16_t usage,
         bool pressed
     );

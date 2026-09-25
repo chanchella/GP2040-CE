@@ -1,20 +1,17 @@
 #pragma once
 
 #include <cstdint>
-
 #include "oag/device/device_registry.h"
 
 namespace oag {
 
-enum class UsbDriverFamily : std::uint8_t {
-    Unknown = 0,
-    Hid,
-    Xinput,
-};
+enum class UsbDriverFamily : std::uint8_t { Unknown = 0, Hid, Xinput };
 
 enum class UsbDeviceProfile : std::uint8_t {
     Unknown = 0,
     GenericHidGamepad,
+    GenericHidKeyboard,
+    GenericHidMouse,
     GenericXusb,
     GenericXgip,
     Xusb045e028e,
@@ -24,6 +21,10 @@ enum class UsbDeviceProfile : std::uint8_t {
     Shanwan20bc5500,
     XboxOneS045e02ea,
     XboxOneSpectra24c6542a,
+    SonyDualShock3,
+    SonyDualShock4,
+    SonyDualSense,
+    AogUniversalHid2,
 };
 
 enum UsbInputQuirk : std::uint32_t {
@@ -32,6 +33,8 @@ enum UsbInputQuirk : std::uint32_t {
     UsbQuirkZRzAsRightStick = 1u << 1,
     UsbQuirkXusbStartupOut = 1u << 2,
     UsbQuirkSkipSetIdle = 1u << 3,
+    UsbQuirkModernButtonLayout = 1u << 4,
+    UsbQuirkSonyButtonLayout = 1u << 5,
 };
 
 struct UsbDeviceProbe {
@@ -57,9 +60,7 @@ struct UsbDeviceClassification {
 
 class UsbDeviceClassifier {
 public:
-    UsbDeviceClassification classify(
-        const UsbDeviceProbe& probe
-    ) const;
+    UsbDeviceClassification classify(const UsbDeviceProbe& probe) const;
 };
 
 } // namespace oag
