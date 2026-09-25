@@ -160,8 +160,8 @@ int main() {
     assert((output.buttons & ButtonLeftBumper) != 0);
     assert((output.buttons & ButtonRightBumper) != 0);
 
-    // UI4D 60%-launch curve: one mouse count should land very close to
-    // 60% right-stick travel.
+    // UI4E full-scale profile: one mouse count must reach 100%
+    // right-stick travel.
     output = mapper.apply(
         nullptr,
         &mouse,
@@ -175,8 +175,7 @@ int main() {
             std::numeric_limits<std::int32_t>::max()
         );
 
-    assert(oneCount > (fullScale * 59) / 100);  // > 59%
-    assert(oneCount < (fullScale * 61) / 100);  // < 61%
+    assert(oneCount == fullScale);  // 100%
 
     return 0;
 }
