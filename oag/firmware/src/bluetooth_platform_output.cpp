@@ -661,9 +661,12 @@ void BluetoothPlatformOutput::handleHciPacket(
             canSendPending_ = false;
             reportDirty_ = true;
 
-            // Restore the exact UI5K host security policy before controller
-            // discovery resumes.
+            // OUT8 keeps the shared stack in the same Secure Connections +
+            // Bonding policy that the hardware-proven standalone JoystickBLE
+            // uses. Do not downgrade after the phone disconnects, otherwise a
+            // later HOGP CCCD subscription can fall back to the old UI5K policy.
             sm_set_authentication_requirements(
+                SM_AUTHREQ_SECURE_CONNECTION |
                 SM_AUTHREQ_BONDING
             );
 
