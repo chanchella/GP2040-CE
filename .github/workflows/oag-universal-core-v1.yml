@@ -114,8 +114,8 @@ jobs:
           assert '#include "oag_ble_platform.h"' in host
           assert "att_server_init(\n        profile_data," in host
           assert "if (role == HCI_ROLE_SLAVE)" in host
-          assert "platformOutputLinkActive_ ||" in host
-          assert "!platformOutputLinkActive_ &&" in host
+          assert "inputDiscoveryUnlocked_ &&" in host
+          assert "!inputDiscoveryUnlocked_" in host
 
           # BLE HOG output, advertising, pairing, and report format.
           assert "hids_device_init_with_storage(" in out
