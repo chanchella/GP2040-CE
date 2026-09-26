@@ -1118,16 +1118,22 @@ private:
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
 
-    // UI5K-C1 eFootball experiment.
+    // UI5K-C3 eFootball experiment.
     // PlayStation labels:
     //   Hold Square (Xbox X / ButtonWest) for 1 second -> activate.
-    //   While active: hold L2 (Xbox LT) at 100% and pulse Cross
-    //   (Xbox A / ButtonSouth) for 100 ms, then release it for 750 ms
-    //   before the next pulse.
-    //   Releasing Square ends the combo immediately.
+    //   While active, L2 (Xbox LT) stays at 100% and the sequence repeats:
+    //     Cross 200 ms -> wait 750 ms -> Square 200 ms -> wait 1250 ms.
+    //   Releasing the physical Square trigger ends the combo immediately.
     static constexpr std::uint64_t kSquareHoldComboActivationUs = 1000000ull;
-    static constexpr std::uint64_t kSquareHoldComboPulsePeriodUs = 850000ull;
-    static constexpr std::uint64_t kSquareHoldComboPulseOnUs = 100000ull;
+    static constexpr std::uint64_t kSquareHoldComboCrossPulseUs = 200000ull;
+    static constexpr std::uint64_t kSquareHoldComboWaitAfterCrossUs = 750000ull;
+    static constexpr std::uint64_t kSquareHoldComboSquarePulseUs = 200000ull;
+    static constexpr std::uint64_t kSquareHoldComboWaitAfterSquareUs = 1250000ull;
+    static constexpr std::uint64_t kSquareHoldComboCycleUs =
+        kSquareHoldComboCrossPulseUs +
+        kSquareHoldComboWaitAfterCrossUs +
+        kSquareHoldComboSquarePulseUs +
+        kSquareHoldComboWaitAfterSquareUs;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
 
@@ -1764,7 +1770,7 @@ private:
 
         squareHoldComboStartedUs_[slot] = 0;
         squareHoldComboActive_[slot] = false;
-        squareHoldComboPulseOn_[slot] = false;
+        squareHoldComboPhase_[slot] = 0xFF;
     }
 
     void serviceSquareHoldCombo() {
@@ -1809,7 +1815,7 @@ private:
                 }
 
                 squareHoldComboActive_[i] = true;
-                squareHoldComboPulseOn_[i] = true;
+                squareHoldComboPhase_[i] = 0;
                 sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
                 continue;
             }
@@ -1819,15 +1825,33 @@ private:
                 squareHoldComboStartedUs_[i] -
                 kSquareHoldComboActivationUs;
 
-            const bool pulseOn =
-                (activeForUs % kSquareHoldComboPulsePeriodUs) <
-                kSquareHoldComboPulseOnUs;
+            const std::uint64_t cyclePositionUs =
+                activeForUs % kSquareHoldComboCycleUs;
 
-            if (pulseOn == squareHoldComboPulseOn_[i]) {
+            std::uint8_t phase = 3;
+
+            if (cyclePositionUs < kSquareHoldComboCrossPulseUs) {
+                phase = 0;
+            } else if (
+                cyclePositionUs <
+                kSquareHoldComboCrossPulseUs +
+                kSquareHoldComboWaitAfterCrossUs
+            ) {
+                phase = 1;
+            } else if (
+                cyclePositionUs <
+                kSquareHoldComboCrossPulseUs +
+                kSquareHoldComboWaitAfterCrossUs +
+                kSquareHoldComboSquarePulseUs
+            ) {
+                phase = 2;
+            }
+
+            if (phase == squareHoldComboPhase_[i]) {
                 continue;
             }
 
-            squareHoldComboPulseOn_[i] = pulseOn;
+            squareHoldComboPhase_[i] = phase;
             sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
         }
     }
@@ -1846,13 +1870,18 @@ private:
             return output;
         }
 
-        // Square is the trigger while the combo is active, so suppress its
-        // continuous passthrough. L2 stays fully held and Cross is pulsed.
-        output.buttons &= ~static_cast<std::uint64_t>(oag::ButtonWest);
+        // The physical Square is only the hold trigger once the combo is
+        // active. Suppress continuous Square/Cross passthrough, keep L2 fully
+        // held, then synthesize the requested Cross/Square pulse phases.
+        output.buttons &= ~static_cast<std::uint64_t>(
+            oag::ButtonWest | oag::ButtonSouth
+        );
         output.leftTrigger = std::numeric_limits<std::uint32_t>::max();
 
-        if (squareHoldComboPulseOn_[slot]) {
+        if (squareHoldComboPhase_[slot] == 0) {
             output.buttons |= oag::ButtonSouth;
+        } else if (squareHoldComboPhase_[slot] == 2) {
+            output.buttons |= oag::ButtonWest;
         }
 
         return output;
@@ -2326,9 +2355,12 @@ private:
     > squareHoldComboActive_ {};
 
     std::array<
-        bool,
+        std::uint8_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > squareHoldComboPulseOn_ {};
+    > squareHoldComboPhase_ {
+        0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF,
+    };
 
     std::array<
         oag::UniversalGamepadState,
