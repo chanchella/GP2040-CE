@@ -23,7 +23,10 @@
 #endif
 
 #if defined(ENABLE_CLASSIC) && defined(ENABLE_BLE)
-#define ENABLE_CROSS_TRANSPORT_KEY_DERIVATION
+// UI5K-BT-OUT1 keeps Classic + BLE dual-mode input support, but does not
+// negotiate CTKD/CT2 for the generic BLE HID peripheral persona. This matches
+// the hardware-working G2 donor and avoids Android pairing failures caused by
+// unsupported cross-transport key derivation commands.
 #endif
 
 #define HCI_OUTGOING_PRE_BUFFER_SIZE 4
