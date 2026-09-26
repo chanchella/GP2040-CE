@@ -116,7 +116,12 @@ bool BluetoothHostV2::initialize(
         IO_CAPABILITY_NO_INPUT_NO_OUTPUT
     );
 
+    // OUT8: match the hardware-proven Arduino-Pico JoystickBLE security
+    // lifecycle before HCI power-on. The HOGP Input Report CCCD requires an
+    // encrypted 16-byte key; start the shared SM in Secure Connections +
+    // Bonding mode rather than upgrading policy only after the phone connects.
     sm_set_authentication_requirements(
+        SM_AUTHREQ_SECURE_CONNECTION |
         SM_AUTHREQ_BONDING
     );
 
