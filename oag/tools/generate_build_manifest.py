@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5K-C1-EFOOTBALL-SQHOLD-L2-CROSS2HZ",
+    "phase": "U10F-PM1-UI5K-C2-EFOOTBALL-SQHOLD-L2-CROSS750",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -256,8 +256,9 @@ manifest = {
         "gamepad_square_hold_combo_held_xbox": "LT",
         "gamepad_square_hold_combo_pulse_ps": "CROSS",
         "gamepad_square_hold_combo_pulse_xbox": "A",
-        "gamepad_square_hold_combo_pulse_hz": 2,
         "gamepad_square_hold_combo_pulse_on_ms": 100,
+        "gamepad_square_hold_combo_pulse_off_ms": 750,
+        "gamepad_square_hold_combo_pulse_period_ms": 850,
         "gamepad_square_hold_combo_square_passthrough_before_activation": True,
         "gamepad_square_hold_combo_square_suppressed_while_active": True,
         "gamepad_square_hold_combo_all_slots": True,
@@ -342,7 +343,8 @@ manifest = {
         "u10f_pm1_ui5g_win_xusb20_km_composite_2s": "PARTIAL_HARDWARE_NATIVE_KM_AND_BT_CONTROLLER_WORKING_OTHER_CONTROLLERS_NOT_VISIBLE_BY_USER",
         "u10f_pm1_ui5j_win_xusb20_iad8_km_composite_2s": "REJECTED_HARDWARE_NO_CONTROLLERS_NO_KEYBOARD_NO_MOUSE_BY_USER",
         "u10f_pm1_ui5k_win_xusb20_4func_km_composite_2s": "HARDWARE_VERIFIED_BY_USER_MULTI_CONTROLLER_NATIVE_KM_AND_F4_F5_MODE_SWITCH",
-        "u10f_pm1_ui5k_c1_efootball_sqhold_l2_cross2hz": "PENDING_HARDWARE",
+        "u10f_pm1_ui5k_c1_efootball_sqhold_l2_cross2hz": "HARDWARE_VERIFIED_BY_USER_COMBO_WORKING",
+        "u10f_pm1_ui5k_c2_efootball_sqhold_l2_cross750": "PENDING_HARDWARE",
     },
 }
 
