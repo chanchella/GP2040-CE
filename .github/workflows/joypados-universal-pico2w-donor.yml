@@ -1,0 +1,111 @@
+name: Build Exact JoypadOS Universal Pico2W Donor
+
+on:
+  push:
+    branches:
+      - chatgpt/joypados-universal-pico2w-donor
+    paths:
+      - '.github/workflows/joypados-universal-pico2w-donor.yml'
+      - 'oag/JOYD_DONOR_TRIGGER.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-donor:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout wrapper
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y             gcc-arm-none-eabi             libnewlib-arm-none-eabi             cmake             ninja-build             make             python3             git
+
+      - name: Clone exact JoypadOS source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/joypad-ai/joypad-os.git joypad-os
+          cd joypad-os
+          git checkout 969c232c4e3332e6df6af524b001e1d65613f6bc
+          test "$(git rev-parse HEAD)" = "969c232c4e3332e6df6af524b001e1d65613f6bc"
+
+      - name: Initialize exact upstream dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd joypad-os
+          make init
+          test "$(git -C src/lib/pico-sdk describe --tags --exact-match)" = "2.2.0"
+          test "$(git -C src/lib/tinyusb describe --tags --exact-match)" = "0.19.0"
+
+      - name: Verify donor target contract
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd joypad-os
+          grep -F 'APP_universal_pico2_w := pico2_w universal universal_pico2_w JoyWing BLE/USB' Makefile
+          grep -F 'REQUIRE_BLE_OUTPUT=1' src/CMakeLists.txt
+          grep -F 'REQUIRE_BT_INPUT=1' src/CMakeLists.txt
+          grep -F 'BTSTACK_USE_CYW43=1' src/CMakeLists.txt
+          grep -F 'CONFIG_BT_HOST=1' src/CMakeLists.txt
+          grep -F 'pico_btstack_make_gatt_header(joypad_universal PRIVATE' src/CMakeLists.txt
+
+      - name: Build exact universal_pico2_w donor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd joypad-os
+          make universal_pico2_w JOBS=2
+
+      - name: Collect donor artifact
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts
+
+          UF2="$(find joypad-os/release -maxdepth 1 -type f -name '*universal_pico2_w*.uf2' | head -n 1)"
+          if [ -z "$UF2" ]; then
+            UF2="$(find joypad-os/src/build -maxdepth 1 -type f -name 'joypad_universal.uf2' | head -n 1)"
+          fi
+
+          test -n "$UF2"
+          test -f "$UF2"
+
+          cp "$UF2" artifacts/JOYPADOS_UNIVERSAL_PICO2W_969c232c.uf2
+          sha256sum artifacts/JOYPADOS_UNIVERSAL_PICO2W_969c232c.uf2 | tee artifacts/SHA256SUMS.txt
+
+          cat > artifacts/PROVENANCE.txt <<'EOF'
+Source: https://github.com/joypad-ai/joypad-os
+Pinned source commit: 969c232c4e3332e6df6af524b001e1d65613f6bc
+Upstream target: universal_pico2_w
+CMake target: joypad_universal
+Board: Raspberry Pi Pico 2 W
+Compile contract:
+  REQUIRE_BLE_OUTPUT=1
+  REQUIRE_BT_INPUT=1
+  BTSTACK_USE_CYW43=1
+  CONFIG_BT_HOST=1
+Purpose:
+  Independent proof that one Pico 2 W can run Bluetooth controller input
+  and BLE HID gamepad output in the same upstream runtime before any OAG merge.
+License: upstream project license applies.
+EOF
+
+          arm-none-eabi-size joypad-os/src/build/joypad_universal.elf | tee artifacts/SIZE.txt || true
+          ls -lh artifacts
+
+      - name: Upload exact donor
+        uses: actions/upload-artifact@v4
+        with:
+          name: JOYPADOS-UNIVERSAL-PICO2W-DONOR-969c232c
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
