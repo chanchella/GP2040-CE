@@ -11,6 +11,7 @@
 #include "ble/gatt-service/device_information_service_server.h"
 #include "ble/gatt-service/hids_device.h"
 
+#include "oag_ble_platform.h"
 #include "oag/firmware/bluetooth_host_v2.h"
 #include "oag/input/gamepad_state.h"
 
@@ -304,76 +305,103 @@ void platformGetReportThunk(
 
 namespace oag::firmware {
 
-bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
+bool BluetoothPlatformOutput::initializeStandalone() {
     if (initialized_) {
         return true;
     }
 
-    host_ = &host;
+    // OUT13 diagnostic: BluetoothPlatformOutput owns the complete Bluetooth
+    // lifecycle. BluetoothHostV2 is not initialized at all. This mirrors the
+    // hardware-proven Arduino-Pico JoystickBLE startup order inside UI5K while
+    // leaving USB/PIO/XInput/KM untouched.
+    if (cyw43_arch_init() != PICO_OK) {
+        return false;
+    }
+
+    host_ = nullptr;
     gBluetoothPlatformOutput = this;
 
-    // Arduino-Pico's BLE HID implementation serializes BTstack access through
-    // the CYW43 async_context. UI5K already powered HCI in BluetoothHostV2, so
-    // all peripheral service registration below must be protected from the
-    // background BTstack worker.
-    BtstackContextLock btLock;
+    {
+        BtstackContextLock btLock;
 
-    // Important: do NOT call l2cap_init(), sm_init(), cyw43_arch_init(), or
-    // hci_power_control() here. UI5K BluetoothHostV2 owns the stack.
-    // Keep its proven global SM policy (Bonding + NoInputNoOutput) unchanged.
+        l2cap_init();
 
-    battery_service_server_init(100);
+        sm_init();
+        sm_set_io_capabilities(
+            IO_CAPABILITY_NO_INPUT_NO_OUTPUT
+        );
+        sm_set_authentication_requirements(
+            SM_AUTHREQ_SECURE_CONNECTION |
+            SM_AUTHREQ_BONDING
+        );
 
-    device_information_service_server_init();
-    device_information_service_server_set_manufacturer_name("OAG");
-    device_information_service_server_set_model_number("Universal Pad");
-    device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT"
-    );
-    // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
-    // Source 0x02 = USB Implementer's Forum.
-    device_information_service_server_set_pnp_id(
-        0x02,
-        0xCAFE,
-        0x4016,
-        0x0100
-    );
+        att_server_init(
+            profile_data,
+            nullptr,
+            nullptr
+        );
 
-    gap_set_local_name("OAG Universal Pad");
+        battery_service_server_init(100);
 
-    hids_device_init_with_storage(
-        0,
-        kHidDescriptor,
-        sizeof(kHidDescriptor),
-        2,
-        gHidReportStorage
-    );
+        device_information_service_server_init();
+        device_information_service_server_set_manufacturer_name("OAG");
+        device_information_service_server_set_model_number("Universal Pad");
+        device_information_service_server_set_firmware_revision(
+            "U10F-PM1-UI5K-BT-OUT13-STANDALONE-OWNER"
+        );
+        device_information_service_server_set_pnp_id(
+            0x02,
+            0xCAFE,
+            0x4016,
+            0x0100
+        );
 
-    // Match PicoBluetoothBLEHID: no get-report callback is registered for the
-    // joystick-only probe. Android only needs the encrypted CCCD + notify path.
-    hids_device_register_packet_handler(
-        platformHidsThunk
-    );
+        gap_set_local_name("OAG Universal Pad");
 
-    gPlatformHciRegistration.callback = &platformHciThunk;
-    hci_add_event_handler(
-        &gPlatformHciRegistration
-    );
+        hids_device_init_with_storage(
+            0,
+            kHidDescriptor,
+            sizeof(kHidDescriptor),
+            2,
+            gHidReportStorage
+        );
 
-    gPlatformSmRegistration.callback = &platformSmThunk;
-    sm_add_event_handler(
-        &gPlatformSmRegistration
-    );
+        hids_device_register_packet_handler(
+            platformHidsThunk
+        );
 
-    initialized_ = true;
+        gPlatformHciRegistration.callback = &platformHciThunk;
+        hci_add_event_handler(
+            &gPlatformHciRegistration
+        );
 
-    // BluetoothHostV2 powers HCI before this peripheral layer is registered.
-    // Usually HCI_STATE_WORKING arrives asynchronously afterwards, but do not
-    // leave advertising dependent on that timing. If the controller is already
-    // working, enter the exact same advertising path immediately.
-    hciWorking_ = hci_get_state() == HCI_STATE_WORKING;
-    if (hciWorking_) {
-        startAdvertising();
+        gPlatformSmRegistration.callback = &platformSmThunk;
+        sm_add_event_handler(
+            &gPlatformSmRegistration
+        );
+
+        // Match PicoBluetoothBLEHID: configure/enable advertising before
+        // powering HCI. The controller applies it once HCI reaches WORKING.
+        bd_addr_t nullAddress {};
+        gap_advertisements_set_params(
+            0x0030,
+            0x0030,
+            0,
+            0,
+            nullAddress,
+            0x07,
+            0x00
+        );
+        gap_advertisements_set_data(
+            sizeof(kAdvertisingData),
+            const_cast<std::uint8_t*>(kAdvertisingData)
+        );
+        (void)gap_advertisements_enable(1);
+
+        initialized_ = true;
+        hciWorking_ = false;
+
+        hci_power_control(HCI_POWER_ON);
     }
 
     return true;
@@ -640,8 +668,9 @@ void BluetoothPlatformOutput::handleHciPacket(
                 btstack_event_state_get_state(packet) ==
                 HCI_STATE_WORKING
             ) {
+                // OUT13 advertising was configured/enabled before HCI power-on,
+                // matching the hardware-proven Arduino-Pico lifecycle.
                 hciWorking_ = true;
-                startAdvertising();
             }
             break;
 
