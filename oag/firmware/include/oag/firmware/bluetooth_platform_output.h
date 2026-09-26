@@ -44,6 +44,11 @@ public:
         std::uint16_t size
     );
 
+    void copyCurrentInputReport(
+        std::uint8_t* out,
+        std::uint16_t maxSize
+    ) const;
+
 private:
     static constexpr std::uint16_t kInvalidHandle = 0xFFFFu;
     static constexpr std::uint8_t kInputReportId = 1u;
@@ -64,7 +69,7 @@ private:
     std::uint8_t peerAddressType_ = 0;
     std::array<std::uint8_t, 6> peerAddress_ {};
 
-    std::array<std::uint8_t, 13> report_ {};
+    std::array<std::uint8_t, 15> report_ {};
 };
 
 } // namespace oag::firmware
