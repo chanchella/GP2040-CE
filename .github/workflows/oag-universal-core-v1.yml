@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - chatgpt/oag-universal-core-v1
-      - chatgpt/ui5k-bt-out12-arduino-att
+      - chatgpt/ui5k-bt-out13-standalone-owner
     paths:
       - 'oag/**'
       - '.github/workflows/oag-universal-core-v1.yml'
@@ -27,11 +27,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-bt-out12-arduino-att"
+          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-bt-out13-standalone-owner"
           UI5K_BASE="01af260742a6a402a851cceef0707ae69bd6a301"
           git merge-base --is-ancestor "${UI5K_BASE}" HEAD
 
-      - name: Verify UI5K-BT-OUT12-ARDUINO-ATT minimal runtime delta
+      - name: Verify UI5K-BT-OUT13-STANDALONE-OWNER minimal runtime delta
         shell: bash
         run: |
           set -euo pipefail
@@ -57,7 +57,7 @@ jobs:
             'oag/firmware/src/bluetooth_platform_output.cpp' \
             'oag/firmware/src/main.cpp' | sort)"
 
-          echo "=== UI5K_BT_OUT12_ARDUINO_ATT_RUNTIME_DIFF ==="
+          echo "=== UI5K_BT_OUT13_STANDALONE_OWNER_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -98,24 +98,19 @@ jobs:
           assert "sizeof(kConfigurationDescriptor) == 0x0173" in desc
           assert "sizeof(kExtendedCompatIdDescriptor) == 0x70" in desc
 
-          # New backend is isolated over the existing UI5K BTstack owner.
+          # OUT13: UI5K keeps the BLE output backend, but BluetoothHostV2 is
+          # removed from runtime initialization entirely.
           assert '#include "oag/firmware/bluetooth_platform_output.h"' in main
           assert "BluetoothPlatformOutput bluetoothPlatformOutput_" in main
-          assert "bluetoothPlatformOutput_.initialize(" in main
+          assert "bluetoothPlatformOutput_.initializeStandalone()" in main
+          assert "bluetoothHost_.initialize(*this)" not in main
+          assert "bluetoothHost_.startController()" not in main
+          assert "bluetoothHost_.poll();" not in main
           assert "bluetoothPlatformOutput_.poll()" in main
           assert "bluetoothPlatformOutput_.submit(primary)" in main
           assert "bluetoothPlatformOutput_.submit(output)" in main
           assert "src/bluetooth_platform_output.cpp" in cmake
           assert "pico_btstack_make_gatt_header(" in cmake
-
-          # Host + Peripheral coexistence contract.
-          assert "setPlatformOutputLinkActive(bool active)" in host_h
-          assert "platformOutputLinkActive_ = false" in host_h
-          assert '#include "oag_ble_platform.h"' in host
-          assert "att_server_init(\n        profile_data," in host
-          assert "if (role == HCI_ROLE_SLAVE)" in host
-          assert "inputDiscoveryUnlocked_ &&" in host
-          assert "!inputDiscoveryUnlocked_" in host
 
           # BLE HOG output, advertising, pairing, and report format.
           assert "hids_device_init_with_storage(" in out
@@ -141,11 +136,15 @@ jobs:
               "oag/firmware/include/oag/firmware/bluetooth_platform_output.h"
           ).read_text()
 
-          # Peripheral backend must not own/reinitialize the Bluetooth stack.
-          assert "\n    l2cap_init();" not in out
-          assert "\n    sm_init();" not in out
-          assert "\n    cyw43_arch_init(" not in out
-          assert "\n    hci_power_control(" not in out
+          # OUT13 deliberately makes the BLE output backend the sole BTstack
+          # owner, mirroring the hardware-proven standalone Arduino-Pico path.
+          assert "cyw43_arch_init()" in out
+          assert "\n        l2cap_init();" in out
+          assert "\n        sm_init();" in out
+          assert "att_server_init(" in out
+          assert "profile_data" in out
+          assert "hci_power_control(HCI_POWER_ON);" in out
+          assert out.index("gap_advertisements_enable(1)") < out.index("hci_power_control(HCI_POWER_ON);")
 
           # G2 Android compatibility rule.
           assert "#define ENABLE_LE_SECURE_CONNECTIONS" in bt_cfg
@@ -178,21 +177,10 @@ jobs:
           assert "storeLe16(probe, 0, 32767);" in out
           host = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
           main = Path("oag/firmware/src/main.cpp").read_text()
-          assert "bool BluetoothHostV2::startController()" in host
-          assert "unlockInputDiscoveryAfterPlatformSubscription()" in host
-          assert "inputDiscoveryUnlocked_ = false;" in host
-          assert "Bluetooth Input Host is disabled for output isolation." in host
-          assert "Classic HID Host and BLE HIDS Host intentionally NOT initialized." in host
-          assert "gatt_client_init();" not in host
-          assert "hid_host_init(" not in host
-          assert "hids_host_init(" not in host
-          assert "SM_AUTHREQ_SECURE_CONNECTION |" in host
-          assert "SM_AUTHREQ_BONDING" in host
-          assert "hci_power_control(HCI_POWER_ON);" in host
-          assert host.index("initialized_ = true;") < host.index("bool BluetoothHostV2::startController()")
-          assert "bluetoothPlatformOutput_.initialize(" in main
-          assert "bluetoothHost_.startController()" in main
-          assert main.index("bluetoothPlatformOutput_.initialize(") < main.index("bluetoothHost_.startController()")
+          assert "bluetoothPlatformOutput_.initializeStandalone()" in main
+          assert "bluetoothHost_.initialize(*this)" not in main
+          assert "bluetoothHost_.startController()" not in main
+          assert "bluetoothHost_.poll();" not in main
           assert "0x29, 0x20" in out
 
           # Existing Bluetooth input path invariants remain present.
@@ -201,7 +189,7 @@ jobs:
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5K_BT_OUT12_ARDUINO_ATT_MINIMAL_DELTA=PASS")
+          print("UI5K_BT_OUT13_STANDALONE_OWNER_MINIMAL_DELTA=PASS")
           print("UI5K_USB_XINPUT_KM_PROTECTED=PASS")
           print("BT_HOST_PLUS_BLE_PERIPHERAL_ARCH=PASS")
           PY
@@ -303,7 +291,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT"
+          assert manifest["phase"] == "U10F-PM1-UI5K-BT-OUT13-STANDALONE-OWNER"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -391,24 +379,29 @@ jobs:
           assert f["bluetooth_peripheral_get_report_callback"] is False
           assert f["bluetooth_peripheral_boot_characteristics_present"] is True
           assert f["bluetooth_peripheral_feature_report_characteristic_present"] is True
+          assert f["bluetooth_runtime_owner"] == "BLUETOOTH_PLATFORM_OUTPUT_STANDALONE"
+          assert f["bluetooth_host_v2_runtime_initialized"] is False
+          assert f["bluetooth_platform_output_owns_cyw43_init"] is True
+          assert f["bluetooth_platform_output_owns_l2cap_sm_att_hci"] is True
+          assert f["bluetooth_advertising_configured_before_hci_power_on"] is True
           assert f["bluetooth_ctkd"] is False
           assert f["usb_root_ports"] == 3
           assert f["usb_hub_host"] is True
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5K_BT_OUT12_ARDUINO_ATT=PASS")
+          print("BUILD_MANIFEST_UI5K_BT_OUT13_STANDALONE_OWNER=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT13-STANDALONE-OWNER_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT13-STANDALONE-OWNER_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT13-STANDALONE-OWNER_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5K-BT-OUT13-STANDALONE-OWNER_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K-BT-OUT12-ARDUINO-ATT Android BLE gamepad candidate bundle
+      - name: Upload UI5K-BT-OUT13-STANDALONE-OWNER Android BLE gamepad candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5K-BT-OUT13-STANDALONE-OWNER-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
