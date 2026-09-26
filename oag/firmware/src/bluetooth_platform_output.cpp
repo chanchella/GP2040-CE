@@ -328,7 +328,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT8-SECURE-PREPOWER"
+        "U10F-PM1-UI5K-BT-OUT9-SELFTEST-LIVE"
     );
     // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
     // Source 0x02 = USB Implementer's Forum.
@@ -380,6 +380,8 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
 }
 
 void BluetoothPlatformOutput::poll() {
+    serviceConnectionSelfTest();
+
     if (
         reportDirty_ &&
         inputSubscribed_ &&
@@ -394,6 +396,19 @@ void BluetoothPlatformOutput::submit(
 ) {
     const auto next = encodeReport(state);
 
+    if (next == liveReport_) {
+        return;
+    }
+
+    liveReport_ = next;
+
+    // During the connection proof, keep recording the real controller state
+    // but do not let it overwrite the synthetic report. The instant the proof
+    // completes, serviceConnectionSelfTest() copies liveReport_ to report_.
+    if (selfTestActive_) {
+        return;
+    }
+
     if (next == report_) {
         return;
     }
@@ -401,6 +416,119 @@ void BluetoothPlatformOutput::submit(
     report_ = next;
     reportDirty_ = true;
     requestCanSend();
+}
+
+void BluetoothPlatformOutput::startConnectionSelfTest() {
+    if (
+        !inputSubscribed_ ||
+        connectionHandle_ == kInvalidHandle
+    ) {
+        return;
+    }
+
+    selfTestActive_ = true;
+    selfTestStartedMs_ = btstack_run_loop_get_time_ms();
+    selfTestStep_ = 0;
+
+    // Start from an explicit neutral GAMEPAD16 report.
+    report_.fill(0);
+    storeLe16(report_, 0, 0);
+    storeLe16(report_, 2, 0);
+    storeLe16(report_, 4, 0);
+    storeLe16(report_, 6, 0);
+    storeLe16(report_, 8, -32767);
+    storeLe16(report_, 10, -32767);
+    report_[12] = 0;
+    storeLe32(report_, 13, 0);
+
+    reportDirty_ = true;
+    requestCanSend();
+}
+
+void BluetoothPlatformOutput::serviceConnectionSelfTest() {
+    if (
+        !selfTestActive_ ||
+        !inputSubscribed_ ||
+        connectionHandle_ == kInvalidHandle
+    ) {
+        return;
+    }
+
+    constexpr std::uint32_t kStepMs = 900u;
+    constexpr std::uint8_t kStepCount = 6u;
+
+    const std::uint32_t nowMs = btstack_run_loop_get_time_ms();
+    const std::uint32_t elapsedMs = nowMs - selfTestStartedMs_;
+    const std::uint8_t nextStep =
+        static_cast<std::uint8_t>(elapsedMs / kStepMs);
+
+    if (nextStep >= kStepCount) {
+        selfTestActive_ = false;
+        selfTestStep_ = kStepCount;
+
+        // Critical OUT9 handoff: from this point onward, Bluetooth output is
+        // driven only by the real Primary controller state.
+        report_ = liveReport_;
+        reportDirty_ = true;
+        requestCanSend();
+        return;
+    }
+
+    if (nextStep == selfTestStep_ && elapsedMs >= kStepMs) {
+        return;
+    }
+
+    if (nextStep == selfTestStep_ && elapsedMs < kStepMs) {
+        // Step zero must be emitted immediately after subscription.
+    } else {
+        selfTestStep_ = nextStep;
+    }
+
+    std::array<std::uint8_t, 17> probe {};
+    storeLe16(probe, 0, 0);
+    storeLe16(probe, 2, 0);
+    storeLe16(probe, 4, 0);
+    storeLe16(probe, 6, 0);
+    storeLe16(probe, 8, -32767);
+    storeLe16(probe, 10, -32767);
+    probe[12] = 0;
+    storeLe32(probe, 13, 0);
+
+    switch (nextStep) {
+        case 0:
+            // Button 1 / South pressed.
+            storeLe32(probe, 13, 1u);
+            break;
+
+        case 1:
+            // Neutral.
+            break;
+
+        case 2:
+            // D-pad Down.
+            probe[12] = 5u;
+            break;
+
+        case 3:
+            // Neutral.
+            break;
+
+        case 4:
+            // Left stick X full right.
+            storeLe16(probe, 0, 32767);
+            break;
+
+        case 5:
+        default:
+            // Neutral before live handoff.
+            break;
+    }
+
+    if (probe != report_) {
+        report_ = probe;
+        reportDirty_ = true;
+        requestCanSend();
+    }
 }
 
 void BluetoothPlatformOutput::startAdvertising() {
@@ -567,6 +695,9 @@ void BluetoothPlatformOutput::handleHciPacket(
                 inputSubscribed_ = false;
                 canSendPending_ = false;
                 reportDirty_ = true;
+                selfTestActive_ = false;
+                selfTestStartedMs_ = 0;
+                selfTestStep_ = 0;
 
                 // G2: Android-compatible Just Works Secure Connections.
                 // This policy is activated only while a central owns our
@@ -634,6 +765,9 @@ void BluetoothPlatformOutput::handleHciPacket(
                 inputSubscribed_ = false;
                 canSendPending_ = false;
                 reportDirty_ = true;
+                selfTestActive_ = false;
+                selfTestStartedMs_ = 0;
+                selfTestStep_ = 0;
 
                 sm_set_authentication_requirements(
                     SM_AUTHREQ_BONDING |
@@ -660,6 +794,10 @@ void BluetoothPlatformOutput::handleHciPacket(
             inputSubscribed_ = false;
             canSendPending_ = false;
             reportDirty_ = true;
+            selfTestActive_ = false;
+            selfTestStartedMs_ = 0;
+            selfTestStep_ = 0;
+            report_ = liveReport_;
 
             // OUT8 keeps the shared stack in the same Secure Connections +
             // Bonding policy that the hardware-proven standalone JoystickBLE
@@ -814,7 +952,14 @@ void BluetoothPlatformOutput::handleHidsPacket(
             inputSubscribed_ =
                 hids_subevent_input_report_enable_get_enable(packet) != 0;
 
-            reportDirty_ = true;
+            if (inputSubscribed_) {
+                startConnectionSelfTest();
+            } else {
+                selfTestActive_ = false;
+                report_ = liveReport_;
+                reportDirty_ = true;
+            }
+
             requestCanSend();
             break;
         }
