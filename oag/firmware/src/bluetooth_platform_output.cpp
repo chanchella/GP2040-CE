@@ -67,10 +67,9 @@ void platformHidsThunk(
     }
 }
 
-// Compatibility-first Generic HID Gamepad report.
-// Reference direction: BTstack HOG device example + generic gamepad layouts
-// used by ESP32-BLE-Gamepad. No vendor-specific/Xbox BLE emulation is used in
-// this first external-Bluetooth baseline.
+// Android-compatibility-first pure gamepad report.
+// One HIDS Input Report characteristic, Report ID 1, 16 buttons, 8-bit hat,
+// and six 16-bit absolute axes (four sticks + two triggers).
 constexpr std::uint8_t kHidDescriptor[] = {
     0x05, 0x01,       // Usage Page (Generic Desktop)
     0x09, 0x05,       // Usage (Game Pad)
@@ -86,46 +85,36 @@ constexpr std::uint8_t kHidDescriptor[] = {
     0x95, 0x10,
     0x81, 0x02,
 
-    0x05, 0x01,       //   Usage Page (Generic Desktop)
+    0x05, 0x01,       //   Generic Desktop
     0x09, 0x39,       //   Hat switch
-    0x15, 0x00,
-    0x25, 0x07,
+    0x15, 0x01,
+    0x25, 0x08,
     0x35, 0x00,
     0x46, 0x3B, 0x01,
     0x65, 0x14,
-    0x75, 0x04,
+    0x75, 0x08,
     0x95, 0x01,
-    0x81, 0x42,       //   Null state allowed
+    0x81, 0x42,       //   Null state allowed (0 = centered)
     0x65, 0x00,
-    0x75, 0x04,
-    0x95, 0x01,
-    0x81, 0x03,
 
     0x05, 0x01,
-    0x09, 0x30,       // X
-    0x09, 0x31,       // Y
-    0x09, 0x32,       // Z
-    0x09, 0x35,       // Rz
-    0x16, 0x00, 0x80,
-    0x26, 0xFF, 0x7F,
-    0x75, 0x10,
-    0x95, 0x04,
-    0x81, 0x02,
-
-    0x05, 0x02,       // Simulation Controls
-    0x09, 0xC5,       // Brake
-    0x09, 0xC4,       // Accelerator
     0x15, 0x00,
-    0x26, 0xFF, 0x00,
-    0x75, 0x08,
-    0x95, 0x02,
+    0x27, 0xFF, 0x7F, 0x00, 0x00, // Logical Max 32767
+    0x35, 0x00,
+    0x47, 0xFF, 0x7F, 0x00, 0x00, // Physical Max 32767
+    0x09, 0x30,       // X  - LX
+    0x09, 0x31,       // Y  - LY
+    0x09, 0x32,       // Z  - RX
+    0x09, 0x35,       // Rz - RY
+    0x09, 0x33,       // Rx - LT
+    0x09, 0x34,       // Ry - RT
+    0x75, 0x10,
+    0x95, 0x06,
     0x81, 0x02,
 
     0xC0
 };
 
-// Exact advertising pattern used by BTstack's official HOG device examples:
-// General Discoverable + LE-only persona + HID UUID + Gamepad appearance.
 constexpr std::uint8_t kAdvertisingData[] = {
     0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x06,
     0x12, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
@@ -140,31 +129,34 @@ constexpr std::uint8_t kAdvertisingData[] = {
     0x03, BLUETOOTH_DATA_TYPE_APPEARANCE, 0xC4, 0x03,
 };
 
-std::int16_t encodeAxis(std::int32_t value) {
-    if (value == std::numeric_limits<std::int32_t>::min()) {
-        return std::numeric_limits<std::int16_t>::min();
-    }
+hids_device_report_t gHidReportStorage[1] {};
 
-    if (value <= 0) {
-        return static_cast<std::int16_t>(value / 65536);
-    }
+std::uint16_t encodeStickAxis(std::int32_t value) {
+    const std::uint64_t shifted =
+        static_cast<std::uint64_t>(
+            static_cast<std::int64_t>(value) -
+            static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::min())
+        );
 
-    const std::int64_t scaled =
-        static_cast<std::int64_t>(value) *
-        std::numeric_limits<std::int16_t>::max() /
-        std::numeric_limits<std::int32_t>::max();
+    return static_cast<std::uint16_t>(
+        (shifted * 32767ull) / 0xFFFFFFFFull
+    );
+}
 
-    return static_cast<std::int16_t>(scaled);
+std::uint16_t encodeTrigger(std::uint32_t value) {
+    return static_cast<std::uint16_t>(
+        (static_cast<std::uint64_t>(value) * 32767ull) /
+        0xFFFFFFFFull
+    );
 }
 
 void storeLe16(
-    std::array<std::uint8_t, 13>& report,
+    std::array<std::uint8_t, 15>& report,
     std::size_t offset,
-    std::int16_t value
+    std::uint16_t value
 ) {
-    const auto raw = static_cast<std::uint16_t>(value);
-    report[offset] = static_cast<std::uint8_t>(raw & 0xFFu);
-    report[offset + 1] = static_cast<std::uint8_t>(raw >> 8);
+    report[offset] = static_cast<std::uint8_t>(value & 0xFFu);
+    report[offset + 1] = static_cast<std::uint8_t>(value >> 8);
 }
 
 std::uint8_t encodeHat(std::uint8_t dpad) {
@@ -178,27 +170,35 @@ std::uint8_t encodeHat(std::uint8_t dpad) {
         (dpad & static_cast<std::uint8_t>(oag::DpadBits::Right)) != 0;
 
     if (up && !down) {
-        if (right && !left) return 1;
-        if (left && !right) return 7;
-        return 0;
+        if (right && !left) return 2;
+        if (left && !right) return 8;
+        return 1;
     }
 
     if (down && !up) {
-        if (right && !left) return 3;
-        if (left && !right) return 5;
-        return 4;
+        if (right && !left) return 4;
+        if (left && !right) return 6;
+        return 5;
     }
 
-    if (right && !left) return 2;
-    if (left && !right) return 6;
-    return 8;
+    if (right && !left) return 3;
+    if (left && !right) return 7;
+    return 0;
 }
 
-std::array<std::uint8_t, 13> encodeReport(
+std::array<std::uint8_t, 15> encodeReport(
     const oag::LogicalGamepadState& state
 ) {
-    std::array<std::uint8_t, 13> report {};
-    report[2] = 8;
+    std::array<std::uint8_t, 15> report {};
+
+    // Neutral gamepad state even when no physical primary exists.
+    report[2] = 0;
+    storeLe16(report, 3, 16384);
+    storeLe16(report, 5, 16384);
+    storeLe16(report, 7, 16384);
+    storeLe16(report, 9, 16384);
+    storeLe16(report, 11, 0);
+    storeLe16(report, 13, 0);
 
     if (!state.connected) {
         return report;
@@ -229,15 +229,36 @@ std::array<std::uint8_t, 13> encodeReport(
     report[1] = static_cast<std::uint8_t>(buttons >> 8);
     report[2] = encodeHat(state.dpad);
 
-    storeLe16(report, 3, encodeAxis(state.lx));
-    storeLe16(report, 5, encodeAxis(state.ly));
-    storeLe16(report, 7, encodeAxis(state.rx));
-    storeLe16(report, 9, encodeAxis(state.ry));
-
-    report[11] = static_cast<std::uint8_t>(state.leftTrigger >> 24);
-    report[12] = static_cast<std::uint8_t>(state.rightTrigger >> 24);
+    storeLe16(report, 3, encodeStickAxis(state.lx));
+    storeLe16(report, 5, encodeStickAxis(state.ly));
+    storeLe16(report, 7, encodeStickAxis(state.rx));
+    storeLe16(report, 9, encodeStickAxis(state.ry));
+    storeLe16(report, 11, encodeTrigger(state.leftTrigger));
+    storeLe16(report, 13, encodeTrigger(state.rightTrigger));
 
     return report;
+}
+
+void platformGetReportThunk(
+    hci_con_handle_t,
+    hid_report_type_t reportType,
+    std::uint16_t reportId,
+    std::uint16_t maxReportSize,
+    std::uint8_t* outReport
+) {
+    if (
+        gBluetoothPlatformOutput == nullptr ||
+        outReport == nullptr ||
+        reportType != HID_REPORT_TYPE_INPUT ||
+        reportId != 1u
+    ) {
+        return;
+    }
+
+    gBluetoothPlatformOutput->copyCurrentInputReport(
+        outReport,
+        maxReportSize
+    );
 }
 
 } // namespace
@@ -262,19 +283,28 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT1"
+        "U10F-PM1-UI5K-BT-OUT3"
     );
+    // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
+    // Source 0x02 = USB Implementer's Forum.
     device_information_service_server_set_pnp_id(
-        2,
-        0x0000,
-        0x0001,
+        0x02,
+        0xCAFE,
+        0x4016,
         0x0100
     );
 
-    hids_device_init(
+    gap_set_local_name("OAG Universal Pad");
+
+    hids_device_init_with_storage(
         0,
         kHidDescriptor,
-        sizeof(kHidDescriptor)
+        sizeof(kHidDescriptor),
+        1,
+        gHidReportStorage
+    );
+    hids_device_register_get_report_callback(
+        platformGetReportThunk
     );
     hids_device_register_packet_handler(
         platformHidsThunk
@@ -389,6 +419,24 @@ void BluetoothPlatformOutput::sendCurrentReport() {
 
     if (status == ERROR_CODE_SUCCESS) {
         reportDirty_ = false;
+    }
+}
+
+void BluetoothPlatformOutput::copyCurrentInputReport(
+    std::uint8_t* out,
+    std::uint16_t maxSize
+) const {
+    if (out == nullptr || maxSize == 0) {
+        return;
+    }
+
+    const std::size_t count =
+        std::min<std::size_t>(report_.size(), maxSize);
+
+    std::memcpy(out, report_.data(), count);
+
+    if (count < maxSize) {
+        std::memset(out + count, 0, maxSize - count);
     }
 }
 
