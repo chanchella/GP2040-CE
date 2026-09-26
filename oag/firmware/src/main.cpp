@@ -1,8 +1,8 @@
 #include <array>
 #include <cstdint>
-#include <limits>
 #include <cstring>
 #include <optional>
+#include <limits>
 
 #include "pico/stdlib.h"
 #include "pico/time.h"
@@ -114,7 +114,7 @@ public:
         maintainXinputTransport();
         serviceXgipInit();
         servicePrimaryControllerChords();
-        serviceDefenseSquareCombo();
+        serviceSquarePulseCombo();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
@@ -1117,23 +1117,11 @@ private:
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
-
-    // UI5K-D1 defensive Square hold combo.
-    // Square remains untouched for the first 1000 ms. At >=1000 ms,
-    // physical Square becomes the hold trigger for this 400 ms loop:
-    //   0..80   ms : L2 + R1
-    //   80..180 ms : L2
-    //   180..250ms : L2 + Cross
-    //   250..280ms : L2
-    //   280..400ms : Cross
-    // Releasing physical Square stops the combo immediately.
-    static constexpr std::uint64_t kDefenseComboActivationUs = 1000000ull;
-    static constexpr std::uint64_t kDefenseComboPhase1EndUs = 80000ull;
-    static constexpr std::uint64_t kDefenseComboPhase2EndUs = 180000ull;
-    static constexpr std::uint64_t kDefenseComboPhase3EndUs = 250000ull;
-    static constexpr std::uint64_t kDefenseComboPhase4EndUs = 280000ull;
-    static constexpr std::uint64_t kDefenseComboCycleUs = 400000ull;
-
+    static constexpr std::uint64_t kSquarePulseActivationUs = 1000000ull;
+    static constexpr std::uint64_t kSquarePulseCrossOnUs = 150000ull;
+    static constexpr std::uint64_t kSquarePulseCrossOffUs = 500000ull;
+    static constexpr std::uint64_t kSquarePulseCycleUs =
+        kSquarePulseCrossOnUs + kSquarePulseCrossOffUs;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
 
@@ -1752,7 +1740,7 @@ private:
                     internalSlot < states_.size() &&
                     states_[internalSlot].connected
                 ) {
-                    output = applyDefenseSquareCombo(
+                    output = applySquarePulseCombo(
                         internalSlot,
                         mapping_.process(states_[internalSlot])
                     );
@@ -1766,51 +1754,25 @@ private:
         }
     }
 
-    void resetDefenseSquareCombo(std::size_t slot) {
-        if (slot >= defenseComboStartedUs_.size()) {
+    void resetSquarePulseCombo(std::size_t slot) {
+        if (slot >= squarePulseStartedUs_.size()) {
             return;
         }
-
-        defenseComboStartedUs_[slot] = 0;
-        defenseComboActive_[slot] = false;
-        defenseComboPhase_[slot] = 0xFF;
+        squarePulseStartedUs_[slot] = 0;
+        squarePulseActive_[slot] = false;
+        squarePulseCrossOn_[slot] = false;
     }
 
-    std::uint8_t defenseComboPhaseFor(
-        std::uint64_t activeForUs
-    ) const {
-        const std::uint64_t cycleUs =
-            activeForUs % kDefenseComboCycleUs;
-
-        if (cycleUs < kDefenseComboPhase1EndUs) {
-            return 0;
-        }
-        if (cycleUs < kDefenseComboPhase2EndUs) {
-            return 1;
-        }
-        if (cycleUs < kDefenseComboPhase3EndUs) {
-            return 2;
-        }
-        if (cycleUs < kDefenseComboPhase4EndUs) {
-            return 3;
-        }
-        return 4;
-    }
-
-    void serviceDefenseSquareCombo() {
+    void serviceSquarePulseCombo() {
         const std::uint64_t nowUs = time_us_64();
-
         for (std::size_t i = 0; i < states_.size(); ++i) {
             const oag::UniversalGamepadState& state = states_[i];
 
-            if (
-                !state.connected ||
-                !state.source.valid() ||
-                defenseComboSource_[i] != state.source
-            ) {
-                defenseComboSource_[i] =
+            if (!state.connected || !state.source.valid() ||
+                squarePulseSource_[i] != state.source) {
+                squarePulseSource_[i] =
                     state.connected ? state.source : oag::DeviceId {};
-                resetDefenseSquareCombo(i);
+                resetSquarePulseCombo(i);
             }
 
             if (!state.connected || !state.source.valid()) {
@@ -1821,108 +1783,63 @@ private:
                 (state.buttons & oag::ButtonWest) != 0;
 
             if (!squareDown) {
-                if (defenseComboActive_[i]) {
-                    resetDefenseSquareCombo(i);
-                    sendSlotOutput(
-                        static_cast<oag::LogicalSlotId>(i)
-                    );
+                if (squarePulseActive_[i]) {
+                    resetSquarePulseCombo(i);
+                    sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
                 } else {
-                    resetDefenseSquareCombo(i);
+                    resetSquarePulseCombo(i);
                 }
                 continue;
             }
 
-            if (defenseComboStartedUs_[i] == 0) {
-                defenseComboStartedUs_[i] = nowUs;
+            if (squarePulseStartedUs_[i] == 0) {
+                squarePulseStartedUs_[i] = nowUs;
                 continue;
             }
 
-            if (!defenseComboActive_[i]) {
-                if (
-                    nowUs - defenseComboStartedUs_[i] <
-                    kDefenseComboActivationUs
-                ) {
+            if (!squarePulseActive_[i]) {
+                if (nowUs - squarePulseStartedUs_[i] <
+                    kSquarePulseActivationUs) {
                     continue;
                 }
-
-                defenseComboActive_[i] = true;
-                defenseComboPhase_[i] = 0;
-                sendSlotOutput(
-                    static_cast<oag::LogicalSlotId>(i)
-                );
+                squarePulseActive_[i] = true;
+                squarePulseCrossOn_[i] = true;
+                sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
                 continue;
             }
 
             const std::uint64_t activeForUs =
-                nowUs -
-                defenseComboStartedUs_[i] -
-                kDefenseComboActivationUs;
-            const std::uint8_t phase =
-                defenseComboPhaseFor(activeForUs);
+                nowUs - squarePulseStartedUs_[i] -
+                kSquarePulseActivationUs;
+            const bool crossOn =
+                (activeForUs % kSquarePulseCycleUs) <
+                kSquarePulseCrossOnUs;
 
-            if (phase == defenseComboPhase_[i]) {
-                continue;
+            if (crossOn != squarePulseCrossOn_[i]) {
+                squarePulseCrossOn_[i] = crossOn;
+                sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
             }
-
-            defenseComboPhase_[i] = phase;
-            sendSlotOutput(
-                static_cast<oag::LogicalSlotId>(i)
-            );
         }
     }
 
-    oag::LogicalGamepadState applyDefenseSquareCombo(
+    oag::LogicalGamepadState applySquarePulseCombo(
         oag::LogicalSlotId slot,
         oag::LogicalGamepadState output
     ) const {
-        if (
-            slot >= states_.size() ||
-            !states_[slot].connected ||
+        if (slot >= states_.size() || !states_[slot].connected ||
             (states_[slot].buttons & oag::ButtonWest) == 0 ||
-            !defenseComboActive_[slot]
-        ) {
+            !squarePulseActive_[slot]) {
             return output;
         }
 
-        // Once active, the physical Square is only the hold trigger.
-        // Override the four combo controls exactly like the requested
-        // state machine while leaving every other UI5K input untouched.
         output.buttons &= ~static_cast<std::uint64_t>(
-            oag::ButtonWest |
-            oag::ButtonSouth |
-            oag::ButtonRightBumper
+            oag::ButtonWest | oag::ButtonSouth
         );
-        output.leftTrigger = 0;
+        output.leftTrigger =
+            std::numeric_limits<std::uint32_t>::max();
 
-        switch (defenseComboPhase_[slot]) {
-            case 0:
-                output.leftTrigger =
-                    std::numeric_limits<std::uint32_t>::max();
-                output.buttons |= oag::ButtonRightBumper;
-                break;
-
-            case 1:
-                output.leftTrigger =
-                    std::numeric_limits<std::uint32_t>::max();
-                break;
-
-            case 2:
-                output.leftTrigger =
-                    std::numeric_limits<std::uint32_t>::max();
-                output.buttons |= oag::ButtonSouth;
-                break;
-
-            case 3:
-                output.leftTrigger =
-                    std::numeric_limits<std::uint32_t>::max();
-                break;
-
-            case 4:
-                output.buttons |= oag::ButtonSouth;
-                break;
-
-            default:
-                break;
+        if (squarePulseCrossOn_[slot]) {
+            output.buttons |= oag::ButtonSouth;
         }
 
         return output;
@@ -1943,7 +1860,7 @@ private:
             return {};
         }
 
-        return applyDefenseSquareCombo(
+        return applySquarePulseCombo(
             slot,
             mapping_.process(states_[slot])
         );
@@ -1972,7 +1889,7 @@ private:
             oag::LogicalGamepadState output {};
 
             if (states_[slot].connected) {
-                output = applyDefenseSquareCombo(
+                output = applySquarePulseCombo(
                     slot,
                     mapping_.process(states_[slot])
                 );
@@ -2383,25 +2300,22 @@ private:
     std::array<
         oag::DeviceId,
         oag::LogicalSlotManager::kGamepadSlots
-    > defenseComboSource_ {};
+    > squarePulseSource_ {};
 
     std::array<
         std::uint64_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > defenseComboStartedUs_ {};
+    > squarePulseStartedUs_ {};
 
     std::array<
         bool,
         oag::LogicalSlotManager::kGamepadSlots
-    > defenseComboActive_ {};
+    > squarePulseActive_ {};
 
     std::array<
-        std::uint8_t,
+        bool,
         oag::LogicalSlotManager::kGamepadSlots
-    > defenseComboPhase_ {
-        0xFF, 0xFF, 0xFF, 0xFF,
-        0xFF, 0xFF, 0xFF, 0xFF,
-    };
+    > squarePulseCrossOn_ {};
 
     std::array<
         oag::UniversalGamepadState,
