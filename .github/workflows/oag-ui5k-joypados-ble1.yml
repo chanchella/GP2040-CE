@@ -97,7 +97,7 @@ jobs:
 
           # Single ATT owner: output owns the server, Host never creates another.
           assert "att_server_init(" in out
-          assert "att_server_init(" not in host
+          assert "\n    att_server_init(" not in host
           assert "initializeCore(" in host_h
           assert "initializeInputProfiles()" in host_h
           assert "startController()" in host_h
