@@ -1,9 +1,9 @@
-name: OAG UI5K JoypadOS BLE2
+name: OAG UI5K Arduino BLE3
 
 on:
   push:
     branches:
-      - chatgpt/ui5k-joypados-ble2
+      - chatgpt/ui5k-arduino-ble3
     paths:
       - 'oag/**'
       - '.github/workflows/oag-ui5k-joypados-ble1.yml'
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout BLE2 branch
+      - name: Checkout BLE3 branch
         uses: actions/checkout@v4.1.1
         with:
           fetch-depth: 0
@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-joypados-ble2"
+          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-arduino-ble3"
           UI5K_BASE="01af260742a6a402a851cceef0707ae69bd6a301"
           git merge-base --is-ancestor "${UI5K_BASE}" HEAD
 
@@ -53,7 +53,7 @@ jobs:
             'oag/firmware/src/joypados_ble_output.cpp' \
             'oag/firmware/src/main.cpp' | sort)"
 
-          echo "=== UI5K_JOYPADOS_BLE2_RUNTIME_DIFF ==="
+          echo "=== UI5K_ARDUINO_BLE3_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -74,7 +74,7 @@ jobs:
             oag/src/protocol/hid \
             oag/src/feedback
 
-      - name: Verify JoypadOS coexistence architecture
+      - name: Verify Arduino-Pico BLE3 contract
         shell: bash
         run: |
           set -euo pipefail
@@ -90,69 +90,55 @@ jobs:
           cmake = Path("oag/firmware/CMakeLists.txt").read_text()
           cfg = Path("oag/firmware/btstack_config.h").read_text()
 
-          # Clean backend, no legacy BluetoothPlatformOutput path.
-          assert "JoypadBleOutput" in out_h
-          assert "src/joypados_ble_output.cpp" in cmake
-          assert "pico_btstack_make_gatt_header(" in cmake
-          assert "oag_joypados_ble.gatt" in cmake
-
-          # Single ATT owner: output owns the server, Host never creates another.
-          assert "att_server_init(" in out
-          assert "\n    att_server_init(" not in host
+          # Preserve the proven JoypadOS coexistence ownership only.
           assert "initializeCore(" in host_h
           assert "initializeInputProfiles()" in host_h
           assert "startController()" in host_h
-
-          # Required lifecycle ordering in main.
-          assert "bluetoothHost_.initializeCore(*this)" in main
-          assert "joypadBleOutput_.initialize(bluetoothHost_)" in main
-          assert "bluetoothHost_.initializeInputProfiles()" in main
-          assert "bluetoothHost_.startController()" in main
+          assert "att_server_init(" in out
+          assert "\n    att_server_init(" not in host
           assert main.index("bluetoothHost_.initializeCore(*this)") < main.index("joypadBleOutput_.initialize(bluetoothHost_)")
           assert main.index("joypadBleOutput_.initialize(bluetoothHost_)") < main.index("bluetoothHost_.initializeInputProfiles()")
           assert main.index("bluetoothHost_.initializeInputProfiles()") < main.index("bluetoothHost_.startController()")
 
-          # JoypadOS standard gamepad contract.
-          assert "kGamepadReportId = 3u" in out_h
-          assert "GamepadReport" in out_h
-          assert "gJoypadBleReportStorage[12]" in out
-          assert "hids_device_send_input_report_for_id(" in out
+          # Arduino-Pico JoystickBLE exact runtime contract.
+          assert "kGamepadReportId = 1u" in out_h
+          assert "sizeof(GamepadReport) == 17" in out_h
+          assert "gArduinoBleReportStorage[2]" in out
+          assert "kArduinoGamepad16Descriptor" in out
+          assert "0x29, 0x20" in out  # 32 buttons
           assert "HIDS_SUBEVENT_INPUT_REPORT_ENABLE" in out
-          assert "hids_subevent_input_report_enable_get_report_id" not in out
-          assert "startSelfTest()" in out
-          assert "joypadBleOutput_.submit(output)" in main
+          assert "HIDS_SUBEVENT_BOOT_KEYBOARD_INPUT_REPORT_ENABLE" in out
+          assert "HIDS_SUBEVENT_PROTOCOL_MODE" in out
+          assert "hids_device_send_input_report_for_id(" in out
+          assert "kStepMs = 1200u" in out
 
-          # Advertising is deliberately small; name is in scan response.
-          assert "kScanResponse" not in out
-          assert "gap_scan_response_set_data(" not in out
-          assert "OAG BLE2 Gamepad" in out
+          # Fresh Android identity/cache break.
+          assert "OAG BLE3 Gamepad" in out
+          assert "0xC2, 0xA5, 0xB3, 0x55, 0x10, 0x03" in out
           assert "GAP_RANDOM_ADDRESS_TYPE_STATIC" in out
-          assert "gJoypadBleSmRegistration" in out
-          assert "SM_EVENT_JUST_WORKS_REQUEST" in out
-          assert "hids_subevent_input_report_enable_get_report_id" not in out
-          assert "BLUETOOTH_DATA_TYPE_APPEARANCE" in out
 
-          # Exact first-service report ordering from JoypadOS standard profile.
+          # Arduino-Pico ATT report bank/order + HID Information 1.01.
           for token in [
               "REPORT_REFERENCE, READ, 1, 1",
-              "REPORT_REFERENCE, READ, 1, 2",
               "REPORT_REFERENCE, READ, 2, 1",
               "REPORT_REFERENCE, READ, 3, 1",
-              "REPORT_REFERENCE, READ, 3, 2",
-              "REPORT_REFERENCE, READ, 4, 2",
+              "REPORT_REFERENCE, READ, 4, 1",
               "REPORT_REFERENCE, READ, 5, 3",
+              "01 01 00 02",
           ]:
               assert token in gatt
 
-          # Phone must never be allocated/disconnected as an input peer.
+          # Host never allocates/disconnects phone as an input peer.
           assert "role == HCI_ROLE_SLAVE" in host
           assert "JoypadBleOutput owns this link" in host
-
-          # Four controller peers + one phone and independent BLE/Classic bonds.
           assert "#define MAX_NR_HCI_CONNECTIONS 5" in cfg
           assert "ENABLE_CROSS_TRANSPORT_KEY_DERIVATION" not in cfg
 
-          print("UI5K_JOYPADOS_BLE2_ARCH=PASS")
+          # UI5K PC/USB routing still feeds the same Primary state to both sinks.
+          assert "joypadBleOutput_.submit(output)" in main
+
+          print("UI5K_ARDUINO_BLE3_ARCH=PASS")
+          print("ARDUINO_PICO_GAMEPAD16_CONTRACT=PASS")
           print("SINGLE_ATT_OWNER=PASS")
           print("UI5K_USB_XINPUT_KM_PROTECTED=PASS")
           PY
@@ -254,7 +240,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "UI5K-JOYPADOS-BLE2"
+          assert manifest["phase"] == "UI5K-ARDUINO-BLE3"
           assert f["pc_xinput_output"] is True
           assert f["pc_xinput_output_slots"] == 4
           assert f["pc_native_keyboard_output"] is True
@@ -265,35 +251,41 @@ jobs:
           assert f["bluetooth_host_v2"] is True
           assert f["bluetooth_host_only"] is False
           assert f["bluetooth_peripheral_output"] is True
-          assert f["bluetooth_output_backend"] == "JOYPADOS_DERIVED_STANDARD_HOGP"
+          assert f["bluetooth_output_backend"] == "ARDUINO_PICO_JOYSTICKBLE_EXACT_CONTRACT"
           assert f["bluetooth_att_owner"] == "JoypadBleOutput"
           assert f["bluetooth_host_att_server_init"] is False
-          assert f["bluetooth_output_gamepad_report_id"] == 3
-          assert f["bluetooth_output_gamepad_report_bytes"] == 15
+          assert f["bluetooth_output_gamepad_report_id"] == 1
+          assert f["bluetooth_output_gamepad_report_bytes"] == 17
+          assert f["bluetooth_output_gamepad_buttons"] == 32
+          assert f["bluetooth_output_gamepad_axes"] == 6
+          assert f["bluetooth_output_report_storage_count"] == 2
           assert f["bluetooth_output_selftest_after_subscription"] is True
           assert f["bluetooth_output_phone_first_enumeration"] is True
           assert f["bluetooth_output_hids_ready_on_any_input_subscription"] is True
           assert f["bluetooth_output_separate_sm_listener"] is True
           assert f["bluetooth_host_sm_role_gated"] is True
-          assert f["bluetooth_output_fresh_static_random_identity"] == "C2:A5:B2:55:10:02"
-          assert f["bluetooth_output_device_name"] == "OAG BLE2 Gamepad"
+          assert f["bluetooth_output_fresh_static_random_identity"] == "C2:A5:B3:55:10:03"
+          assert f["bluetooth_output_device_name"] == "OAG BLE3 Gamepad"
+          assert f["bluetooth_output_boot_keyboard_enable_opens_session"] is True
+          assert f["bluetooth_output_protocol_mode_tracking"] is True
+          assert f["bluetooth_output_selftest_step_ms"] == 1200
           assert f["bluetooth_output_ctkd"] is False
           assert f["bluetooth_hci_connection_budget"] == 5
           assert f["android_generic_hid_profile_runtime"] is True
 
-          print("BUILD_MANIFEST_UI5K_JOYPADOS_BLE2=PASS")
+          print("BUILD_MANIFEST_UI5K_ARDUINO_BLE3=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_UI5K_JOYPADOS_BLE2_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_UI5K_JOYPADOS_BLE2_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_UI5K_JOYPADOS_BLE2_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_UI5K_JOYPADOS_BLE2_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_UI5K_ARDUINO_BLE3_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_UI5K_ARDUINO_BLE3_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_UI5K_ARDUINO_BLE3_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_UI5K_ARDUINO_BLE3_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K JoypadOS BLE2 bundle
+      - name: Upload UI5K Arduino BLE3 bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-UI5K-JOYPADOS-BLE2-${{ github.sha }}
+          name: OAG-UI5K-ARDUINO-BLE3-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
           retention-days: 30
