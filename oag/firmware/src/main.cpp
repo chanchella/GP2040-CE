@@ -1132,12 +1132,21 @@ private:
             }
 
             if (bluetoothHost_.initialize(*this)) {
-                // Fail-soft peripheral backend layered on the already-owned
-                // UI5K BTstack/CYW43 runtime. It must never reinitialize the
-                // radio or disturb USB/XInput/KM startup ordering.
+                // OUT7 lifecycle:
+                // 1) Host owns CYW43/BTstack + ATT/GATT client/server setup.
+                // 2) Install the peripheral HIDS device while HCI is still OFF.
+                // 3) Power the controller only after every service/handler is
+                //    registered. This matches the hardware-proven standalone
+                //    Arduino-Pico JoystickBLE ordering.
                 (void)bluetoothPlatformOutput_.initialize(
                     bluetoothHost_
                 );
+
+                if (!bluetoothHost_.startController()) {
+                    bluetoothInitNotBeforeUs_ =
+                        nowUs + 1000000ull;
+                    return;
+                }
 
                 bluetoothInitialized_ = true;
                 bluetoothInitNotBeforeUs_ = 0;
