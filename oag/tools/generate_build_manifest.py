@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5K-S1-SQUARE-L2-CROSS-PULSE",
+    "phase": "U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -255,9 +255,9 @@ manifest = {
         "gamepad_square_activation_ms": 1000,
         "gamepad_square_suppressed_after_activation": True,
         "gamepad_square_l2_held_percent": 100,
-        "gamepad_square_cross_on_ms": 150,
-        "gamepad_square_cross_off_ms": 500,
-        "gamepad_square_cross_cycle_ms": 650,
+        "gamepad_square_cross_on_ms": 200,
+        "gamepad_square_cross_off_ms": 400,
+        "gamepad_square_cross_cycle_ms": 600,
         "gamepad_square_release_immediate": True,
         "gamepad_square_all_slots": True,
         "gamepad_square_non_blocking": True,
@@ -343,6 +343,7 @@ manifest = {
         "u10f_pm1_ui5j_win_xusb20_iad8_km_composite_2s": "REJECTED_HARDWARE_NO_CONTROLLERS_NO_KEYBOARD_NO_MOUSE_BY_USER",
         "u10f_pm1_ui5k_win_xusb20_4func_km_composite_2s": "HARDWARE_VERIFIED_BY_USER_MULTI_CONTROLLER_NATIVE_KM_AND_F4_F5_MODE_SWITCH",
         "u10f_pm1_ui5k_s1_square_l2_cross_pulse": "PENDING_HARDWARE",
+        "u10f_pm1_ui5k_s2_square_l2_cross_pulse_200_400": "PENDING_HARDWARE",
     },
 }
 
