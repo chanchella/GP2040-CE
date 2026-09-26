@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui5k-c3-efootball-sequence-policy-and-tests:
+  ui5k-c4-efootball-triangle-duration-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -68,7 +68,7 @@ jobs:
             'oag/include/oag/mapping/native_km_combo_engine.h' \
             'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI5K_C3_EFOOTBALL_SQHOLD_L2_X200_W750_SQ200_W1250_RUNTIME_DIFF ==="
+          echo "=== UI5K_C4_EFOOTBALL_TRI_DURATION_PASS_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -192,13 +192,27 @@ jobs:
           assert "squareHoldComboPhase_[slot] == 2" in main
           assert "output.buttons |= oag::ButtonWest" in main
           assert "serviceSquareHoldCombo()" in main
+          assert "serviceTriangleTapCombo()" in main
+          assert "kTriangleShortSelectUs = 120000ull" in main
+          assert "kTriangleMediumSelectUs = 200000ull" in main
+          assert "kTriangleLoftedSelectUs = 230000ull" in main
+          assert "kTriangleShortActionUs = 120000ull" in main
+          assert "kTriangleMediumActionUs = 200000ull" in main
+          assert "kTriangleLoftedActionUs = 230000ull" in main
+          assert "kTrivelaButtonsStartUs = 50000ull" in main
+          assert "kTrivelaButtonsEndUs = 200000ull" in main
+          assert "kTrivelaStickEndUs = 230000ull" in main
+          assert "output.buttons |= oag::ButtonNorth" in main
+          assert "oag::ButtonLeftBumper |" in main
+          assert "output.rightTrigger =" in main
+          assert "kTrivelaDiagonalAxis = 1518500249" in main
 
           assert "requestPairingAssist()" in host
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5K_C3_EFOOTBALL_SQHOLD_L2_X200_W750_SQ200_W1250_POLICY=PASS")
+          print("UI5K_C4_EFOOTBALL_TRI_DURATION_PASS_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -223,8 +237,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui5k-c3-efootball-sequence:
-    needs: ui5k-c3-efootball-sequence-policy-and-tests
+  firmware-ui5k-c4-efootball-triangle-duration:
+    needs: ui5k-c4-efootball-triangle-duration-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -299,7 +313,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5K-C3-EFOOTBALL-SQHOLD-L2-X200-W750-SQ200-W1250"
+          assert manifest["phase"] == "U10F-PM1-UI5K-C4-EFOOTBALL-TRI-DURATION-PASS"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -356,6 +370,23 @@ jobs:
           assert f["gamepad_square_hold_combo_wait_after_square_ms"] == 1250
           assert f["gamepad_square_hold_combo_cycle_ms"] == 2400
           assert f["gamepad_square_hold_combo_all_slots"] is True
+          assert f["gamepad_triangle_duration_combo_experiment"] is True
+          assert f["gamepad_triangle_trigger_ps"] == "TRIANGLE"
+          assert f["gamepad_triangle_trigger_xbox"] == "Y"
+          assert f["gamepad_triangle_selector_bands_ms"] == {
+              "ground_short_max": 120,
+              "ground_medium_long_max": 200,
+              "lofted_max": 230,
+              "trivela_min_exclusive": 230
+          }
+          assert f["gamepad_triangle_ground_short"]["hold_ms"] == 120
+          assert f["gamepad_triangle_ground_medium_long"]["hold_ms"] == 200
+          assert f["gamepad_triangle_lofted"]["hold_ms"] == 230
+          assert f["gamepad_triangle_trivela"]["buttons_start_ms"] == 50
+          assert f["gamepad_triangle_trivela"]["buttons_end_ms"] == 200
+          assert f["gamepad_triangle_trivela"]["stick_center_ms"] == 230
+          assert f["gamepad_triangle_raw_passthrough_while_measuring"] is False
+          assert f["gamepad_triangle_all_slots"] is True
           assert f["km_mouse_sensitivity_x"] == 1.0
           assert f["km_mouse_response_exponent"] == 0.58
           assert f["km_mouse_anti_deadzone_x"] == 0.0
@@ -376,18 +407,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5K_C3_EFOOTBALL_SQHOLD_L2_X200_W750_SQ200_W1250=PASS")
+          print("BUILD_MANIFEST_UI5K_C4_EFOOTBALL_TRI_DURATION_PASS=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C3-EFOOTBALL-SQHOLD-L2-X200-W750-SQ200-W1250_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C3-EFOOTBALL-SQHOLD-L2-X200-W750-SQ200-W1250_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C3-EFOOTBALL-SQHOLD-L2-X200-W750-SQ200-W1250_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5K-C3-EFOOTBALL-SQHOLD-L2-X200-W750-SQ200-W1250_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C4-EFOOTBALL-TRI-DURATION-PASS_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C4-EFOOTBALL-TRI-DURATION-PASS_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C4-EFOOTBALL-TRI-DURATION-PASS_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5K-C4-EFOOTBALL-TRI-DURATION-PASS_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K-C3 eFootball staged combo candidate bundle
+      - name: Upload UI5K-C4 eFootball Triangle-duration candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5K-C3-EFOOTBALL-SQHOLD-L2-X200-W750-SQ200-W1250-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5K-C4-EFOOTBALL-TRI-DURATION-PASS-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
