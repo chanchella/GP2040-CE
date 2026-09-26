@@ -33,6 +33,7 @@ add_executable(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W
     src/usb_descriptors.cpp
     src/bluetooth_host_v2.cpp
     src/bluetooth_hid_parser_v2.cpp
+    src/joypados_ble_output.cpp
 
     ../src/device/device_registry.cpp
     ../src/device/usb_device_classifier.cpp
@@ -90,10 +91,17 @@ pico_set_program_name(
     OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W
     "OAG Abo Gemi Ultra Gaming"
 )
-pico_set_program_version(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W "U10F-PM1-UI5K-WIN-XUSB20-4FUNC-KM-COMPOSITE-2S")
+pico_set_program_version(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W "UI5K-JOYPADOS-BLE1")
 
 target_link_options(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W PRIVATE
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W.map"
 )
 
 pico_add_extra_outputs(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W)
+
+# UI5K-JOYPADOS-BLE1: JoypadOS-derived standard BLE HID profile.
+pico_btstack_make_gatt_header(
+    OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/oag_joypados_ble.gatt"
+)
