@@ -1,0 +1,67 @@
+name: Build JoypadOS USB2BLE Pico2W Donor
+
+on:
+  push:
+    branches:
+      - chatgpt/joypados-usb2ble-pico2w-donor
+    paths:
+      - '.github/workflows/joypados-usb2ble-pico2w-donor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout wrapper repo
+        uses: actions/checkout@v4
+
+      - name: Install ARM toolchain and build tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi cmake ninja-build make python3 git
+
+      - name: Clone pinned JoypadOS donor
+        run: |
+          set -euxo pipefail
+          git clone --recursive https://github.com/joypad-ai/joypad-os.git joypad-os
+          cd joypad-os
+          git checkout 969c232c4e3332e6df6af524b001e1d65613f6bc
+          git submodule update --init --recursive
+          git rev-parse HEAD
+
+      - name: Build usb2ble_pico2_w
+        run: |
+          set -euxo pipefail
+          cd joypad-os
+          unset PICO_SDK_PATH
+          make usb2ble_pico2_w JOBS=2
+
+      - name: Collect donor UF2 and provenance
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts
+          UF2="$(find joypad-os -type f -name '*usb2ble_pico2_w*.uf2' | head -n 1)"
+          test -n "$UF2"
+          cp "$UF2" artifacts/JOYPADOS_USB2BLE_PICO2W_DONOR_969c232c.uf2
+          sha256sum artifacts/JOYPADOS_USB2BLE_PICO2W_DONOR_969c232c.uf2 | tee artifacts/SHA256SUMS.txt
+          cat > artifacts/PROVENANCE.txt <<'EOF'
+JoypadOS repository: https://github.com/joypad-ai/joypad-os
+Pinned commit: 969c232c4e3332e6df6af524b001e1d65613f6bc
+Target: usb2ble_pico2_w
+Purpose: Independent donor validation for Pico 2 W USB-controller -> BLE HID gamepad output.
+License: Apache-2.0 (upstream)
+EOF
+          ls -lh artifacts
+
+      - name: Upload donor firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: JOYPADOS-USB2BLE-PICO2W-DONOR-969c232c
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
