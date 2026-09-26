@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 #include "pico/stdlib.h"
@@ -113,6 +114,7 @@ public:
         maintainXinputTransport();
         serviceXgipInit();
         servicePrimaryControllerChords();
+        serviceSquareHoldCombo();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
@@ -1115,6 +1117,16 @@ private:
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
+
+    // UI5K-C1 eFootball experiment.
+    // PlayStation labels:
+    //   Hold Square (Xbox X / ButtonWest) for 1 second -> activate.
+    //   While active: hold L2 (Xbox LT) at 100% and pulse Cross
+    //   (Xbox A / ButtonSouth) twice per second.
+    //   Releasing Square ends the combo immediately.
+    static constexpr std::uint64_t kSquareHoldComboActivationUs = 1000000ull;
+    static constexpr std::uint64_t kSquareHoldComboPulsePeriodUs = 500000ull;
+    static constexpr std::uint64_t kSquareHoldComboPulseOnUs = 100000ull;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
 
@@ -1744,6 +1756,107 @@ private:
         }
     }
 
+    void resetSquareHoldComboRuntime(std::size_t slot) {
+        if (slot >= squareHoldComboStartedUs_.size()) {
+            return;
+        }
+
+        squareHoldComboStartedUs_[slot] = 0;
+        squareHoldComboActive_[slot] = false;
+        squareHoldComboPulseOn_[slot] = false;
+    }
+
+    void serviceSquareHoldCombo() {
+        const std::uint64_t nowUs = time_us_64();
+
+        for (std::size_t i = 0; i < states_.size(); ++i) {
+            const oag::UniversalGamepadState& state = states_[i];
+
+            if (
+                !state.connected ||
+                !state.source.valid() ||
+                squareHoldComboSource_[i] != state.source
+            ) {
+                squareHoldComboSource_[i] =
+                    state.connected ? state.source : oag::DeviceId {};
+                resetSquareHoldComboRuntime(i);
+            }
+
+            if (!state.connected || !state.source.valid()) {
+                continue;
+            }
+
+            const bool squareDown =
+                (state.buttons & oag::ButtonWest) != 0;
+
+            if (!squareDown) {
+                resetSquareHoldComboRuntime(i);
+                continue;
+            }
+
+            if (squareHoldComboStartedUs_[i] == 0) {
+                squareHoldComboStartedUs_[i] = nowUs;
+                continue;
+            }
+
+            if (!squareHoldComboActive_[i]) {
+                if (
+                    nowUs - squareHoldComboStartedUs_[i] <
+                    kSquareHoldComboActivationUs
+                ) {
+                    continue;
+                }
+
+                squareHoldComboActive_[i] = true;
+                squareHoldComboPulseOn_[i] = true;
+                sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
+                continue;
+            }
+
+            const std::uint64_t activeForUs =
+                nowUs -
+                squareHoldComboStartedUs_[i] -
+                kSquareHoldComboActivationUs;
+
+            const bool pulseOn =
+                (activeForUs % kSquareHoldComboPulsePeriodUs) <
+                kSquareHoldComboPulseOnUs;
+
+            if (pulseOn == squareHoldComboPulseOn_[i]) {
+                continue;
+            }
+
+            squareHoldComboPulseOn_[i] = pulseOn;
+            sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
+        }
+    }
+
+    oag::LogicalGamepadState applySquareHoldCombo(
+        oag::LogicalSlotId slot,
+        oag::LogicalGamepadState output
+    ) const {
+        if (
+            slot >= states_.size() ||
+            slot >= squareHoldComboActive_.size() ||
+            !states_[slot].connected ||
+            (states_[slot].buttons & oag::ButtonWest) == 0 ||
+            !squareHoldComboActive_[slot]
+        ) {
+            return output;
+        }
+
+        // Square is the trigger while the combo is active, so suppress its
+        // continuous passthrough. L2 stays fully held and Cross is pulsed.
+        output.buttons &= ~static_cast<std::uint64_t>(oag::ButtonWest);
+        output.leftTrigger = std::numeric_limits<std::uint32_t>::max();
+
+        if (squareHoldComboPulseOn_[slot]) {
+            output.buttons |= oag::ButtonSouth;
+        }
+
+        return output;
+    }
+
     oag::LogicalGamepadState basePrimaryOutput() const {
         if (
             hostPrimaryOutputSlot_ >= pcOutputRoutes_.size() ||
@@ -1759,7 +1872,10 @@ private:
             return {};
         }
 
-        return mapping_.process(states_[slot]);
+        return applySquareHoldCombo(
+            slot,
+            mapping_.process(states_[slot])
+        );
     }
 
     void sendSlotOutput(oag::LogicalSlotId slot) {
@@ -1785,7 +1901,10 @@ private:
             oag::LogicalGamepadState output {};
 
             if (states_[slot].connected) {
-                output = mapping_.process(states_[slot]);
+                output = applySquareHoldCombo(
+                    slot,
+                    mapping_.process(states_[slot])
+                );
             }
 
             platformOutput_.submit(
@@ -2189,6 +2308,26 @@ private:
         bool,
         oag::LogicalSlotManager::kGamepadSlots
     > primaryChordLatched_ {};
+
+    std::array<
+        oag::DeviceId,
+        oag::LogicalSlotManager::kGamepadSlots
+    > squareHoldComboSource_ {};
+
+    std::array<
+        std::uint64_t,
+        oag::LogicalSlotManager::kGamepadSlots
+    > squareHoldComboStartedUs_ {};
+
+    std::array<
+        bool,
+        oag::LogicalSlotManager::kGamepadSlots
+    > squareHoldComboActive_ {};
+
+    std::array<
+        bool,
+        oag::LogicalSlotManager::kGamepadSlots
+    > squareHoldComboPulseOn_ {};
 
     std::array<
         oag::UniversalGamepadState,
