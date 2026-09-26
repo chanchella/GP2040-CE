@@ -359,7 +359,7 @@ manifest = {
         "standalone_arduino_pico_joystickble_probe": "HARDWARE_VERIFIED_ANDROID_SELFTEST",
         "ui5k_joypados_ble1": "HARDWARE_PAIRED_NO_SELFTEST_NO_INPUT",
         "ui5k_joypados_ble2": "HARDWARE_PAIRED_NO_SELFTEST_NO_INPUT",
-        "ui5k_arduino_ble3": "PENDING_HARDWARE",
+        "ui5k_arduino_ble3": "PENDING_HARDWARE",  # CI trigger: exact Arduino-Pico contract
     },
 }
 
