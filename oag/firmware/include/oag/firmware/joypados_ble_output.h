@@ -8,15 +8,15 @@ namespace oag::firmware {
 
 class BluetoothHostV2;
 
-// Clean BLE HID output backend derived from JoypadOS' standard BLE gamepad
-// architecture (Apache-2.0 upstream), adapted to OAG's LogicalGamepadState.
+// Arduino-Pico JoystickBLE-compatible BLE HID backend.
 //
-// Key contract:
-// - this backend owns the single ATT server + HIDS Device profile;
-// - BluetoothHostV2 attaches only client/input profiles afterwards;
-// - Android connection is considered ready on the first HIDS input-report
-//   subscription, matching JoypadOS exactly;
-// - no peripheral-initiated pairing request is sent.
+// The HID/GATT/runtime contract intentionally mirrors the standalone
+// Arduino-Pico JoystickBLE path that hardware-tested successfully on Android:
+// - joystick-only HID descriptor uses Report ID 1;
+// - payload is packed hid_gamepad16_report_t-compatible 17 bytes;
+// - HIDS session opens on regular input-report enable OR boot-keyboard enable;
+// - CAN_SEND_NOW transmits via hids_device_send_input_report_for_id().
+// JoypadOS contributes only the Host+Peripheral coexistence ownership model.
 class JoypadBleOutput {
 public:
     bool initialize(BluetoothHostV2& host);
@@ -36,19 +36,20 @@ public:
 
 private:
     struct __attribute__((packed)) GamepadReport {
-        std::uint8_t buttonsLo = 0;
-        std::uint8_t buttonsHi = 0;
+        std::int16_t x = 0;
+        std::int16_t y = 0;
+        std::int16_t z = 0;
+        std::int16_t rz = 0;
+        std::int16_t rx = -32767;
+        std::int16_t ry = -32767;
         std::uint8_t hat = 0;
-        std::int16_t lx = 16384;
-        std::int16_t ly = 16384;
-        std::int16_t rx = 16384;
-        std::int16_t ry = 16384;
-        std::int16_t lt = 0;
-        std::int16_t rt = 0;
+        std::uint32_t buttons = 0;
     };
 
+    static_assert(sizeof(GamepadReport) == 17);
+
     static constexpr std::uint16_t kInvalidHandle = 0xFFFFu;
-    static constexpr std::uint8_t kGamepadReportId = 3u;
+    static constexpr std::uint8_t kGamepadReportId = 1u;
 
     static GamepadReport encode(
         const oag::LogicalGamepadState& state
@@ -59,6 +60,7 @@ private:
     void sendPending();
     void startSelfTest();
     void serviceSelfTest();
+    void openHidsSession(std::uint16_t handle);
 
     BluetoothHostV2* host_ = nullptr;
 
@@ -69,6 +71,7 @@ private:
 
     std::uint16_t rawLinkHandle_ = kInvalidHandle;
     std::uint16_t connectionHandle_ = kInvalidHandle;
+    std::uint8_t protocolMode_ = 1u;
 
     GamepadReport liveReport_ {};
     GamepadReport pendingReport_ {};
