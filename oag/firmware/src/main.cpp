@@ -1118,8 +1118,8 @@ private:
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
     static constexpr std::uint64_t kSquarePulseActivationUs = 1000000ull;
-    static constexpr std::uint64_t kSquarePulseCrossOnUs = 150000ull;
-    static constexpr std::uint64_t kSquarePulseCrossOffUs = 500000ull;
+    static constexpr std::uint64_t kSquarePulseCrossOnUs = 200000ull;
+    static constexpr std::uint64_t kSquarePulseCrossOffUs = 400000ull;
     static constexpr std::uint64_t kSquarePulseCycleUs =
         kSquarePulseCrossOnUs + kSquarePulseCrossOffUs;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
