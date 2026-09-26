@@ -29,6 +29,7 @@ namespace {
 
 oag::firmware::JoypadBleOutput* gJoypadBleOutput = nullptr;
 btstack_packet_callback_registration_t gJoypadBleHciRegistration {};
+btstack_packet_callback_registration_t gJoypadBleSmRegistration {};
 
 void joypadBlePacketThunk(
     std::uint8_t packetType,
@@ -104,10 +105,13 @@ constexpr std::uint8_t kStandardHidDescriptor[] = {
 
 hids_device_report_t gJoypadBleReportStorage[12] {};
 
-// Keep the primary legacy advertising packet tiny, as JoypadOS does.
-// Complete name lives in scan response to stay safely below 31 bytes.
+// BLE2 uses a brand-new BLE identity and keeps the COMPLETE name in the
+// primary advertising packet, matching Arduino-Pico's hardware-proven probe.
+// Total payload is 29 bytes, safely below the legacy 31-byte limit.
 constexpr std::uint8_t kAdvertisingData[] = {
     0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x06,
+    0x11, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
+    'O','A','G',' ','B','L','E','2',' ','G','a','m','e','p','a','d',
     0x03, BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS,
     static_cast<std::uint8_t>(
         ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE & 0xFF
@@ -116,11 +120,6 @@ constexpr std::uint8_t kAdvertisingData[] = {
         ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE >> 8
     ),
     0x03, BLUETOOTH_DATA_TYPE_APPEARANCE, 0xC4, 0x03,
-};
-
-constexpr std::uint8_t kScanResponse[] = {
-    0x12, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
-    'O','A','G',' ','U','n','i','v','e','r','s','a','l',' ','P','a','d'
 };
 
 std::int16_t signedAxisToUnsigned15(std::int32_t value) {
@@ -231,7 +230,7 @@ bool JoypadBleOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_software_revision(
-        "UI5K-JOYPADOS-BLE1"
+        "UI5K-JOYPADOS-BLE2"
     );
     device_information_service_server_set_pnp_id(
         0x02,
@@ -256,7 +255,18 @@ bool JoypadBleOutput::initialize(BluetoothHostV2& host) {
         SM_AUTHREQ_BONDING
     );
 
-    gap_set_local_name("OAG Universal Pad");
+    // Fresh static-random BLE identity: Android caches GATT/HID metadata by
+    // device identity. Every earlier OAG experiment reused the CYW43 public
+    // address, so BLE2 deliberately presents as a new device.
+    bd_addr_t ble2Address = {
+        0xC2, 0xA5, 0xB2, 0x55, 0x10, 0x02
+    };
+    gap_random_address_set(ble2Address);
+    gap_random_address_set_mode(
+        GAP_RANDOM_ADDRESS_TYPE_STATIC
+    );
+
+    gap_set_local_name("OAG BLE2 Gamepad");
 
     bd_addr_t nullAddress {};
     gap_advertisements_set_params(
@@ -272,13 +282,13 @@ bool JoypadBleOutput::initialize(BluetoothHostV2& host) {
         sizeof(kAdvertisingData),
         const_cast<std::uint8_t*>(kAdvertisingData)
     );
-    gap_scan_response_set_data(
-        sizeof(kScanResponse),
-        const_cast<std::uint8_t*>(kScanResponse)
-    );
-
     gJoypadBleHciRegistration.callback = &joypadBlePacketThunk;
     hci_add_event_handler(&gJoypadBleHciRegistration);
+
+    // JoypadOS and Arduino-Pico both give the BLE peripheral its own SM
+    // listener. BluetoothHostV2 is role-gated to controller peers only.
+    gJoypadBleSmRegistration.callback = &joypadBlePacketThunk;
+    sm_add_event_handler(&gJoypadBleSmRegistration);
 
     hids_device_register_packet_handler(
         joypadBlePacketThunk
@@ -503,20 +513,31 @@ void JoypadBleOutput::handlePacket(
             break;
         }
 
+        case SM_EVENT_PAIRING_STARTED:
+            break;
+
+        case SM_EVENT_PAIRING_COMPLETE:
+            // The encrypted HID characteristics drive host-initiated pairing.
+            // No peripheral sm_request_pairing() here.
+            break;
+
+        case SM_EVENT_JUST_WORKS_REQUEST:
+            sm_just_works_confirm(
+                sm_event_just_works_request_get_handle(packet)
+            );
+            break;
+
+        case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
+            sm_numeric_comparison_confirm(
+                sm_event_numeric_comparison_request_get_handle(packet)
+            );
+            break;
+
         case HCI_EVENT_HIDS_META:
             switch (
                 hci_event_hids_meta_get_subevent_code(packet)
             ) {
                 case HIDS_SUBEVENT_INPUT_REPORT_ENABLE: {
-                    const std::uint8_t reportId =
-                        hids_subevent_input_report_enable_get_report_id(
-                            packet
-                        );
-
-                    if (reportId != kGamepadReportId) {
-                        break;
-                    }
-
                     const bool enabled =
                         hids_subevent_input_report_enable_get_enable(
                             packet
