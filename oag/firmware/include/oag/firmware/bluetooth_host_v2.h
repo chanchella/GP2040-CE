@@ -49,6 +49,11 @@ public:
     static constexpr std::size_t kMaxServicesPerPeer = 3;
 
     bool initialize(BluetoothHostV2Observer& observer);
+
+    // OUT7: separate stack/service registration from HCI power-on so the
+    // peripheral HIDS device can be installed before the controller starts.
+    bool startController();
+
     void poll();
     bool beginDiscovery();
 
@@ -172,6 +177,7 @@ private:
 
     BluetoothHostV2Observer* observer_ = nullptr;
     bool initialized_ = false;
+    bool controllerStarted_ = false;
     bool hciWorking_ = false;
     bool platformOutputLinkActive_ = false;
 
