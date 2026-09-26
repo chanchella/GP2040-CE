@@ -1,17 +1,23 @@
-// OAG U10F-PM1-UI5K-BT-OUT1 Generic BLE Gamepad output.
+// OAG U10F-PM1-UI5K-BT-OUT3 pure BLE Gamepad profile.
 //
-// This follows BTstack's official HOG device layout. The external BLE persona
-// is intentionally generic and compatibility-first; Xbox/Switch/PS personas
-// are separate future drivers, not mixed into this baseline.
+// Keep this profile intentionally gamepad-only. Android should see one HIDS
+// Input Report characteristic whose Report Reference and Report Map agree.
+// Keyboard/mouse remain on the proven USB UI5K path and are not mixed here.
 
 PRIMARY_SERVICE, GAP_SERVICE
 CHARACTERISTIC, GAP_DEVICE_NAME, READ, "OAG Universal Pad"
-// Bluetooth Assigned Numbers: Generic HID / Gamepad appearance = 0x03C4.
 CHARACTERISTIC, GAP_APPEARANCE, READ, C4 03
 
 #import <battery_service.gatt>
 #import <device_information_service.gatt>
-#import <hids.gatt>
+
+PRIMARY_SERVICE, ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_PROTOCOL_MODE, DYNAMIC | READ | WRITE_WITHOUT_RESPONSE,
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_REPORT, DYNAMIC | READ | NOTIFY | ENCRYPTION_KEY_SIZE_16,
+REPORT_REFERENCE, READ, 1, 1
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_REPORT_MAP, DYNAMIC | READ,
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_HID_INFORMATION, READ, 11 01 00 02
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_HID_CONTROL_POINT, DYNAMIC | WRITE_WITHOUT_RESPONSE,
 
 PRIMARY_SERVICE, GATT_SERVICE
 CHARACTERISTIC, GATT_DATABASE_HASH, READ,
