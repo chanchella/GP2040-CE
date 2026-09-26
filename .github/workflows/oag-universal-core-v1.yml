@@ -163,8 +163,8 @@ jobs:
           assert "async_context_acquire_lock_blocking" in out
           assert "async_context_release_lock" in out
           assert "Arduino-Pico JoystickBLE compatibility profile." in out
-          host = (root / "oag/firmware/src/bluetooth_host_v2.cpp").read_text()
-          main = (root / "oag/firmware/src/main.cpp").read_text()
+          host = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
+          main = Path("oag/firmware/src/main.cpp").read_text()
           assert "bool BluetoothHostV2::startController()" in host
           assert "hci_power_control(HCI_POWER_ON);" in host
           assert host.index("initialized_ = true;") < host.index("bool BluetoothHostV2::startController()")
