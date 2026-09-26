@@ -183,7 +183,23 @@ bool BluetoothHostV2::initialize(
 
     clearLegacyBondsOnce();
 
+    // OUT7: do not power HCI yet. The caller must install the peripheral
+    // BluetoothPlatformOutput/HIDS backend first, matching Arduino-Pico's
+    // working lifecycle: stack + ATT/HIDS setup -> handlers -> HCI power-on.
     initialized_ = true;
+    return true;
+}
+
+bool BluetoothHostV2::startController() {
+    if (!initialized_) {
+        return false;
+    }
+
+    if (controllerStarted_) {
+        return true;
+    }
+
+    controllerStarted_ = true;
     hci_power_control(HCI_POWER_ON);
     return true;
 }
