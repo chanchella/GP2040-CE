@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5K-C4-EFOOTBALL-TRI-DURATION-PASS",
+    "phase": "U10F-PM1-UI5K-C5-EFOOTBALL-COMBO3",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -256,59 +256,41 @@ manifest = {
         "gamepad_square_hold_combo_held_xbox": "LT",
         "gamepad_square_hold_combo_sequence_ps": [
             "CROSS_200MS",
-            "WAIT_750MS",
-            "SQUARE_200MS",
-            "WAIT_1250MS"
+            "WAIT_750MS"
         ],
         "gamepad_square_hold_combo_sequence_xbox": [
             "A_200MS",
-            "WAIT_750MS",
-            "X_200MS",
-            "WAIT_1250MS"
+            "WAIT_750MS"
         ],
         "gamepad_square_hold_combo_cross_pulse_ms": 200,
         "gamepad_square_hold_combo_wait_after_cross_ms": 750,
-        "gamepad_square_hold_combo_square_pulse_ms": 200,
-        "gamepad_square_hold_combo_wait_after_square_ms": 1250,
-        "gamepad_square_hold_combo_cycle_ms": 2400,
-        "gamepad_square_hold_combo_square_passthrough_before_activation": True,
-        "gamepad_square_hold_combo_square_suppressed_while_active": True,
+        "gamepad_square_hold_combo_cycle_ms": 950,
         "gamepad_square_hold_combo_all_slots": True,
-        "gamepad_triangle_duration_combo_experiment": True,
+        "gamepad_triangle_hold_combo": True,
         "gamepad_triangle_trigger_ps": "TRIANGLE",
         "gamepad_triangle_trigger_xbox": "Y",
-        "gamepad_triangle_selector_bands_ms": {
-            "ground_short_max": 120,
-            "ground_medium_long_max": 200,
-            "lofted_max": 230,
-            "trivela_min_exclusive": 230
-        },
-        "gamepad_triangle_ground_short": {
-            "ps": "R2+TRIANGLE",
-            "xbox": "RT+Y",
-            "hold_ms": 120
-        },
-        "gamepad_triangle_ground_medium_long": {
-            "ps": "R2+TRIANGLE",
-            "xbox": "RT+Y",
-            "hold_ms": 200
-        },
-        "gamepad_triangle_lofted": {
-            "ps": "L1+R2+TRIANGLE",
-            "xbox": "LB+RT+Y",
-            "hold_ms": 230
-        },
-        "gamepad_triangle_trivela": {
-            "stick_45deg_at_ms": 0,
-            "buttons_ps": "R2+TRIANGLE",
-            "buttons_xbox": "RT+Y",
-            "buttons_start_ms": 50,
-            "buttons_end_ms": 200,
-            "stick_center_ms": 230,
-            "direction_source": "OPPOSITE_CURRENT_HORIZONTAL_PRESERVE_VERTICAL"
-        },
-        "gamepad_triangle_raw_passthrough_while_measuring": False,
+        "gamepad_triangle_output_ps": "L1+R2+TRIANGLE",
+        "gamepad_triangle_output_xbox": "LB+RT+Y",
+        "gamepad_triangle_duration": "PHYSICAL_HOLD_DURATION",
         "gamepad_triangle_all_slots": True,
+        "gamepad_r1_loop_combo": True,
+        "gamepad_r1_loop_trigger_ps": "R1",
+        "gamepad_r1_loop_trigger_xbox": "RB",
+        "gamepad_r1_loop_sequence_ps": [
+            "R1_160MS",
+            "WAIT_20MS",
+            "L2_60MS",
+            "WAIT_20MS"
+        ],
+        "gamepad_r1_loop_sequence_xbox": [
+            "RB_160MS",
+            "WAIT_20MS",
+            "LT_60MS",
+            "WAIT_20MS"
+        ],
+        "gamepad_r1_loop_cycle_ms": 260,
+        "gamepad_r1_loop_release_immediate": True,
+        "gamepad_r1_loop_all_slots": True,
         "pc_generic_hid_profile_runtime": False,
         "android_generic_hid_profile_runtime": False,
         "ios_generic_hid_profile_foundation": True,
@@ -394,6 +376,7 @@ manifest = {
         "u10f_pm1_ui5k_c2_efootball_sqhold_l2_cross750": "HARDWARE_VERIFIED_BY_USER_COMBO_WORKING",
         "u10f_pm1_ui5k_c3_efootball_sqhold_l2_x200_w750_sq200_w1250": "PENDING_HARDWARE",
         "u10f_pm1_ui5k_c4_efootball_triangle_duration_pass": "PENDING_HARDWARE",
+        "u10f_pm1_ui5k_c5_efootball_combo3": "PENDING_HARDWARE",
     },
 }
 
