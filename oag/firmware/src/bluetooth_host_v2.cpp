@@ -125,8 +125,12 @@ bool BluetoothHostV2::initialize(
         SM_AUTHREQ_BONDING
     );
 
-    gatt_client_init();
-
+    // OUT11 OUTPUT-ISOLATION:
+    // Do not initialize any Central/Host GATT machinery yet. The hardware-proven
+    // standalone BLE joystick uses only ATT/HIDS Device on this stack. Keeping
+    // the local ATT server while withholding GATT/HID Host clients isolates the
+    // suspected coexistence conflict without touching USB/PIO/XInput/KM.
+    
     // Historical BluetoothHCI installed a local GAP/ATT server before power-on.
     // Keep runtime Host-only: this does not start advertising.
     // UI5K-BT-OUT1 uses one generated ATT database for the existing local GAP
@@ -138,24 +142,8 @@ bool BluetoothHostV2::initialize(
         nullptr
     );
 
-    hid_host_init(
-        classicDescriptorStorage_.data(),
-        static_cast<std::uint16_t>(
-            classicDescriptorStorage_.size()
-        )
-    );
-
-    hid_host_register_packet_handler(
-        packetThunk
-    );
-
-    hids_host_init(
-        leDescriptorStorage_.data(),
-        static_cast<std::uint16_t>(
-            leDescriptorStorage_.size()
-        )
-    );
-
+    // OUT11: Classic HID Host and BLE HIDS Host intentionally NOT initialized.
+    // This is a diagnostic isolation gate, not the final architecture.
     gap_set_local_name(
         "OAG Abo Gemi Ultra Gaming"
     );
@@ -165,14 +153,8 @@ bool BluetoothHostV2::initialize(
         LM_LINK_POLICY_ENABLE_ROLE_SWITCH
     );
 
-    hci_set_inquiry_mode(
-        INQUIRY_MODE_RSSI_AND_EIR
-    );
-
-    hci_set_master_slave_policy(
-        HCI_ROLE_MASTER
-    );
-
+    // OUT11: no inquiry/master-role policy while Bluetooth Input Host is
+    // isolated. Peripheral BLE HIDS remains the only Bluetooth data plane.
     gHciRegistration.callback = &packetThunk;
     hci_add_event_handler(
         &gHciRegistration
@@ -216,24 +198,14 @@ void BluetoothHostV2::poll() {
     // U9C intentionally performs gap_connect() here, outside the advertising
     // event callback, matching the historical BluetoothHIDMaster flow:
     // scan -> stop -> connect.
-    serviceDeferredBleConnect();
-    servicePairingAssist();
+    // OUT11: Bluetooth Input Host is intentionally isolated. Do not run
+    // deferred Central connects or Pairing Assist while validating HIDS Device.
 
     // U10A continuous-discovery guard. Normal BLE -> Classic -> BLE cadence
     // remains unchanged; this only recovers an unexpected idle state while
     // peer capacity is still available. At four peers discovery pauses, then
     // resumes automatically after any disconnect.
-    if (
-        initialized_ &&
-        hciWorking_ &&
-        inputDiscoveryUnlocked_ &&
-        hasCapacity() &&
-        pendingKind_ == PendingKind::None &&
-        !deferredBleCandidateValid_ &&
-        discoveryPhase_ == DiscoveryPhase::Idle
-    ) {
-        resumeDiscovery();
-    }
+    // OUT11: never auto-start controller discovery.
 }
 
 std::size_t BluetoothHostV2::connectedPeerCount() const {
@@ -643,6 +615,9 @@ void BluetoothHostV2::stopDiscovery() {
 }
 
 void BluetoothHostV2::startLeScan() {
+    // OUT11 hard lock.
+    return;
+
     if (
         !hciWorking_ ||
         !inputDiscoveryUnlocked_ ||
@@ -678,6 +653,9 @@ void BluetoothHostV2::startLeScan() {
 }
 
 void BluetoothHostV2::startClassicInquiry() {
+    // OUT11 hard lock.
+    return;
+
     if (
         !hciWorking_ ||
         !inputDiscoveryUnlocked_ ||
@@ -719,16 +697,8 @@ void BluetoothHostV2::resumeDiscovery() {
 }
 
 bool BluetoothHostV2::beginDiscovery() {
-    if (
-        !initialized_ ||
-        !hciWorking_ ||
-        !inputDiscoveryUnlocked_
-    ) {
-        return false;
-    }
-
-    resumeDiscovery();
-    return true;
+    // OUT11 hard lock: Bluetooth Input Host is disabled for output isolation.
+    return false;
 }
 
 void BluetoothHostV2::setPlatformOutputLinkActive(bool active) {
@@ -769,24 +739,9 @@ void BluetoothHostV2::setPlatformOutputLinkActive(bool active) {
 }
 
 void BluetoothHostV2::unlockInputDiscoveryAfterPlatformSubscription() {
-    if (inputDiscoveryUnlocked_) {
-        return;
-    }
-
-    inputDiscoveryUnlocked_ = true;
-
-    if (
-        !initialized_ ||
-        !hciWorking_ ||
-        !hasCapacity() ||
-        pendingKind_ != PendingKind::None ||
-        deferredBleCandidateValid_
-    ) {
-        return;
-    }
-
-    discoveryPhase_ = DiscoveryPhase::Idle;
-    resumeDiscovery();
+    // OUT11 intentionally remains output-only even after Android subscribes.
+    // USB/PIO input still feeds the Universal State and can drive BLE output.
+    inputDiscoveryUnlocked_ = false;
 }
 
 void BluetoothHostV2::handleDiscoveryTimer() {
