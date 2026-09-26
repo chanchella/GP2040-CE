@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui5k-c6-efootball-tap-hold-policy-and-tests:
+  ui5k-d1-defense-square-loop-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -68,7 +68,7 @@ jobs:
             'oag/include/oag/mapping/native_km_combo_engine.h' \
             'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI5K_C6_EFOOTBALL_TAP_HOLD_COMBOS_RUNTIME_DIFF ==="
+          echo "=== UI5K_D1_DEFENSE_SQUARE_LOOP_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -178,32 +178,29 @@ jobs:
           assert "serviceNativeKeyboardMouseOutput()" in main
           assert "PcNativeKmOutput nativeKmOutput_" in main
           assert "NativeKmComboEngine nativeKmCombos_" in main
-          assert "kDoubleTapWindowUs = 300000ull" in main
-          assert "serviceTriangleGesture()" in main
-          assert "TriangleGestureMode::SingleOutput" in main
-          assert "TriangleGestureMode::DoubleOutput" in main
-          assert "oag::ButtonLeftBumper |" in main
-          assert "kSquareLongHoldActivationUs = 1000000ull" in main
-          assert "kSquareCrossPulseOnUs = 200000ull" in main
-          assert "kSquareCrossPulseCycleUs = 700000ull" in main
-          assert "kSquareSyntheticPulseOnUs = 200000ull" in main
-          assert "kSquareSyntheticPulseCycleUs = 1200000ull" in main
-          assert "serviceSquareGesture()" in main
-          assert "SquareGestureMode::LongHold" in main
-          assert "SquareGestureMode::DoubleMacro" in main
-          assert "kSquareDoubleButtonsStartUs = 390000ull" in main
-          assert "kSquareDoubleButtonsEndUs = 610000ull" in main
-          assert "kSquareDoubleStickEndUs = 640000ull" in main
-          assert "kFarPostDiagonalAxis = 1518500249" in main
-          assert "serviceR1LoopCombo()" not in main
-          assert "applyR1LoopCombo" not in main
+          assert "kDefenseComboActivationUs = 1000000ull" in main
+          assert "kDefenseComboPhase1EndUs = 80000ull" in main
+          assert "kDefenseComboPhase2EndUs = 180000ull" in main
+          assert "kDefenseComboPhase3EndUs = 250000ull" in main
+          assert "kDefenseComboPhase4EndUs = 280000ull" in main
+          assert "kDefenseComboCycleUs = 400000ull" in main
+          assert "serviceDefenseSquareCombo()" in main
+          assert "(state.buttons & oag::ButtonWest) != 0" in main
+          assert "oag::ButtonRightBumper" in main
+          assert "oag::ButtonSouth" in main
+          assert "output.leftTrigger = 0" in main
+          assert "std::numeric_limits<std::uint32_t>::max()" in main
+          assert "applyDefenseSquareCombo" in main
+          assert "PicoGamepad" not in main
+          assert "PIN_PHYSICAL_SQUARE" not in main
+          assert "digitalRead" not in main
 
           assert "requestPairingAssist()" in host
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5K_C6_EFOOTBALL_TAP_HOLD_COMBOS_POLICY=PASS")
+          print("UI5K_D1_DEFENSE_SQUARE_LOOP_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -228,8 +225,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui5k-c6-efootball-tap-hold:
-    needs: ui5k-c6-efootball-tap-hold-policy-and-tests
+  firmware-ui5k-d1-defense-square-loop:
+    needs: ui5k-d1-defense-square-loop-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -304,7 +301,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5K-C6-EFOOTBALL-TAP-HOLD-COMBOS"
+          assert manifest["phase"] == "U10F-PM1-UI5K-D1-DEFENSE-SQUARE-LOOP"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -343,26 +340,20 @@ jobs:
           assert f["windows_usb_mode_switch_reenumerates"] is False
           assert f["native_km_combo_engine"] is True
           assert f["native_km_combo_slots"] == 8
-          assert f["gamepad_double_tap_window_ms"] == 300
-          assert f["gamepad_triangle_gesture_combo"] is True
-          assert f["gamepad_triangle_single_output_ps"] == "R2+TRIANGLE"
-          assert f["gamepad_triangle_double_output_ps"] == "L1+R2+TRIANGLE"
-          assert f["gamepad_triangle_all_slots"] is True
-          assert f["gamepad_square_gesture_combo"] is True
-          assert f["gamepad_square_long_hold_activation_ms"] == 1000
-          assert f["gamepad_square_long_hold_cross_on_ms"] == 200
-          assert f["gamepad_square_long_hold_cross_off_ms"] == 500
-          assert f["gamepad_square_long_hold_cross_cycle_ms"] == 700
-          assert f["gamepad_square_long_hold_square_on_ms"] == 200
-          assert f["gamepad_square_long_hold_square_off_ms"] == 1000
-          assert f["gamepad_square_long_hold_square_cycle_ms"] == 1200
-          assert f["gamepad_square_double_tap_far_post"] is True
-          assert f["gamepad_square_double_buttons_start_ms"] == 390
-          assert f["gamepad_square_double_buttons_end_ms"] == 610
-          assert f["gamepad_square_double_button_hold_ms"] == 220
-          assert f["gamepad_square_double_stick_center_ms"] == 640
-          assert f["gamepad_r1_loop_combo"] is False
-          assert f["gamepad_r1_passthrough_normal"] is True
+          assert f["gamepad_defense_square_hold_combo"] is True
+          assert f["gamepad_defense_square_activation_ms"] == 1000
+          assert f["gamepad_defense_square_cycle_ms"] == 400
+          assert f["gamepad_defense_square_phases"] == [
+              {"start_ms": 0, "end_ms": 80, "ps": "L2+R1", "xbox": "LT+RB"},
+              {"start_ms": 80, "end_ms": 180, "ps": "L2", "xbox": "LT"},
+              {"start_ms": 180, "end_ms": 250, "ps": "L2+CROSS", "xbox": "LT+A"},
+              {"start_ms": 250, "end_ms": 280, "ps": "L2", "xbox": "LT"},
+              {"start_ms": 280, "end_ms": 400, "ps": "CROSS", "xbox": "A"},
+          ]
+          assert f["gamepad_defense_square_passthrough_before_activation"] is True
+          assert f["gamepad_defense_square_release_immediate"] is True
+          assert f["gamepad_defense_square_all_slots"] is True
+          assert f["gamepad_defense_square_non_blocking"] is True
           assert f["km_mouse_sensitivity_x"] == 1.0
           assert f["km_mouse_response_exponent"] == 0.58
           assert f["km_mouse_anti_deadzone_x"] == 0.0
@@ -383,18 +374,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5K_C6_EFOOTBALL_TAP_HOLD_COMBOS=PASS")
+          print("BUILD_MANIFEST_UI5K_D1_DEFENSE_SQUARE_LOOP=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C6-EFOOTBALL-TAP-HOLD-COMBOS_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C6-EFOOTBALL-TAP-HOLD-COMBOS_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C6-EFOOTBALL-TAP-HOLD-COMBOS_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5K-C6-EFOOTBALL-TAP-HOLD-COMBOS_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-D1-DEFENSE-SQUARE-LOOP_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-D1-DEFENSE-SQUARE-LOOP_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-D1-DEFENSE-SQUARE-LOOP_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5K-D1-DEFENSE-SQUARE-LOOP_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K-C6 eFootball tap-hold candidate bundle
+      - name: Upload UI5K-D1 defensive Square hold combo candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5K-C6-EFOOTBALL-TAP-HOLD-COMBOS-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5K-D1-DEFENSE-SQUARE-LOOP-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

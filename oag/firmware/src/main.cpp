@@ -1,7 +1,6 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <optional>
 
 #include "pico/stdlib.h"
@@ -49,23 +48,6 @@ enum class XgipInitPhase : std::uint8_t {
     Led,
     AuthDone,
     Ready,
-};
-
-enum class TriangleGestureMode : std::uint8_t {
-    Idle = 0,
-    FirstDown,
-    WaitSecond,
-    SingleOutput,
-    DoubleOutput,
-};
-
-enum class SquareGestureMode : std::uint8_t {
-    Idle = 0,
-    FirstDown,
-    WaitSecond,
-    SingleOutput,
-    DoubleMacro,
-    LongHold,
 };
 
 static constexpr std::uint8_t kXonePowerOn[] = {
@@ -131,8 +113,7 @@ public:
         maintainXinputTransport();
         serviceXgipInit();
         servicePrimaryControllerChords();
-        serviceTriangleGesture();
-        serviceSquareGesture();
+        serviceDefenseSquareCombo();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
@@ -1136,36 +1117,21 @@ private:
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
 
-    // UI5K-C6 eFootball gesture timing.
-    static constexpr std::uint64_t kDoubleTapWindowUs = 300000ull;
-
-    // Triangle:
-    //   Single tap -> R2 + Triangle, replayed for the first tap duration after
-    //                 the double-tap window expires.
-    //   Double tap -> L1 + R2 + Triangle during the second physical press.
-    static constexpr std::uint64_t kMinimumSyntheticTapUs = 20000ull;
-
-    // Square long-hold:
-    //   Hold physical Square continuously for 1 second to activate.
-    //   L2 remains fully held while two independent pulse loops run:
-    //     Cross  : 200 ms ON, 500 ms OFF (700 ms cycle).
-    //     Square : 200 ms ON, 1000 ms OFF (1200 ms cycle).
-    //   Releasing physical Square ends the long-hold combo immediately.
-    static constexpr std::uint64_t kSquareLongHoldActivationUs = 1000000ull;
-    static constexpr std::uint64_t kSquareCrossPulseOnUs = 200000ull;
-    static constexpr std::uint64_t kSquareCrossPulseCycleUs = 700000ull;
-    static constexpr std::uint64_t kSquareSyntheticPulseOnUs = 200000ull;
-    static constexpr std::uint64_t kSquareSyntheticPulseCycleUs = 1200000ull;
-
-    // Square double tap / far-post curved shot:
-    //   0 ms   : force left stick to a 45-degree far-post heuristic.
-    //   390 ms : R2 + Square DOWN together.
-    //   610 ms : R2 + Square UP together (220 ms button hold).
-    //   640 ms : release forced stick back to the physical stick.
-    static constexpr std::uint64_t kSquareDoubleButtonsStartUs = 390000ull;
-    static constexpr std::uint64_t kSquareDoubleButtonsEndUs = 610000ull;
-    static constexpr std::uint64_t kSquareDoubleStickEndUs = 640000ull;
-    static constexpr std::int32_t kFarPostDiagonalAxis = 1518500249;
+    // UI5K-D1 defensive Square hold combo.
+    // Square remains untouched for the first 1000 ms. At >=1000 ms,
+    // physical Square becomes the hold trigger for this 400 ms loop:
+    //   0..80   ms : L2 + R1
+    //   80..180 ms : L2
+    //   180..250ms : L2 + Cross
+    //   250..280ms : L2
+    //   280..400ms : Cross
+    // Releasing physical Square stops the combo immediately.
+    static constexpr std::uint64_t kDefenseComboActivationUs = 1000000ull;
+    static constexpr std::uint64_t kDefenseComboPhase1EndUs = 80000ull;
+    static constexpr std::uint64_t kDefenseComboPhase2EndUs = 180000ull;
+    static constexpr std::uint64_t kDefenseComboPhase3EndUs = 250000ull;
+    static constexpr std::uint64_t kDefenseComboPhase4EndUs = 280000ull;
+    static constexpr std::uint64_t kDefenseComboCycleUs = 400000ull;
 
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
@@ -1785,7 +1751,10 @@ private:
                     internalSlot < states_.size() &&
                     states_[internalSlot].connected
                 ) {
-                    output = mapping_.process(states_[internalSlot]);
+                    output = applyDefenseSquareCombo(
+                        internalSlot,
+                        mapping_.process(states_[internalSlot])
+                    );
                 }
             }
 
@@ -1796,222 +1765,38 @@ private:
         }
     }
 
-    void resetTriangleGesture(std::size_t slot) {
-        if (slot >= triangleGestureMode_.size()) {
+    void resetDefenseSquareCombo(std::size_t slot) {
+        if (slot >= defenseComboStartedUs_.size()) {
             return;
         }
 
-        triangleGestureMode_[slot] = TriangleGestureMode::Idle;
-        triangleFirstPressStartedUs_[slot] = 0;
-        triangleFirstReleasedUs_[slot] = 0;
-        triangleFirstTapDurationUs_[slot] = 0;
-        triangleSyntheticStartedUs_[slot] = 0;
+        defenseComboStartedUs_[slot] = 0;
+        defenseComboActive_[slot] = false;
+        defenseComboPhase_[slot] = 0xFF;
     }
 
-    void serviceTriangleGesture() {
-        const std::uint64_t nowUs = time_us_64();
-
-        for (std::size_t i = 0; i < states_.size(); ++i) {
-            const oag::UniversalGamepadState& state = states_[i];
-
-            if (
-                !state.connected ||
-                !state.source.valid() ||
-                triangleGestureSource_[i] != state.source
-            ) {
-                triangleGestureSource_[i] =
-                    state.connected ? state.source : oag::DeviceId {};
-                resetTriangleGesture(i);
-            }
-
-            if (!state.connected || !state.source.valid()) {
-                continue;
-            }
-
-            const bool triangleDown =
-                (state.buttons & oag::ButtonNorth) != 0;
-
-            switch (triangleGestureMode_[i]) {
-                case TriangleGestureMode::Idle:
-                    if (triangleDown) {
-                        triangleGestureMode_[i] =
-                            TriangleGestureMode::FirstDown;
-                        triangleFirstPressStartedUs_[i] = nowUs;
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
-
-                case TriangleGestureMode::FirstDown:
-                    if (!triangleDown) {
-                        triangleFirstTapDurationUs_[i] =
-                            nowUs - triangleFirstPressStartedUs_[i];
-                        if (
-                            triangleFirstTapDurationUs_[i] <
-                            kMinimumSyntheticTapUs
-                        ) {
-                            triangleFirstTapDurationUs_[i] =
-                                kMinimumSyntheticTapUs;
-                        }
-                        triangleFirstReleasedUs_[i] = nowUs;
-                        triangleGestureMode_[i] =
-                            TriangleGestureMode::WaitSecond;
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
-
-                case TriangleGestureMode::WaitSecond:
-                    if (triangleDown) {
-                        if (
-                            nowUs - triangleFirstReleasedUs_[i] <=
-                            kDoubleTapWindowUs
-                        ) {
-                            triangleGestureMode_[i] =
-                                TriangleGestureMode::DoubleOutput;
-                            sendSlotOutput(
-                                static_cast<oag::LogicalSlotId>(i)
-                            );
-                        } else {
-                            triangleGestureMode_[i] =
-                                TriangleGestureMode::FirstDown;
-                            triangleFirstPressStartedUs_[i] = nowUs;
-                        }
-                    } else if (
-                        nowUs - triangleFirstReleasedUs_[i] >=
-                        kDoubleTapWindowUs
-                    ) {
-                        triangleGestureMode_[i] =
-                            TriangleGestureMode::SingleOutput;
-                        triangleSyntheticStartedUs_[i] = nowUs;
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
-
-                case TriangleGestureMode::SingleOutput:
-                    if (
-                        nowUs - triangleSyntheticStartedUs_[i] >=
-                        triangleFirstTapDurationUs_[i]
-                    ) {
-                        resetTriangleGesture(i);
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
-
-                case TriangleGestureMode::DoubleOutput:
-                    if (!triangleDown) {
-                        resetTriangleGesture(i);
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
-            }
-        }
-    }
-
-    oag::LogicalGamepadState applyTriangleGesture(
-        oag::LogicalSlotId slot,
-        oag::LogicalGamepadState output
+    std::uint8_t defenseComboPhaseFor(
+        std::uint64_t activeForUs
     ) const {
-        if (slot >= states_.size() || !states_[slot].connected) {
-            return output;
-        }
+        const std::uint64_t cycleUs =
+            activeForUs % kDefenseComboCycleUs;
 
-        // Triangle is gesture-controlled. Always suppress the raw Y bit while
-        // the physical button is down or a gesture is pending/playing.
-        if (
-            (states_[slot].buttons & oag::ButtonNorth) != 0 ||
-            triangleGestureMode_[slot] != TriangleGestureMode::Idle
-        ) {
-            output.buttons &= ~static_cast<std::uint64_t>(
-                oag::ButtonNorth
-            );
-        }
-
-        if (
-            triangleGestureMode_[slot] ==
-            TriangleGestureMode::SingleOutput
-        ) {
-            output.buttons |= oag::ButtonNorth;
-            output.rightTrigger =
-                std::numeric_limits<std::uint32_t>::max();
-        } else if (
-            triangleGestureMode_[slot] ==
-            TriangleGestureMode::DoubleOutput
-        ) {
-            output.buttons |=
-                oag::ButtonLeftBumper |
-                oag::ButtonNorth;
-            output.rightTrigger =
-                std::numeric_limits<std::uint32_t>::max();
-        }
-
-        return output;
-    }
-
-    void resetSquareGesture(std::size_t slot) {
-        if (slot >= squareGestureMode_.size()) {
-            return;
-        }
-
-        squareGestureMode_[slot] = SquareGestureMode::Idle;
-        squareFirstPressStartedUs_[slot] = 0;
-        squareFirstReleasedUs_[slot] = 0;
-        squareFirstTapDurationUs_[slot] = 0;
-        squareSyntheticStartedUs_[slot] = 0;
-        squareLongHoldStartedUs_[slot] = 0;
-        squarePulseMask_[slot] = 0xFF;
-        squareDoubleStartedUs_[slot] = 0;
-        squareDoublePhase_[slot] = 0xFF;
-        squareDoubleReferenceLx_[slot] = 0;
-        squareDoubleReferenceLy_[slot] = 0;
-    }
-
-    std::uint8_t squareLongHoldPulseMask(
-        std::uint64_t elapsedUs
-    ) const {
-        std::uint8_t mask = 0;
-
-        if (
-            (elapsedUs % kSquareCrossPulseCycleUs) <
-            kSquareCrossPulseOnUs
-        ) {
-            mask |= 0x01;
-        }
-
-        if (
-            (elapsedUs % kSquareSyntheticPulseCycleUs) <
-            kSquareSyntheticPulseOnUs
-        ) {
-            mask |= 0x02;
-        }
-
-        return mask;
-    }
-
-    std::uint8_t squareDoublePhase(
-        std::uint64_t elapsedUs
-    ) const {
-        if (elapsedUs < kSquareDoubleButtonsStartUs) {
+        if (cycleUs < kDefenseComboPhase1EndUs) {
             return 0;
         }
-        if (elapsedUs < kSquareDoubleButtonsEndUs) {
+        if (cycleUs < kDefenseComboPhase2EndUs) {
             return 1;
         }
-        if (elapsedUs < kSquareDoubleStickEndUs) {
+        if (cycleUs < kDefenseComboPhase3EndUs) {
             return 2;
         }
-        return 3;
+        if (cycleUs < kDefenseComboPhase4EndUs) {
+            return 3;
+        }
+        return 4;
     }
 
-    void serviceSquareGesture() {
+    void serviceDefenseSquareCombo() {
         const std::uint64_t nowUs = time_us_64();
 
         for (std::size_t i = 0; i < states_.size(); ++i) {
@@ -2020,11 +1805,11 @@ private:
             if (
                 !state.connected ||
                 !state.source.valid() ||
-                squareGestureSource_[i] != state.source
+                defenseComboSource_[i] != state.source
             ) {
-                squareGestureSource_[i] =
+                defenseComboSource_[i] =
                     state.connected ? state.source : oag::DeviceId {};
-                resetSquareGesture(i);
+                resetDefenseSquareCombo(i);
             }
 
             if (!state.connected || !state.source.valid()) {
@@ -2034,209 +1819,107 @@ private:
             const bool squareDown =
                 (state.buttons & oag::ButtonWest) != 0;
 
-            switch (squareGestureMode_[i]) {
-                case SquareGestureMode::Idle:
-                    if (squareDown) {
-                        squareGestureMode_[i] =
-                            SquareGestureMode::FirstDown;
-                        squareFirstPressStartedUs_[i] = nowUs;
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
+            if (!squareDown) {
+                if (defenseComboActive_[i]) {
+                    resetDefenseSquareCombo(i);
+                    sendSlotOutput(
+                        static_cast<oag::LogicalSlotId>(i)
+                    );
+                } else {
+                    resetDefenseSquareCombo(i);
+                }
+                continue;
+            }
 
-                case SquareGestureMode::FirstDown:
-                    if (!squareDown) {
-                        squareFirstTapDurationUs_[i] =
-                            nowUs - squareFirstPressStartedUs_[i];
-                        if (
-                            squareFirstTapDurationUs_[i] <
-                            kMinimumSyntheticTapUs
-                        ) {
-                            squareFirstTapDurationUs_[i] =
-                                kMinimumSyntheticTapUs;
-                        }
-                        squareFirstReleasedUs_[i] = nowUs;
-                        squareGestureMode_[i] =
-                            SquareGestureMode::WaitSecond;
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    } else if (
-                        nowUs - squareFirstPressStartedUs_[i] >=
-                        kSquareLongHoldActivationUs
-                    ) {
-                        squareGestureMode_[i] =
-                            SquareGestureMode::LongHold;
-                        squareLongHoldStartedUs_[i] = nowUs;
-                        squarePulseMask_[i] = 0x03;
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
+            if (defenseComboStartedUs_[i] == 0) {
+                defenseComboStartedUs_[i] = nowUs;
+                continue;
+            }
 
-                case SquareGestureMode::WaitSecond:
-                    if (squareDown) {
-                        if (
-                            nowUs - squareFirstReleasedUs_[i] <=
-                            kDoubleTapWindowUs
-                        ) {
-                            squareGestureMode_[i] =
-                                SquareGestureMode::DoubleMacro;
-                            squareDoubleStartedUs_[i] = nowUs;
-                            squareDoublePhase_[i] = 0;
-                            squareDoubleReferenceLx_[i] = state.lx;
-                            squareDoubleReferenceLy_[i] = state.ly;
-                            sendSlotOutput(
-                                static_cast<oag::LogicalSlotId>(i)
-                            );
-                        } else {
-                            squareGestureMode_[i] =
-                                SquareGestureMode::FirstDown;
-                            squareFirstPressStartedUs_[i] = nowUs;
-                        }
-                    } else if (
-                        nowUs - squareFirstReleasedUs_[i] >=
-                        kDoubleTapWindowUs
-                    ) {
-                        squareGestureMode_[i] =
-                            SquareGestureMode::SingleOutput;
-                        squareSyntheticStartedUs_[i] = nowUs;
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
-
-                case SquareGestureMode::SingleOutput:
-                    if (
-                        nowUs - squareSyntheticStartedUs_[i] >=
-                        squareFirstTapDurationUs_[i]
-                    ) {
-                        resetSquareGesture(i);
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-                    break;
-
-                case SquareGestureMode::DoubleMacro: {
-                    const std::uint64_t elapsedUs =
-                        nowUs - squareDoubleStartedUs_[i];
-                    const std::uint8_t phase =
-                        squareDoublePhase(elapsedUs);
-
-                    if (phase != squareDoublePhase_[i]) {
-                        squareDoublePhase_[i] = phase;
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                    }
-
-                    if (phase == 3 && !squareDown) {
-                        resetSquareGesture(i);
-                    }
-                    break;
+            if (!defenseComboActive_[i]) {
+                if (
+                    nowUs - defenseComboStartedUs_[i] <
+                    kDefenseComboActivationUs
+                ) {
+                    continue;
                 }
 
-                case SquareGestureMode::LongHold:
-                    if (!squareDown) {
-                        resetSquareGesture(i);
-                        sendSlotOutput(
-                            static_cast<oag::LogicalSlotId>(i)
-                        );
-                        break;
-                    }
-
-                    {
-                        const std::uint64_t elapsedUs =
-                            nowUs - squareLongHoldStartedUs_[i];
-                        const std::uint8_t mask =
-                            squareLongHoldPulseMask(elapsedUs);
-
-                        if (mask != squarePulseMask_[i]) {
-                            squarePulseMask_[i] = mask;
-                            sendSlotOutput(
-                                static_cast<oag::LogicalSlotId>(i)
-                            );
-                        }
-                    }
-                    break;
+                defenseComboActive_[i] = true;
+                defenseComboPhase_[i] = 0;
+                sendSlotOutput(
+                    static_cast<oag::LogicalSlotId>(i)
+                );
+                continue;
             }
+
+            const std::uint64_t activeForUs =
+                nowUs -
+                defenseComboStartedUs_[i] -
+                kDefenseComboActivationUs;
+            const std::uint8_t phase =
+                defenseComboPhaseFor(activeForUs);
+
+            if (phase == defenseComboPhase_[i]) {
+                continue;
+            }
+
+            defenseComboPhase_[i] = phase;
+            sendSlotOutput(
+                static_cast<oag::LogicalSlotId>(i)
+            );
         }
     }
 
-    oag::LogicalGamepadState applySquareGesture(
+    oag::LogicalGamepadState applyDefenseSquareCombo(
         oag::LogicalSlotId slot,
         oag::LogicalGamepadState output
     ) const {
-        if (slot >= states_.size() || !states_[slot].connected) {
+        if (
+            slot >= states_.size() ||
+            !states_[slot].connected ||
+            (states_[slot].buttons & oag::ButtonWest) == 0 ||
+            !defenseComboActive_[slot]
+        ) {
             return output;
         }
 
-        // Square is gesture-controlled. Suppress raw Square while physical
-        // input is down or while any synthetic Square gesture is active.
-        if (
-            (states_[slot].buttons & oag::ButtonWest) != 0 ||
-            squareGestureMode_[slot] != SquareGestureMode::Idle
-        ) {
-            output.buttons &= ~static_cast<std::uint64_t>(
-                oag::ButtonWest
-            );
-        }
+        // Once active, the physical Square is only the hold trigger.
+        // Override the four combo controls exactly like the requested
+        // state machine while leaving every other UI5K input untouched.
+        output.buttons &= ~static_cast<std::uint64_t>(
+            oag::ButtonWest |
+            oag::ButtonSouth |
+            oag::ButtonRightBumper
+        );
+        output.leftTrigger = 0;
 
-        switch (squareGestureMode_[slot]) {
-            case SquareGestureMode::SingleOutput:
-                output.buttons |= oag::ButtonWest;
-                break;
-
-            case SquareGestureMode::LongHold:
-                output.buttons &= ~static_cast<std::uint64_t>(
-                    oag::ButtonSouth | oag::ButtonWest
-                );
+        switch (defenseComboPhase_[slot]) {
+            case 0:
                 output.leftTrigger =
                     std::numeric_limits<std::uint32_t>::max();
-
-                if ((squarePulseMask_[slot] & 0x01) != 0) {
-                    output.buttons |= oag::ButtonSouth;
-                }
-                if ((squarePulseMask_[slot] & 0x02) != 0) {
-                    output.buttons |= oag::ButtonWest;
-                }
+                output.buttons |= oag::ButtonRightBumper;
                 break;
 
-            case SquareGestureMode::DoubleMacro:
-                if (squareDoublePhase_[slot] <= 2) {
-                    const std::int32_t referenceX =
-                        squareDoubleReferenceLx_[slot];
-                    const std::int32_t referenceY =
-                        squareDoubleReferenceLy_[slot];
-
-                    // Far-post heuristic: move diagonally opposite the current
-                    // horizontal direction while preserving the vertical
-                    // direction. Centered input defaults to right + forward.
-                    output.lx =
-                        referenceX > 0
-                            ? -kFarPostDiagonalAxis
-                            : kFarPostDiagonalAxis;
-                    output.ly =
-                        referenceY > 0
-                            ? kFarPostDiagonalAxis
-                            : -kFarPostDiagonalAxis;
-                }
-
-                if (squareDoublePhase_[slot] == 1) {
-                    output.rightTrigger =
-                        std::numeric_limits<std::uint32_t>::max();
-                    output.buttons |= oag::ButtonWest;
-                }
+            case 1:
+                output.leftTrigger =
+                    std::numeric_limits<std::uint32_t>::max();
                 break;
 
-            case SquareGestureMode::Idle:
-            case SquareGestureMode::FirstDown:
-            case SquareGestureMode::WaitSecond:
+            case 2:
+                output.leftTrigger =
+                    std::numeric_limits<std::uint32_t>::max();
+                output.buttons |= oag::ButtonSouth;
+                break;
+
+            case 3:
+                output.leftTrigger =
+                    std::numeric_limits<std::uint32_t>::max();
+                break;
+
+            case 4:
+                output.buttons |= oag::ButtonSouth;
+                break;
+
             default:
                 break;
         }
@@ -2259,12 +1942,9 @@ private:
             return {};
         }
 
-        return applyTriangleGesture(
+        return applyDefenseSquareCombo(
             slot,
-            applySquareGesture(
-                slot,
-                mapping_.process(states_[slot])
-            )
+            mapping_.process(states_[slot])
         );
     }
 
@@ -2291,12 +1971,9 @@ private:
             oag::LogicalGamepadState output {};
 
             if (states_[slot].connected) {
-                output = applyTriangleGesture(
+                output = applyDefenseSquareCombo(
                     slot,
-                    applySquareGesture(
-                        slot,
-                        mapping_.process(states_[slot])
-                    )
+                    mapping_.process(states_[slot])
                 );
             }
 
@@ -2705,98 +2382,25 @@ private:
     std::array<
         oag::DeviceId,
         oag::LogicalSlotManager::kGamepadSlots
-    > triangleGestureSource_ {};
-
-    std::array<
-        TriangleGestureMode,
-        oag::LogicalSlotManager::kGamepadSlots
-    > triangleGestureMode_ {};
+    > defenseComboSource_ {};
 
     std::array<
         std::uint64_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > triangleFirstPressStartedUs_ {};
+    > defenseComboStartedUs_ {};
 
     std::array<
-        std::uint64_t,
+        bool,
         oag::LogicalSlotManager::kGamepadSlots
-    > triangleFirstReleasedUs_ {};
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > triangleFirstTapDurationUs_ {};
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > triangleSyntheticStartedUs_ {};
-
-    std::array<
-        oag::DeviceId,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareGestureSource_ {};
-
-    std::array<
-        SquareGestureMode,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareGestureMode_ {};
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareFirstPressStartedUs_ {};
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareFirstReleasedUs_ {};
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareFirstTapDurationUs_ {};
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareSyntheticStartedUs_ {};
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareLongHoldStartedUs_ {};
+    > defenseComboActive_ {};
 
     std::array<
         std::uint8_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > squarePulseMask_ {
+    > defenseComboPhase_ {
         0xFF, 0xFF, 0xFF, 0xFF,
         0xFF, 0xFF, 0xFF, 0xFF,
     };
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareDoubleStartedUs_ {};
-
-    std::array<
-        std::uint8_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareDoublePhase_ {
-        0xFF, 0xFF, 0xFF, 0xFF,
-        0xFF, 0xFF, 0xFF, 0xFF,
-    };
-
-    std::array<
-        std::int32_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareDoubleReferenceLx_ {};
-
-    std::array<
-        std::int32_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > squareDoubleReferenceLy_ {};
 
     std::array<
         oag::UniversalGamepadState,
