@@ -69,7 +69,7 @@ private:
     std::uint8_t peerAddressType_ = 0;
     std::array<std::uint8_t, 6> peerAddress_ {};
 
-    std::array<std::uint8_t, 15> report_ {};
+    std::array<std::uint8_t, 17> report_ {};
 };
 
 } // namespace oag::firmware
