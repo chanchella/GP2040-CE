@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5K-BT-OUT6-ARDUINO-REFERENCE",
+    "phase": "U10F-PM1-UI5K-BT-OUT7-PREPOWER",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -119,6 +119,8 @@ manifest = {
         "bluetooth_peripheral_report_bytes": 17,
         "bluetooth_peripheral_reference": "ARDUINO_PICO_JOYSTICKBLE_GAMEPAD16",
         "bluetooth_peripheral_btstack_async_lock": True,
+        "bluetooth_peripheral_registered_before_hci_power_on": True,
+        "bluetooth_host_split_stack_setup_and_power_on": True,
         "bluetooth_peripheral_pnp_vid": "CAFE",
         "bluetooth_peripheral_pnp_pid": "4016",
         "bluetooth_peripheral_dual_connection_event_capture": True,
@@ -348,7 +350,9 @@ manifest = {
         "u10f_pm1_ui5k_bt_out3": "HARDWARE_CONNECTED_NO_INPUT",
         "u10f_pm1_ui5k_bt_out4_diag": "HARDWARE_LED_NO_SIGNAL",
         "u10f_pm1_ui5k_bt_out5_handle_fix": "HARDWARE_CONNECTED_NO_INPUT",
-        "u10f_pm1_ui5k_bt_out6_arduino_reference": "PENDING_HARDWARE",
+        "u10f_pm1_ui5k_bt_out6_arduino_reference": "HARDWARE_CONNECTED_NO_INPUT",
+        "standalone_arduino_pico_joystickble_probe": "HARDWARE_PASS",
+        "u10f_pm1_ui5k_bt_out7_pre_power": "PENDING_HARDWARE",
     },
 }
 
