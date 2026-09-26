@@ -11,6 +11,8 @@
 #include "btstack_tlv.h"
 #include "ble/gatt-service/hids_host.h"
 
+#include "oag_ble_platform.h"
+
 namespace {
 
 oag::firmware::BluetoothHostV2* gBluetoothHostV2 = nullptr;
@@ -89,27 +91,6 @@ constexpr std::uint16_t kLeLowLatencyIntervalMax = 12u;
 constexpr std::uint16_t kLeLowLatencyConnLatency = 0u;
 constexpr std::uint16_t kLeLowLatencySupervisionTimeout = 400u; // 4 seconds
 
-// Minimal GAP Device Name ATT database. This mirrors the historical
-// BluetoothHCI behavior where the Pico exposes a local GAP service even while
-// acting as the BLE HID Host/Central.
-constexpr std::uint8_t kLocalGapProfile[] = {
-    0x01,
-
-    // 0x0001 PRIMARY_SERVICE, GAP_SERVICE (0x1800)
-    0x0a, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x28, 0x00, 0x18,
-
-    // 0x0002 CHARACTERISTIC, GAP_DEVICE_NAME (0x2A00), READ
-    0x0d, 0x00, 0x02, 0x00, 0x02, 0x00, 0x03, 0x28,
-    0x02, 0x03, 0x00, 0x00, 0x2a,
-
-    // 0x0003 VALUE, "OAG Abo Gemi Ultra Gaming"
-    0x21, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x2a,
-    'O','A','G',' ','A','b','o',' ','G','e','m','i',' ',
-    'U','l','t','r','a',' ','G','a','m','i','n','g',
-
-    0x00, 0x00
-};
-
 } // namespace
 
 namespace oag::firmware {
@@ -143,8 +124,11 @@ bool BluetoothHostV2::initialize(
 
     // Historical BluetoothHCI installed a local GAP/ATT server before power-on.
     // Keep runtime Host-only: this does not start advertising.
+    // UI5K-BT-OUT1 uses one generated ATT database for the existing local GAP
+    // service plus the isolated BLE HOG output services. The Host still owns
+    // BTstack initialization and all Central-side input clients.
     att_server_init(
-        kLocalGapProfile,
+        profile_data,
         nullptr,
         nullptr
     );
@@ -221,6 +205,7 @@ void BluetoothHostV2::poll() {
     if (
         initialized_ &&
         hciWorking_ &&
+        !platformOutputLinkActive_ &&
         hasCapacity() &&
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
@@ -638,6 +623,7 @@ void BluetoothHostV2::stopDiscovery() {
 void BluetoothHostV2::startLeScan() {
     if (
         !hciWorking_ ||
+        platformOutputLinkActive_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -672,6 +658,7 @@ void BluetoothHostV2::startLeScan() {
 void BluetoothHostV2::startClassicInquiry() {
     if (
         !hciWorking_ ||
+        platformOutputLinkActive_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -690,7 +677,7 @@ void BluetoothHostV2::startClassicInquiry() {
 }
 
 void BluetoothHostV2::resumeDiscovery() {
-    if (!hciWorking_) {
+    if (!hciWorking_ || platformOutputLinkActive_) {
         return;
     }
 
@@ -713,6 +700,39 @@ bool BluetoothHostV2::beginDiscovery() {
 
     resumeDiscovery();
     return true;
+}
+
+void BluetoothHostV2::setPlatformOutputLinkActive(bool active) {
+    if (platformOutputLinkActive_ == active) {
+        return;
+    }
+
+    platformOutputLinkActive_ = active;
+
+    if (active) {
+        // Keep already-connected input controllers alive. Only quiesce
+        // background discovery while Android/PC completes peripheral-side
+        // HID pairing and GATT subscription.
+        if (
+            pendingKind_ == PendingKind::None &&
+            !deferredBleCandidateValid_
+        ) {
+            stopDiscoveryTimer();
+            gap_stop_scan();
+            gap_inquiry_stop();
+            discoveryPhase_ =
+                DiscoveryPhase::PausedForConnection;
+        }
+        return;
+    }
+
+    if (
+        pendingKind_ == PendingKind::None &&
+        !deferredBleCandidateValid_
+    ) {
+        discoveryPhase_ = DiscoveryPhase::Idle;
+        resumeDiscovery();
+    }
 }
 
 void BluetoothHostV2::handleDiscoveryTimer() {
@@ -1374,10 +1394,13 @@ void BluetoothHostV2::handlePacket(
                         packet
                     );
 
-                if (
-                    role == HCI_ROLE_SLAVE ||
-                    !hasCapacity()
-                ) {
+                // Peripheral-side LE links are owned by BluetoothPlatformOutput.
+                // Do not allocate them as input peers and do not disconnect them.
+                if (role == HCI_ROLE_SLAVE) {
+                    break;
+                }
+
+                if (!hasCapacity()) {
                     gap_disconnect(connectionHandle);
                     pendingKind_ = PendingKind::None;
                     resumeDiscovery();
