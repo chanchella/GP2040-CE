@@ -1131,23 +1131,10 @@ private:
                 return;
             }
 
-            if (bluetoothHost_.initialize(*this)) {
-                // OUT7 lifecycle:
-                // 1) Host owns CYW43/BTstack + ATT/GATT client/server setup.
-                // 2) Install the peripheral HIDS device while HCI is still OFF.
-                // 3) Power the controller only after every service/handler is
-                //    registered. This matches the hardware-proven standalone
-                //    Arduino-Pico JoystickBLE ordering.
-                (void)bluetoothPlatformOutput_.initialize(
-                    bluetoothHost_
-                );
-
-                if (!bluetoothHost_.startController()) {
-                    bluetoothInitNotBeforeUs_ =
-                        nowUs + 1000000ull;
-                    return;
-                }
-
+            // OUT13 diagnostic: bypass BluetoothHostV2 completely. BLE output
+            // owns CYW43/BTstack/HCI using the same lifecycle as the standalone
+            // Arduino-Pico JoystickBLE probe that passed on this hardware.
+            if (bluetoothPlatformOutput_.initializeStandalone()) {
                 bluetoothInitialized_ = true;
                 bluetoothInitNotBeforeUs_ = 0;
                 return;
@@ -1158,7 +1145,6 @@ private:
             return;
         }
 
-        bluetoothHost_.poll();
         bluetoothPlatformOutput_.poll();
     }
 
