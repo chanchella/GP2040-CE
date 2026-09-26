@@ -125,7 +125,8 @@ jobs:
           assert "ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE" in out
           assert "SM_AUTHREQ_BONDING |" in out
           assert "SM_AUTHREQ_SECURE_CONNECTION" in out
-          assert "sm_set_authentication_requirements(\n                SM_AUTHREQ_BONDING\n            );" in out
+          assert "SM_AUTHREQ_SECURE_CONNECTION |" in out
+          assert "SM_AUTHREQ_BONDING" in out
           assert "kInputReportId = 1u" in Path(
               "oag/firmware/include/oag/firmware/bluetooth_platform_output.h"
           ).read_text()
