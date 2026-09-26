@@ -51,14 +51,6 @@ enum class XgipInitPhase : std::uint8_t {
     Ready,
 };
 
-enum class TriangleTapComboKind : std::uint8_t {
-    None = 0,
-    GroundShort,
-    GroundMediumLong,
-    LoftedCurvedThrough,
-    Trivela,
-};
-
 static constexpr std::uint8_t kXonePowerOn[] = {
     0x05, 0x20, 0x00, 0x01, 0x00
 };
@@ -123,7 +115,7 @@ public:
         serviceXgipInit();
         servicePrimaryControllerChords();
         serviceSquareHoldCombo();
-        serviceTriangleTapCombo();
+        serviceR1LoopCombo();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
@@ -1127,41 +1119,28 @@ private:
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
 
-    // UI5K-C3 eFootball experiment.
-    // PlayStation labels:
-    //   Hold Square (Xbox X / ButtonWest) for 1 second -> activate.
-    //   While active, L2 (Xbox LT) stays at 100% and the sequence repeats:
-    //     Cross 200 ms -> wait 750 ms -> Square 200 ms -> wait 1250 ms.
-    //   Releasing the physical Square trigger ends the combo immediately.
+    // UI5K-C5 eFootball Square hold combo.
+    // Hold physical Square for 1 second to activate. While active:
+    //   L2 stays at 100%.
+    //   Cross pulses 200 ms ON, then 750 ms OFF, repeating.
+    // Releasing physical Square stops the combo immediately.
     static constexpr std::uint64_t kSquareHoldComboActivationUs = 1000000ull;
     static constexpr std::uint64_t kSquareHoldComboCrossPulseUs = 200000ull;
     static constexpr std::uint64_t kSquareHoldComboWaitAfterCrossUs = 750000ull;
-    static constexpr std::uint64_t kSquareHoldComboSquarePulseUs = 200000ull;
-    static constexpr std::uint64_t kSquareHoldComboWaitAfterSquareUs = 1250000ull;
     static constexpr std::uint64_t kSquareHoldComboCycleUs =
         kSquareHoldComboCrossPulseUs +
-        kSquareHoldComboWaitAfterCrossUs +
-        kSquareHoldComboSquarePulseUs +
-        kSquareHoldComboWaitAfterSquareUs;
+        kSquareHoldComboWaitAfterCrossUs;
 
-    // UI5K-C4 Triangle duration selector.
-    // Physical Triangle (Xbox Y / ButtonNorth) is buffered while held.
-    // On release, the measured touch duration selects one synthetic pass:
-    //   <=120 ms : R2 + Triangle for 120 ms.
-    //   <=200 ms : R2 + Triangle for 200 ms.
-    //   <=230 ms : L1 + R2 + Triangle for 230 ms.
-    //   > 230 ms : Trivela: 45-degree LS at 0 ms, R2 + Triangle
-    //              from 50..200 ms, center at 230 ms.
-    static constexpr std::uint64_t kTriangleShortSelectUs = 120000ull;
-    static constexpr std::uint64_t kTriangleMediumSelectUs = 200000ull;
-    static constexpr std::uint64_t kTriangleLoftedSelectUs = 230000ull;
-    static constexpr std::uint64_t kTriangleShortActionUs = 120000ull;
-    static constexpr std::uint64_t kTriangleMediumActionUs = 200000ull;
-    static constexpr std::uint64_t kTriangleLoftedActionUs = 230000ull;
-    static constexpr std::uint64_t kTrivelaButtonsStartUs = 50000ull;
-    static constexpr std::uint64_t kTrivelaButtonsEndUs = 200000ull;
-    static constexpr std::uint64_t kTrivelaStickEndUs = 230000ull;
-    static constexpr std::int32_t kTrivelaDiagonalAxis = 1518500249;
+    // UI5K-C5 eFootball R1 loop combo. Physical R1 is the trigger:
+    //   0..160 ms   : R1 held.
+    //   160..180 ms : all loop outputs released (20 ms safety gap).
+    //   180..240 ms : L2 held (60 ms).
+    //   240..260 ms : all loop outputs released (20 ms safety gap).
+    // Then repeat while physical R1 remains held.
+    static constexpr std::uint64_t kR1LoopR1HoldUs = 160000ull;
+    static constexpr std::uint64_t kR1LoopL2StartUs = 180000ull;
+    static constexpr std::uint64_t kR1LoopL2EndUs = 240000ull;
+    static constexpr std::uint64_t kR1LoopCycleUs = 260000ull;
 
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
@@ -1857,24 +1836,10 @@ private:
             const std::uint64_t cyclePositionUs =
                 activeForUs % kSquareHoldComboCycleUs;
 
-            std::uint8_t phase = 3;
-
-            if (cyclePositionUs < kSquareHoldComboCrossPulseUs) {
-                phase = 0;
-            } else if (
-                cyclePositionUs <
-                kSquareHoldComboCrossPulseUs +
-                kSquareHoldComboWaitAfterCrossUs
-            ) {
-                phase = 1;
-            } else if (
-                cyclePositionUs <
-                kSquareHoldComboCrossPulseUs +
-                kSquareHoldComboWaitAfterCrossUs +
-                kSquareHoldComboSquarePulseUs
-            ) {
-                phase = 2;
-            }
+            const std::uint8_t phase =
+                cyclePositionUs < kSquareHoldComboCrossPulseUs
+                    ? 0
+                    : 1;
 
             if (phase == squareHoldComboPhase_[i]) {
                 continue;
@@ -1899,9 +1864,9 @@ private:
             return output;
         }
 
-        // The physical Square is only the hold trigger once the combo is
-        // active. Suppress continuous Square/Cross passthrough, keep L2 fully
-        // held, then synthesize the requested Cross/Square pulse phases.
+        // Physical Square becomes the hold trigger after activation. Suppress
+        // its continuous passthrough and synthesize only the requested Cross
+        // pulse while L2 remains fully held.
         output.buttons &= ~static_cast<std::uint64_t>(
             oag::ButtonWest | oag::ButtonSouth
         );
@@ -1909,78 +1874,45 @@ private:
 
         if (squareHoldComboPhase_[slot] == 0) {
             output.buttons |= oag::ButtonSouth;
-        } else if (squareHoldComboPhase_[slot] == 2) {
-            output.buttons |= oag::ButtonWest;
         }
 
         return output;
     }
 
-    void resetTriangleTapComboRuntime(std::size_t slot) {
-        if (slot >= triangleTapStartedUs_.size()) {
+    oag::LogicalGamepadState applyTriangleHoldCombo(
+        oag::LogicalSlotId slot,
+        oag::LogicalGamepadState output
+    ) const {
+        if (
+            slot >= states_.size() ||
+            !states_[slot].connected ||
+            (states_[slot].buttons & oag::ButtonNorth) == 0
+        ) {
+            return output;
+        }
+
+        // Any physical Triangle press becomes L1 + R2 + Triangle for exactly
+        // the same time that Triangle is physically held.
+        output.buttons |=
+            oag::ButtonLeftBumper |
+            oag::ButtonNorth;
+        output.rightTrigger =
+            std::numeric_limits<std::uint32_t>::max();
+
+        return output;
+    }
+
+    void resetR1LoopComboRuntime(std::size_t slot) {
+        if (slot >= r1LoopStartedUs_.size()) {
             return;
         }
 
-        triangleTapStartedUs_[slot] = 0;
-        triangleTapWasDown_[slot] = false;
-        triangleComboKind_[slot] = TriangleTapComboKind::None;
-        triangleComboStartedUs_[slot] = 0;
-        triangleComboPhase_[slot] = 0xFF;
-        triangleTrivelaReferenceLx_[slot] = 0;
-        triangleTrivelaReferenceLy_[slot] = 0;
+        r1LoopStartedUs_[slot] = 0;
+        r1LoopActive_[slot] = false;
+        r1LoopPhase_[slot] = 0xFF;
     }
 
-    TriangleTapComboKind classifyTriangleTap(
-        std::uint64_t heldUs
-    ) const {
-        if (heldUs <= kTriangleShortSelectUs) {
-            return TriangleTapComboKind::GroundShort;
-        }
-
-        if (heldUs <= kTriangleMediumSelectUs) {
-            return TriangleTapComboKind::GroundMediumLong;
-        }
-
-        if (heldUs <= kTriangleLoftedSelectUs) {
-            return TriangleTapComboKind::LoftedCurvedThrough;
-        }
-
-        return TriangleTapComboKind::Trivela;
-    }
-
-    std::uint8_t triangleComboPhaseFor(
-        TriangleTapComboKind kind,
-        std::uint64_t elapsedUs
-    ) const {
-        switch (kind) {
-            case TriangleTapComboKind::GroundShort:
-                return elapsedUs < kTriangleShortActionUs ? 0 : 0xFF;
-
-            case TriangleTapComboKind::GroundMediumLong:
-                return elapsedUs < kTriangleMediumActionUs ? 0 : 0xFF;
-
-            case TriangleTapComboKind::LoftedCurvedThrough:
-                return elapsedUs < kTriangleLoftedActionUs ? 0 : 0xFF;
-
-            case TriangleTapComboKind::Trivela:
-                if (elapsedUs < kTrivelaButtonsStartUs) {
-                    return 0;
-                }
-                if (elapsedUs < kTrivelaButtonsEndUs) {
-                    return 1;
-                }
-                if (elapsedUs < kTrivelaStickEndUs) {
-                    return 2;
-                }
-                return 0xFF;
-
-            case TriangleTapComboKind::None:
-            default:
-                return 0xFF;
-        }
-    }
-
-    void serviceTriangleTapCombo() {
+    void serviceR1LoopCombo() {
         const std::uint64_t nowUs = time_us_64();
 
         for (std::size_t i = 0; i < states_.size(); ++i) {
@@ -1989,158 +1921,84 @@ private:
             if (
                 !state.connected ||
                 !state.source.valid() ||
-                triangleTapSource_[i] != state.source
+                r1LoopSource_[i] != state.source
             ) {
-                triangleTapSource_[i] =
+                r1LoopSource_[i] =
                     state.connected ? state.source : oag::DeviceId {};
-                resetTriangleTapComboRuntime(i);
+                resetR1LoopComboRuntime(i);
             }
 
             if (!state.connected || !state.source.valid()) {
                 continue;
             }
 
-            // Finish an already-selected synthetic action independently of
-            // subsequent raw input reports.
-            if (triangleComboKind_[i] != TriangleTapComboKind::None) {
-                const std::uint64_t elapsedUs =
-                    nowUs - triangleComboStartedUs_[i];
-                const std::uint8_t phase =
-                    triangleComboPhaseFor(
-                        triangleComboKind_[i],
-                        elapsedUs
-                    );
+            const bool r1Down =
+                (state.buttons & oag::ButtonRightBumper) != 0;
 
-                if (phase == 0xFF) {
-                    triangleComboKind_[i] = TriangleTapComboKind::None;
-                    triangleComboStartedUs_[i] = 0;
-                    triangleComboPhase_[i] = 0xFF;
+            if (!r1Down) {
+                if (r1LoopActive_[i]) {
+                    resetR1LoopComboRuntime(i);
                     sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
-                } else if (phase != triangleComboPhase_[i]) {
-                    triangleComboPhase_[i] = phase;
-                    sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
+                } else {
+                    resetR1LoopComboRuntime(i);
                 }
-
-                triangleTapWasDown_[i] =
-                    (state.buttons & oag::ButtonNorth) != 0;
                 continue;
             }
 
-            const bool triangleDown =
-                (state.buttons & oag::ButtonNorth) != 0;
-
-            if (triangleDown && !triangleTapWasDown_[i]) {
-                triangleTapStartedUs_[i] = nowUs;
-                triangleTrivelaReferenceLx_[i] = state.lx;
-                triangleTrivelaReferenceLy_[i] = state.ly;
+            if (!r1LoopActive_[i]) {
+                r1LoopStartedUs_[i] = nowUs;
+                r1LoopActive_[i] = true;
+                r1LoopPhase_[i] = 0;
                 sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
-            } else if (
-                !triangleDown &&
-                triangleTapWasDown_[i] &&
-                triangleTapStartedUs_[i] != 0
-            ) {
-                const std::uint64_t heldUs =
-                    nowUs - triangleTapStartedUs_[i];
-
-                triangleComboKind_[i] =
-                    classifyTriangleTap(heldUs);
-                triangleComboStartedUs_[i] = nowUs;
-                triangleComboPhase_[i] = 0;
-
-                triangleTrivelaReferenceLx_[i] = state.lx;
-                triangleTrivelaReferenceLy_[i] = state.ly;
-                triangleTapStartedUs_[i] = 0;
-
-                sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
+                continue;
             }
 
-            triangleTapWasDown_[i] = triangleDown;
+            const std::uint64_t cyclePositionUs =
+                (nowUs - r1LoopStartedUs_[i]) % kR1LoopCycleUs;
+
+            std::uint8_t phase = 3;
+
+            if (cyclePositionUs < kR1LoopR1HoldUs) {
+                phase = 0;
+            } else if (cyclePositionUs < kR1LoopL2StartUs) {
+                phase = 1;
+            } else if (cyclePositionUs < kR1LoopL2EndUs) {
+                phase = 2;
+            }
+
+            if (phase == r1LoopPhase_[i]) {
+                continue;
+            }
+
+            r1LoopPhase_[i] = phase;
+            sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
         }
     }
 
-    oag::LogicalGamepadState applyTriangleTapCombo(
+    oag::LogicalGamepadState applyR1LoopCombo(
         oag::LogicalSlotId slot,
         oag::LogicalGamepadState output
     ) const {
         if (
             slot >= states_.size() ||
-            slot >= triangleComboKind_.size() ||
-            !states_[slot].connected
+            slot >= r1LoopActive_.size() ||
+            !states_[slot].connected ||
+            (states_[slot].buttons & oag::ButtonRightBumper) == 0 ||
+            !r1LoopActive_[slot]
         ) {
             return output;
         }
 
-        const bool measuringTap =
-            triangleTapStartedUs_[slot] != 0;
+        // Physical R1 is the loop trigger, so suppress raw continuous R1.
+        output.buttons &= ~static_cast<std::uint64_t>(
+            oag::ButtonRightBumper
+        );
 
-        const TriangleTapComboKind kind =
-            triangleComboKind_[slot];
-
-        // Raw Triangle is buffered while measuring so the physical touch
-        // selects a synthetic action instead of leaking a held Y press.
-        if (measuringTap || kind != TriangleTapComboKind::None) {
-            output.buttons &= ~static_cast<std::uint64_t>(
-                oag::ButtonNorth
-            );
-        }
-
-        if (kind == TriangleTapComboKind::None) {
-            return output;
-        }
-
-        const std::uint8_t phase =
-            triangleComboPhase_[slot];
-
-        switch (kind) {
-            case TriangleTapComboKind::GroundShort:
-            case TriangleTapComboKind::GroundMediumLong:
-                if (phase == 0) {
-                    output.rightTrigger =
-                        std::numeric_limits<std::uint32_t>::max();
-                    output.buttons |= oag::ButtonNorth;
-                }
-                break;
-
-            case TriangleTapComboKind::LoftedCurvedThrough:
-                if (phase == 0) {
-                    output.rightTrigger =
-                        std::numeric_limits<std::uint32_t>::max();
-                    output.buttons |=
-                        oag::ButtonLeftBumper |
-                        oag::ButtonNorth;
-                }
-                break;
-
-            case TriangleTapComboKind::Trivela:
-                if (phase <= 2) {
-                    const std::int32_t referenceX =
-                        triangleTrivelaReferenceLx_[slot];
-                    const std::int32_t referenceY =
-                        triangleTrivelaReferenceLy_[slot];
-
-                    // Oppose the current horizontal direction and preserve
-                    // the current vertical direction. With no directional
-                    // input, default to left + forward (canonical Y negative).
-                    output.lx =
-                        referenceX > 0
-                            ? -kTrivelaDiagonalAxis
-                            : kTrivelaDiagonalAxis;
-                    output.ly =
-                        referenceY > 0
-                            ? kTrivelaDiagonalAxis
-                            : -kTrivelaDiagonalAxis;
-                }
-
-                if (phase == 1) {
-                    output.rightTrigger =
-                        std::numeric_limits<std::uint32_t>::max();
-                    output.buttons |= oag::ButtonNorth;
-                }
-                break;
-
-            case TriangleTapComboKind::None:
-            default:
-                break;
+        if (r1LoopPhase_[slot] == 0) {
+            output.buttons |= oag::ButtonRightBumper;
+        } else if (r1LoopPhase_[slot] == 2) {
+            output.leftTrigger =
+                std::numeric_limits<std::uint32_t>::max();
         }
 
         return output;
@@ -2161,11 +2019,14 @@ private:
             return {};
         }
 
-        return applyTriangleTapCombo(
+        return applyR1LoopCombo(
             slot,
-            applySquareHoldCombo(
+            applyTriangleHoldCombo(
                 slot,
-                mapping_.process(states_[slot])
+                applySquareHoldCombo(
+                    slot,
+                    mapping_.process(states_[slot])
+                )
             )
         );
     }
@@ -2193,11 +2054,14 @@ private:
             oag::LogicalGamepadState output {};
 
             if (states_[slot].connected) {
-                output = applyTriangleTapCombo(
+                output = applyR1LoopCombo(
                     slot,
-                    applySquareHoldCombo(
+                    applyTriangleHoldCombo(
                         slot,
-                        mapping_.process(states_[slot])
+                        applySquareHoldCombo(
+                            slot,
+                            mapping_.process(states_[slot])
+                        )
                     )
                 );
             }
@@ -2630,45 +2494,25 @@ private:
     std::array<
         oag::DeviceId,
         oag::LogicalSlotManager::kGamepadSlots
-    > triangleTapSource_ {};
+    > r1LoopSource_ {};
 
     std::array<
         std::uint64_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > triangleTapStartedUs_ {};
+    > r1LoopStartedUs_ {};
 
     std::array<
         bool,
         oag::LogicalSlotManager::kGamepadSlots
-    > triangleTapWasDown_ {};
-
-    std::array<
-        TriangleTapComboKind,
-        oag::LogicalSlotManager::kGamepadSlots
-    > triangleComboKind_ {};
-
-    std::array<
-        std::uint64_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > triangleComboStartedUs_ {};
+    > r1LoopActive_ {};
 
     std::array<
         std::uint8_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > triangleComboPhase_ {
+    > r1LoopPhase_ {
         0xFF, 0xFF, 0xFF, 0xFF,
         0xFF, 0xFF, 0xFF, 0xFF,
     };
-
-    std::array<
-        std::int32_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > triangleTrivelaReferenceLx_ {};
-
-    std::array<
-        std::int32_t,
-        oag::LogicalSlotManager::kGamepadSlots
-    > triangleTrivelaReferenceLy_ {};
 
     std::array<
         oag::UniversalGamepadState,
