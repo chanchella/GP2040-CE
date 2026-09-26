@@ -15,6 +15,7 @@
 #include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
+#include "oag/firmware/bluetooth_platform_output.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/pc_native_km_output.h"
 #include "oag/firmware/usb_pio_host.h"
@@ -1131,6 +1132,13 @@ private:
             }
 
             if (bluetoothHost_.initialize(*this)) {
+                // Fail-soft peripheral backend layered on the already-owned
+                // UI5K BTstack/CYW43 runtime. It must never reinitialize the
+                // radio or disturb USB/XInput/KM startup ordering.
+                (void)bluetoothPlatformOutput_.initialize(
+                    bluetoothHost_
+                );
+
                 bluetoothInitialized_ = true;
                 bluetoothInitNotBeforeUs_ = 0;
                 return;
@@ -1142,6 +1150,7 @@ private:
         }
 
         bluetoothHost_.poll();
+        bluetoothPlatformOutput_.poll();
     }
 
     static oag::GenericHidGamepadQuirks genericHidQuirksFor(
@@ -1807,10 +1816,18 @@ private:
         // Physical gamepads keep their normal route while K/M are forwarded
         // through the standard HID keyboard/mouse interfaces.
         if (keyboardMouseMode_ == KeyboardMouseOutputMode::Native) {
+            const oag::LogicalGamepadState primary =
+                basePrimaryOutput();
+
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                basePrimaryOutput()
+                primary
             );
+
+            // Bluetooth output is an independent backend. In Native K/M mode
+            // it mirrors only the selected physical Primary controller; native
+            // keyboard/mouse traffic remains native and untouched.
+            bluetoothPlatformOutput_.submit(primary);
             return;
         }
 
@@ -1835,14 +1852,18 @@ private:
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
+            const oag::LogicalGamepadState disconnected {};
+
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                oag::LogicalGamepadState {}
+                disconnected
             );
+            bluetoothPlatformOutput_.submit(disconnected);
             return;
         }
 
         platformOutput_.submit(hostPrimaryOutputSlot_, output);
+        bluetoothPlatformOutput_.submit(output);
     }
 
     void serviceKeyboardMouseModeToggle() {
@@ -2139,6 +2160,7 @@ private:
     oag::firmware::UsbPioHost usbHost_;
 
     oag::firmware::BluetoothHostV2 bluetoothHost_;
+    oag::firmware::BluetoothPlatformOutput bluetoothPlatformOutput_;
     oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
     bool bluetoothInitialized_ = false;
     std::uint64_t bluetoothInitNotBeforeUs_ = 0;
