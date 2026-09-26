@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <limits>
 
 #include "pico/stdlib.h"
 #include "pico/time.h"
@@ -113,8 +114,8 @@ public:
         maintainXinputTransport();
         serviceXgipInit();
         servicePrimaryControllerChords();
-        serviceRightStickMacroTrigger();
-        serviceFakeStopCurlerMacro();
+        serviceSquareHoldPulseCombo();
+        serviceRightStickTapCombo();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
@@ -1118,29 +1119,22 @@ private:
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
 
-    // UI5K-FSC1 gameplay overlays.
-    // Canonical OAG Y orientation: Up is negative.
-    // A deliberate Right-Stick-Up trigger requires >=50% travel for 20 ms.
-    static constexpr std::int32_t kMacroRightStickUpThreshold =
-        -1073741824;
-    static constexpr std::uint64_t kMacroRightStickHoldUs = 20000ull;
+    // UI5K-M1: Square hold combo.
+    // <750 ms: physical Square is completely normal.
+    // >=750 ms while still held: suppress Square, hold L2 at 100%, and
+    // pulse Cross 200 ms ON / 750 ms OFF until Square is released.
+    static constexpr std::uint64_t kSquareHoldActivationUs = 750000ull;
+    static constexpr std::uint64_t kSquareCrossOnUs = 200000ull;
+    static constexpr std::uint64_t kSquareCrossOffUs = 750000ull;
+    static constexpr std::uint64_t kSquareCrossCycleUs =
+        kSquareCrossOnUs + kSquareCrossOffUs;
 
-    // Fake Stop Curler timeline, all relative to macro start:
-    //   0..30 ms   Square
-    //   30..45 ms  gap
-    //   45..85 ms  Cross
-    //   85..265 ms dead-stop wait, Left Stick forced center
-    //   265..385 ms manual Left Stick aim window
-    //   385..405 ms R2
-    //   405..615 ms R2 + Square
-    //   615 ms      macro ends and full physical control returns
-    static constexpr std::uint64_t kMacroSquareEndUs = 30000ull;
-    static constexpr std::uint64_t kMacroCrossStartUs = 45000ull;
-    static constexpr std::uint64_t kMacroCrossEndUs = 85000ull;
-    static constexpr std::uint64_t kMacroManualAimStartUs = 265000ull;
-    static constexpr std::uint64_t kMacroR2StartUs = 385000ull;
-    static constexpr std::uint64_t kMacroShotStartUs = 405000ull;
-    static constexpr std::uint64_t kMacroEndUs = 615000ull;
+    // UI5K-M1: Right-Stick-Up one-shot combo.
+    // Canonical OAG Y orientation: Up is negative. 50% travel avoids noise.
+    static constexpr std::int32_t kRightStickUpThreshold =
+        -1073741824;
+    static constexpr std::uint64_t kRightStickSquarePulseUs = 20000ull;
+    static constexpr std::uint64_t kRightStickCrossPulseEndUs = 40000ull;
 
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
@@ -1760,7 +1754,7 @@ private:
                     internalSlot < states_.size() &&
                     states_[internalSlot].connected
                 ) {
-                    output = applyGameplayOverlays(
+                    output = applyGameplayCombos(
                         internalSlot,
                         mapping_.process(states_[internalSlot])
                     );
@@ -1774,38 +1768,17 @@ private:
         }
     }
 
-    bool rightStickInMacroTriggerZone(
-        const oag::UniversalGamepadState& state
-    ) const {
-        return state.ry <= kMacroRightStickUpThreshold;
-    }
-
-    void resetGameplayOverlayRuntime(std::size_t slot) {
-        if (slot >= macroTriggerStartedUs_.size()) {
+    void resetSquareHoldPulseCombo(std::size_t slot) {
+        if (slot >= squareHoldStartedUs_.size()) {
             return;
         }
 
-        macroTriggerStartedUs_[slot] = 0;
-        macroTriggerArmed_[slot] = true;
-        fakeStopCurlerRunning_[slot] = false;
-        fakeStopCurlerStartedUs_[slot] = 0;
-        fakeStopCurlerPhase_[slot] = 0xFF;
+        squareHoldStartedUs_[slot] = 0;
+        squareHoldActive_[slot] = false;
+        squareHoldCrossOn_[slot] = false;
     }
 
-    std::uint8_t fakeStopCurlerPhaseFor(
-        std::uint64_t elapsedUs
-    ) const {
-        if (elapsedUs < kMacroSquareEndUs) return 0;
-        if (elapsedUs < kMacroCrossStartUs) return 1;
-        if (elapsedUs < kMacroCrossEndUs) return 2;
-        if (elapsedUs < kMacroManualAimStartUs) return 3;
-        if (elapsedUs < kMacroR2StartUs) return 4;
-        if (elapsedUs < kMacroShotStartUs) return 5;
-        if (elapsedUs < kMacroEndUs) return 6;
-        return 7;
-    }
-
-    void serviceRightStickMacroTrigger() {
+    void serviceSquareHoldPulseCombo() {
         const std::uint64_t nowUs = time_us_64();
 
         for (std::size_t i = 0; i < states_.size(); ++i) {
@@ -1814,11 +1787,107 @@ private:
             if (
                 !state.connected ||
                 !state.source.valid() ||
-                gameplayOverlaySource_[i] != state.source
+                squareHoldSource_[i] != state.source
             ) {
-                gameplayOverlaySource_[i] =
+                squareHoldSource_[i] =
                     state.connected ? state.source : oag::DeviceId {};
-                resetGameplayOverlayRuntime(i);
+                resetSquareHoldPulseCombo(i);
+            }
+
+            if (!state.connected || !state.source.valid()) {
+                continue;
+            }
+
+            const bool squareDown =
+                (state.buttons & oag::ButtonWest) != 0;
+
+            if (!squareDown) {
+                if (squareHoldActive_[i]) {
+                    resetSquareHoldPulseCombo(i);
+                    sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
+                } else {
+                    resetSquareHoldPulseCombo(i);
+                }
+                continue;
+            }
+
+            if (squareHoldStartedUs_[i] == 0) {
+                squareHoldStartedUs_[i] = nowUs;
+                continue;
+            }
+
+            if (!squareHoldActive_[i]) {
+                if (
+                    nowUs - squareHoldStartedUs_[i] <
+                    kSquareHoldActivationUs
+                ) {
+                    continue;
+                }
+
+                squareHoldActive_[i] = true;
+                squareHoldCrossOn_[i] = true;
+                sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
+                continue;
+            }
+
+            const std::uint64_t activeForUs =
+                nowUs -
+                squareHoldStartedUs_[i] -
+                kSquareHoldActivationUs;
+            const bool crossOn =
+                (activeForUs % kSquareCrossCycleUs) <
+                kSquareCrossOnUs;
+
+            if (crossOn != squareHoldCrossOn_[i]) {
+                squareHoldCrossOn_[i] = crossOn;
+                sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
+            }
+        }
+    }
+
+    bool rightStickInUpTriggerZone(
+        const oag::UniversalGamepadState& state
+    ) const {
+        return state.ry <= kRightStickUpThreshold;
+    }
+
+    void resetRightStickTapCombo(std::size_t slot) {
+        if (slot >= rightStickTapRunning_.size()) {
+            return;
+        }
+
+        rightStickTapArmed_[slot] = true;
+        rightStickTapRunning_[slot] = false;
+        rightStickTapStartedUs_[slot] = 0;
+        rightStickTapPhase_[slot] = 0xFF;
+    }
+
+    std::uint8_t rightStickTapPhaseFor(
+        std::uint64_t elapsedUs
+    ) const {
+        if (elapsedUs < kRightStickSquarePulseUs) {
+            return 0;
+        }
+        if (elapsedUs < kRightStickCrossPulseEndUs) {
+            return 1;
+        }
+        return 2;
+    }
+
+    void serviceRightStickTapCombo() {
+        const std::uint64_t nowUs = time_us_64();
+
+        for (std::size_t i = 0; i < states_.size(); ++i) {
+            const oag::UniversalGamepadState& state = states_[i];
+
+            if (
+                !state.connected ||
+                !state.source.valid() ||
+                rightStickTapSource_[i] != state.source
+            ) {
+                rightStickTapSource_[i] =
+                    state.connected ? state.source : oag::DeviceId {};
+                resetRightStickTapCombo(i);
             }
 
             if (!state.connected || !state.source.valid()) {
@@ -1826,79 +1895,48 @@ private:
             }
 
             const bool triggerZone =
-                rightStickInMacroTriggerZone(state);
+                rightStickInUpTriggerZone(state);
 
             if (!triggerZone) {
-                macroTriggerStartedUs_[i] = 0;
-                macroTriggerArmed_[i] = true;
-                continue;
-            }
-
-            // Do not queue another macro while one is already running.
-            if (
-                fakeStopCurlerRunning_[i] ||
-                !macroTriggerArmed_[i]
+                if (!rightStickTapRunning_[i]) {
+                    rightStickTapArmed_[i] = true;
+                }
+            } else if (
+                rightStickTapArmed_[i] &&
+                !rightStickTapRunning_[i]
             ) {
-                continue;
+                rightStickTapArmed_[i] = false;
+                rightStickTapRunning_[i] = true;
+                rightStickTapStartedUs_[i] = nowUs;
+                rightStickTapPhase_[i] = 0;
+                sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
             }
 
-            if (macroTriggerStartedUs_[i] == 0) {
-                macroTriggerStartedUs_[i] = nowUs;
-                continue;
-            }
-
-            if (
-                nowUs - macroTriggerStartedUs_[i] <
-                kMacroRightStickHoldUs
-            ) {
-                continue;
-            }
-
-            macroTriggerArmed_[i] = false;
-            macroTriggerStartedUs_[i] = 0;
-            fakeStopCurlerRunning_[i] = true;
-            fakeStopCurlerStartedUs_[i] = nowUs;
-            fakeStopCurlerPhase_[i] = 0;
-            sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
-        }
-    }
-
-    void serviceFakeStopCurlerMacro() {
-        const std::uint64_t nowUs = time_us_64();
-
-        for (std::size_t i = 0; i < states_.size(); ++i) {
-            if (!fakeStopCurlerRunning_[i]) {
-                continue;
-            }
-
-            if (!states_[i].connected) {
-                fakeStopCurlerRunning_[i] = false;
-                fakeStopCurlerStartedUs_[i] = 0;
-                fakeStopCurlerPhase_[i] = 0xFF;
+            if (!rightStickTapRunning_[i]) {
                 continue;
             }
 
             const std::uint64_t elapsedUs =
-                nowUs - fakeStopCurlerStartedUs_[i];
+                nowUs - rightStickTapStartedUs_[i];
             const std::uint8_t phase =
-                fakeStopCurlerPhaseFor(elapsedUs);
+                rightStickTapPhaseFor(elapsedUs);
 
-            if (phase >= 7) {
-                fakeStopCurlerRunning_[i] = false;
-                fakeStopCurlerStartedUs_[i] = 0;
-                fakeStopCurlerPhase_[i] = 0xFF;
+            if (phase >= 2) {
+                rightStickTapRunning_[i] = false;
+                rightStickTapStartedUs_[i] = 0;
+                rightStickTapPhase_[i] = 0xFF;
                 sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
                 continue;
             }
 
-            if (phase != fakeStopCurlerPhase_[i]) {
-                fakeStopCurlerPhase_[i] = phase;
+            if (phase != rightStickTapPhase_[i]) {
+                rightStickTapPhase_[i] = phase;
                 sendSlotOutput(static_cast<oag::LogicalSlotId>(i));
             }
         }
     }
 
-    oag::LogicalGamepadState applyGameplayOverlays(
+    oag::LogicalGamepadState applyGameplayCombos(
         oag::LogicalSlotId slot,
         oag::LogicalGamepadState output
     ) const {
@@ -1909,60 +1947,41 @@ private:
         const oag::UniversalGamepadState& physical =
             states_[slot];
 
-        // Any physical Triangle press becomes Triangle + R1 at the same time.
-        // Physical R1 remains independently functional through the base state.
-        if ((physical.buttons & oag::ButtonNorth) != 0) {
-            output.buttons |= oag::ButtonRightBumper;
+        // Square is normal until the continuous hold reaches 750 ms.
+        if (
+            (physical.buttons & oag::ButtonWest) != 0 &&
+            squareHoldActive_[slot]
+        ) {
+            output.buttons &= ~static_cast<std::uint64_t>(
+                oag::ButtonWest | oag::ButtonSouth
+            );
+            output.leftTrigger =
+                std::numeric_limits<std::uint32_t>::max();
+
+            if (squareHoldCrossOn_[slot]) {
+                output.buttons |= oag::ButtonSouth;
+            }
         }
 
-        // Consume the Right-Stick-Up gesture completely. The target never sees
-        // the trigger movement, whether it lasts 5 ms or reaches the 20 ms
-        // macro threshold.
-        if (rightStickInMacroTriggerZone(physical)) {
+        // The Right-Stick-Up gesture is a trigger only. Never expose the
+        // upward trigger movement to the target/game.
+        if (rightStickInUpTriggerZone(physical)) {
             output.rx = 0;
             output.ry = 0;
         }
 
-        if (!fakeStopCurlerRunning_[slot]) {
-            return output;
-        }
+        if (rightStickTapRunning_[slot]) {
+            // This short macro owns Square/Cross for its 40 ms lifetime.
+            // L2 from the Square-hold combo is deliberately left untouched.
+            output.buttons &= ~static_cast<std::uint64_t>(
+                oag::ButtonWest | oag::ButtonSouth
+            );
 
-        const std::uint64_t elapsedUs =
-            time_us_64() - fakeStopCurlerStartedUs_[slot];
-
-        // Macro owns Square, Cross and R2 while running so the timing cannot
-        // be corrupted by simultaneous physical presses.
-        output.buttons &= ~static_cast<std::uint64_t>(
-            oag::ButtonWest | oag::ButtonSouth
-        );
-        output.rightTrigger = 0;
-
-        // Dead Stop: ignore physical Left Stick until 265 ms.
-        if (elapsedUs < kMacroManualAimStartUs) {
-            output.lx = 0;
-            output.ly = 0;
-        }
-
-        if (elapsedUs < kMacroSquareEndUs) {
-            output.buttons |= oag::ButtonWest;
-        } else if (
-            elapsedUs >= kMacroCrossStartUs &&
-            elapsedUs < kMacroCrossEndUs
-        ) {
-            output.buttons |= oag::ButtonSouth;
-        } else if (
-            elapsedUs >= kMacroR2StartUs &&
-            elapsedUs < kMacroShotStartUs
-        ) {
-            output.rightTrigger =
-                0xFFFFFFFFu;
-        } else if (
-            elapsedUs >= kMacroShotStartUs &&
-            elapsedUs < kMacroEndUs
-        ) {
-            output.rightTrigger =
-                0xFFFFFFFFu;
-            output.buttons |= oag::ButtonWest;
+            if (rightStickTapPhase_[slot] == 0) {
+                output.buttons |= oag::ButtonWest;
+            } else if (rightStickTapPhase_[slot] == 1) {
+                output.buttons |= oag::ButtonSouth;
+            }
         }
 
         return output;
@@ -1983,7 +2002,7 @@ private:
             return {};
         }
 
-        return applyGameplayOverlays(
+        return applyGameplayCombos(
             slot,
             mapping_.process(states_[slot])
         );
@@ -2012,7 +2031,7 @@ private:
             oag::LogicalGamepadState output {};
 
             if (states_[slot].connected) {
-                output = applyGameplayOverlays(
+                output = applyGameplayCombos(
                     slot,
                     mapping_.process(states_[slot])
                 );
@@ -2423,32 +2442,50 @@ private:
     std::array<
         oag::DeviceId,
         oag::LogicalSlotManager::kGamepadSlots
-    > gameplayOverlaySource_ {};
+    > squareHoldSource_ {};
 
     std::array<
         std::uint64_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > macroTriggerStartedUs_ {};
+    > squareHoldStartedUs_ {};
 
     std::array<
         bool,
         oag::LogicalSlotManager::kGamepadSlots
-    > macroTriggerArmed_ {};
+    > squareHoldActive_ {};
 
     std::array<
         bool,
         oag::LogicalSlotManager::kGamepadSlots
-    > fakeStopCurlerRunning_ {};
+    > squareHoldCrossOn_ {};
+
+    std::array<
+        oag::DeviceId,
+        oag::LogicalSlotManager::kGamepadSlots
+    > rightStickTapSource_ {};
+
+    std::array<
+        bool,
+        oag::LogicalSlotManager::kGamepadSlots
+    > rightStickTapArmed_ {
+        true, true, true, true,
+        true, true, true, true,
+    };
+
+    std::array<
+        bool,
+        oag::LogicalSlotManager::kGamepadSlots
+    > rightStickTapRunning_ {};
 
     std::array<
         std::uint64_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > fakeStopCurlerStartedUs_ {};
+    > rightStickTapStartedUs_ {};
 
     std::array<
         std::uint8_t,
         oag::LogicalSlotManager::kGamepadSlots
-    > fakeStopCurlerPhase_ {
+    > rightStickTapPhase_ {
         0xFF, 0xFF, 0xFF, 0xFF,
         0xFF, 0xFF, 0xFF, 0xFF,
     };
