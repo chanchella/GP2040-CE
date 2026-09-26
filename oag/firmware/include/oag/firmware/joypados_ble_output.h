@@ -14,7 +14,8 @@ class BluetoothHostV2;
 // Key contract:
 // - this backend owns the single ATT server + HIDS Device profile;
 // - BluetoothHostV2 attaches only client/input profiles afterwards;
-// - Android connection is considered ready only when Report ID 3 is subscribed;
+// - Android connection is considered ready on the first HIDS input-report
+//   subscription, matching JoypadOS exactly;
 // - no peripheral-initiated pairing request is sent.
 class JoypadBleOutput {
 public:
