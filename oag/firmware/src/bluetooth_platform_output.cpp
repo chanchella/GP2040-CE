@@ -5,6 +5,8 @@
 #include <limits>
 
 #include "btstack.h"
+#include "pico/async_context.h"
+#include "pico/cyw43_arch.h"
 #include "ble/gatt-service/battery_service_server.h"
 #include "ble/gatt-service/device_information_service_server.h"
 #include "ble/gatt-service/hids_device.h"
@@ -67,52 +69,72 @@ void platformHidsThunk(
     }
 }
 
-// Android-compatibility-first pure gamepad report.
-// One HIDS Input Report characteristic, Report ID 1, 16 buttons, 8-bit hat,
-// and six 16-bit absolute axes (four sticks + two triggers).
+// Arduino-Pico JoystickBLE compatibility profile.
+//
+// This report map mirrors Earle Philhower's TUD_HID_REPORT_DESC_GAMEPAD16
+// layout: six signed 16-bit axes first, then one 8-bit hat, then 32 buttons.
+// Report ID remains 1 because this BLE persona exposes only a joystick.
 constexpr std::uint8_t kHidDescriptor[] = {
     0x05, 0x01,       // Usage Page (Generic Desktop)
     0x09, 0x05,       // Usage (Game Pad)
     0xA1, 0x01,       // Collection (Application)
     0x85, 0x01,       //   Report ID 1
 
+    0x05, 0x01,       //   Usage Page (Generic Desktop)
+    0x09, 0x30,       //   X
+    0x09, 0x31,       //   Y
+    0x09, 0x32,       //   Z
+    0x09, 0x35,       //   Rz
+    0x09, 0x33,       //   Rx
+    0x09, 0x34,       //   Ry
+    0x16, 0x01, 0x80, //   Logical Min -32767
+    0x26, 0xFF, 0x7F, //   Logical Max  32767
+    0x95, 0x06,       //   Report Count 6
+    0x75, 0x10,       //   Report Size 16
+    0x81, 0x02,       //   Input Data,Var,Abs
+
+    0x05, 0x01,       //   Usage Page (Generic Desktop)
+    0x09, 0x39,       //   Hat switch
+    0x15, 0x01,       //   Logical Min 1
+    0x25, 0x08,       //   Logical Max 8
+    0x35, 0x00,       //   Physical Min 0
+    0x46, 0x3B, 0x01, //   Physical Max 315
+    0x95, 0x01,       //   Report Count 1
+    0x75, 0x08,       //   Report Size 8
+    0x81, 0x02,       //   Input Data,Var,Abs
+
     0x05, 0x09,       //   Usage Page (Button)
-    0x19, 0x01,
-    0x29, 0x10,       //   16 buttons
+    0x19, 0x01,       //   Usage Min 1
+    0x29, 0x20,       //   Usage Max 32
     0x15, 0x00,
     0x25, 0x01,
+    0x95, 0x20,       //   32 buttons
     0x75, 0x01,
-    0x95, 0x10,
-    0x81, 0x02,
-
-    0x05, 0x01,       //   Generic Desktop
-    0x09, 0x39,       //   Hat switch
-    0x15, 0x01,
-    0x25, 0x08,
-    0x35, 0x00,
-    0x46, 0x3B, 0x01,
-    0x65, 0x14,
-    0x75, 0x08,
-    0x95, 0x01,
-    0x81, 0x42,       //   Null state allowed (0 = centered)
-    0x65, 0x00,
-
-    0x05, 0x01,
-    0x15, 0x00,
-    0x27, 0xFF, 0x7F, 0x00, 0x00, // Logical Max 32767
-    0x35, 0x00,
-    0x47, 0xFF, 0x7F, 0x00, 0x00, // Physical Max 32767
-    0x09, 0x30,       // X  - LX
-    0x09, 0x31,       // Y  - LY
-    0x09, 0x32,       // Z  - RX
-    0x09, 0x35,       // Rz - RY
-    0x09, 0x33,       // Rx - LT
-    0x09, 0x34,       // Ry - RT
-    0x75, 0x10,
-    0x95, 0x06,
     0x81, 0x02,
 
     0xC0
+};
+
+class BtstackContextLock {
+public:
+    BtstackContextLock()
+        : context_(cyw43_arch_async_context()) {
+        if (context_ != nullptr) {
+            async_context_acquire_lock_blocking(context_);
+        }
+    }
+
+    ~BtstackContextLock() {
+        if (context_ != nullptr) {
+            async_context_release_lock(context_);
+        }
+    }
+
+    BtstackContextLock(const BtstackContextLock&) = delete;
+    BtstackContextLock& operator=(const BtstackContextLock&) = delete;
+
+private:
+    async_context_t* context_;
 };
 
 constexpr std::uint8_t kAdvertisingData[] = {
@@ -131,32 +153,49 @@ constexpr std::uint8_t kAdvertisingData[] = {
 
 hids_device_report_t gHidReportStorage[1] {};
 
-std::uint16_t encodeStickAxis(std::int32_t value) {
-    const std::uint64_t shifted =
-        static_cast<std::uint64_t>(
-            static_cast<std::int64_t>(value) -
-            static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::min())
-        );
+std::int16_t encodeSignedAxis(std::int32_t value) {
+    if (value <= std::numeric_limits<std::int32_t>::min()) {
+        return static_cast<std::int16_t>(-32767);
+    }
 
-    return static_cast<std::uint16_t>(
-        (shifted * 32767ull) / 0xFFFFFFFFull
+    const std::int64_t scaled =
+        static_cast<std::int64_t>(value) * 32767ll /
+        static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max());
+
+    return static_cast<std::int16_t>(
+        std::clamp<std::int64_t>(scaled, -32767ll, 32767ll)
     );
 }
 
-std::uint16_t encodeTrigger(std::uint32_t value) {
-    return static_cast<std::uint16_t>(
-        (static_cast<std::uint64_t>(value) * 32767ull) /
-        0xFFFFFFFFull
+std::int16_t encodeTriggerAxis(std::uint32_t value) {
+    const std::int64_t scaled =
+        (static_cast<std::uint64_t>(value) * 65534ull) /
+        0xFFFFFFFFull;
+
+    return static_cast<std::int16_t>(
+        static_cast<std::int64_t>(scaled) - 32767ll
     );
 }
 
 void storeLe16(
-    std::array<std::uint8_t, 15>& report,
+    std::array<std::uint8_t, 17>& report,
     std::size_t offset,
-    std::uint16_t value
+    std::int16_t value
+) {
+    const auto raw = static_cast<std::uint16_t>(value);
+    report[offset] = static_cast<std::uint8_t>(raw & 0xFFu);
+    report[offset + 1] = static_cast<std::uint8_t>(raw >> 8);
+}
+
+void storeLe32(
+    std::array<std::uint8_t, 17>& report,
+    std::size_t offset,
+    std::uint32_t value
 ) {
     report[offset] = static_cast<std::uint8_t>(value & 0xFFu);
-    report[offset + 1] = static_cast<std::uint8_t>(value >> 8);
+    report[offset + 1] = static_cast<std::uint8_t>((value >> 8) & 0xFFu);
+    report[offset + 2] = static_cast<std::uint8_t>((value >> 16) & 0xFFu);
+    report[offset + 3] = static_cast<std::uint8_t>((value >> 24) & 0xFFu);
 }
 
 std::uint8_t encodeHat(std::uint8_t dpad) {
@@ -186,29 +225,39 @@ std::uint8_t encodeHat(std::uint8_t dpad) {
     return 0;
 }
 
-std::array<std::uint8_t, 15> encodeReport(
+std::array<std::uint8_t, 17> encodeReport(
     const oag::LogicalGamepadState& state
 ) {
-    std::array<std::uint8_t, 15> report {};
+    std::array<std::uint8_t, 17> report {};
 
-    // Neutral gamepad state even when no physical primary exists.
-    report[2] = 0;
-    storeLe16(report, 3, 16384);
-    storeLe16(report, 5, 16384);
-    storeLe16(report, 7, 16384);
-    storeLe16(report, 9, 16384);
-    storeLe16(report, 11, 0);
-    storeLe16(report, 13, 0);
+    // Arduino-Pico GAMEPAD16 order:
+    // x,y,z,rz,rx,ry (12 bytes), hat (1 byte), buttons (4 bytes).
+    storeLe16(report, 0, 0);
+    storeLe16(report, 2, 0);
+    storeLe16(report, 4, 0);
+    storeLe16(report, 6, 0);
+    storeLe16(report, 8, -32767);
+    storeLe16(report, 10, -32767);
+    report[12] = 0;
+    storeLe32(report, 13, 0);
 
     if (!state.connected) {
         return report;
     }
 
-    std::uint16_t buttons = 0;
+    storeLe16(report, 0, encodeSignedAxis(state.lx));
+    storeLe16(report, 2, encodeSignedAxis(state.ly));
+    storeLe16(report, 4, encodeSignedAxis(state.rx));
+    storeLe16(report, 6, encodeSignedAxis(state.ry));
+    storeLe16(report, 8, encodeTriggerAxis(state.leftTrigger));
+    storeLe16(report, 10, encodeTriggerAxis(state.rightTrigger));
+    report[12] = encodeHat(state.dpad);
+
+    std::uint32_t buttons = 0;
     const auto addButton =
         [&](std::uint64_t sourceMask, std::uint8_t bit) {
             if ((state.buttons & sourceMask) != 0) {
-                buttons |= static_cast<std::uint16_t>(1u << bit);
+                buttons |= static_cast<std::uint32_t>(1u << bit);
             }
         };
 
@@ -225,17 +274,7 @@ std::array<std::uint8_t, 15> encodeReport(
     addButton(oag::ButtonGuide, 10);
     addButton(oag::ButtonShare, 11);
 
-    report[0] = static_cast<std::uint8_t>(buttons & 0xFFu);
-    report[1] = static_cast<std::uint8_t>(buttons >> 8);
-    report[2] = encodeHat(state.dpad);
-
-    storeLe16(report, 3, encodeStickAxis(state.lx));
-    storeLe16(report, 5, encodeStickAxis(state.ly));
-    storeLe16(report, 7, encodeStickAxis(state.rx));
-    storeLe16(report, 9, encodeStickAxis(state.ry));
-    storeLe16(report, 11, encodeTrigger(state.leftTrigger));
-    storeLe16(report, 13, encodeTrigger(state.rightTrigger));
-
+    storeLe32(report, 13, buttons);
     return report;
 }
 
@@ -273,6 +312,12 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     host_ = &host;
     gBluetoothPlatformOutput = this;
 
+    // Arduino-Pico's BLE HID implementation serializes BTstack access through
+    // the CYW43 async_context. UI5K already powered HCI in BluetoothHostV2, so
+    // all peripheral service registration below must be protected from the
+    // background BTstack worker.
+    BtstackContextLock btLock;
+
     // Important: do NOT call l2cap_init(), sm_init(), cyw43_arch_init(), or
     // hci_power_control() here. UI5K BluetoothHostV2 owns the stack.
     // Keep its proven global SM policy (Bonding + NoInputNoOutput) unchanged.
@@ -283,7 +328,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT5-HANDLE-FIX"
+        "U10F-PM1-UI5K-BT-OUT6-ARDUINO-REFERENCE"
     );
     // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
     // Source 0x02 = USB Implementer's Forum.
@@ -363,6 +408,7 @@ void BluetoothPlatformOutput::startAdvertising() {
         return;
     }
 
+    BtstackContextLock btLock;
     bd_addr_t nullAddress {};
     gap_advertisements_set_params(
         0x0030,
@@ -392,6 +438,8 @@ void BluetoothPlatformOutput::requestCanSend() {
         return;
     }
 
+    BtstackContextLock btLock;
+
     if (
         hids_device_request_can_send_now_event(
             connectionHandle_
@@ -408,6 +456,8 @@ void BluetoothPlatformOutput::sendCurrentReport() {
     ) {
         return;
     }
+
+    BtstackContextLock btLock;
 
     const std::uint8_t status =
         hids_device_send_input_report_for_id(
