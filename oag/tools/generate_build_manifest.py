@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "UI5K-JOYPADOS-BLE1",
+    "phase": "UI5K-JOYPADOS-BLE2",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -124,7 +124,12 @@ manifest = {
         "bluetooth_output_composite_ids": [1, 2, 3, 4, 5],
         "bluetooth_output_selftest_after_subscription": True,
         "bluetooth_output_phone_first_enumeration": True,
-        "bluetooth_output_adv_name_in_scan_response": True,
+        "bluetooth_output_hids_ready_on_any_input_subscription": True,
+        "bluetooth_output_separate_sm_listener": True,
+        "bluetooth_host_sm_role_gated": True,
+        "bluetooth_output_fresh_static_random_identity": "C2:A5:B2:55:10:02",
+        "bluetooth_output_device_name": "OAG BLE2 Gamepad",
+        "bluetooth_output_adv_name_in_scan_response": False,
         "bluetooth_output_ctkd": False,
         "bluetooth_hci_connection_budget": 5,
         "bluetooth_max_simultaneous_peers": 4,
@@ -345,7 +350,8 @@ manifest = {
         "u10f_pm1_ui5j_win_xusb20_iad8_km_composite_2s": "REJECTED_HARDWARE_NO_CONTROLLERS_NO_KEYBOARD_NO_MOUSE_BY_USER",
         "u10f_pm1_ui5k_win_xusb20_4func_km_composite_2s": "HARDWARE_VERIFIED_BY_USER",
         "standalone_arduino_pico_joystickble_probe": "HARDWARE_VERIFIED_ANDROID_SELFTEST",
-        "ui5k_joypados_ble1": "PENDING_HARDWARE",
+        "ui5k_joypados_ble1": "HARDWARE_PAIRED_NO_SELFTEST_NO_INPUT",
+        "ui5k_joypados_ble2": "PENDING_HARDWARE",
     },
 }
 
