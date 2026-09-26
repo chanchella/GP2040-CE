@@ -117,7 +117,23 @@ namespace oag::firmware {
 bool BluetoothHostV2::initialize(
     BluetoothHostV2Observer& observer
 ) {
-    if (initialized_) {
+    // Legacy convenience wrapper. The JoypadOS BLE integration does NOT use
+    // this path; main.cpp calls the split lifecycle so BLE output can own ATT.
+    if (!initializeCore(observer)) {
+        return false;
+    }
+
+    if (!initializeInputProfiles()) {
+        return false;
+    }
+
+    return startController();
+}
+
+bool BluetoothHostV2::initializeCore(
+    BluetoothHostV2Observer& observer
+) {
+    if (coreInitialized_) {
         return true;
     }
 
@@ -128,6 +144,9 @@ bool BluetoothHostV2::initialize(
     observer_ = &observer;
     gBluetoothHostV2 = this;
 
+    // JoypadOS coexistence model: initialize the shared L2CAP + SM core here,
+    // but deliberately do NOT initialize ATT server, GATT client, HID Host, or
+    // HIDS Host yet. BLE output installs the one ATT server next.
     l2cap_init();
     sm_init();
 
@@ -136,18 +155,26 @@ bool BluetoothHostV2::initialize(
     );
 
     sm_set_authentication_requirements(
+        SM_AUTHREQ_SECURE_CONNECTION |
         SM_AUTHREQ_BONDING
     );
 
-    gatt_client_init();
+    coreInitialized_ = true;
+    return true;
+}
 
-    // Historical BluetoothHCI installed a local GAP/ATT server before power-on.
-    // Keep runtime Host-only: this does not start advertising.
-    att_server_init(
-        kLocalGapProfile,
-        nullptr,
-        nullptr
-    );
+bool BluetoothHostV2::initializeInputProfiles() {
+    if (!coreInitialized_) {
+        return false;
+    }
+
+    if (inputProfilesInitialized_) {
+        return true;
+    }
+
+    // IMPORTANT: no att_server_init() here. JoypadBleOutput owns the one ATT
+    // server/GATT database exactly like JoypadOS universal/usb2ble.
+    gatt_client_init();
 
     hid_host_init(
         classicDescriptorStorage_.data(),
@@ -165,10 +192,6 @@ bool BluetoothHostV2::initialize(
         static_cast<std::uint16_t>(
             leDescriptorStorage_.size()
         )
-    );
-
-    gap_set_local_name(
-        "OAG Abo Gemi Ultra Gaming"
     );
 
     gap_set_default_link_policy_settings(
@@ -199,12 +222,58 @@ bool BluetoothHostV2::initialize(
 
     clearLegacyBondsOnce();
 
+    inputProfilesInitialized_ = true;
     initialized_ = true;
+    return true;
+}
+
+bool BluetoothHostV2::startController() {
+    if (
+        !coreInitialized_ ||
+        !inputProfilesInitialized_
+    ) {
+        return false;
+    }
+
+    if (controllerStarted_) {
+        return true;
+    }
+
+    controllerStarted_ = true;
     hci_power_control(HCI_POWER_ON);
     return true;
 }
 
+void BluetoothHostV2::setPlatformOutputLinkActive(bool active) {
+    platformOutputLinkActive_ = active;
+
+    if (!active) {
+        // Prioritize phone re-enumeration/reconnect before starting any new
+        // controller discovery. Existing connected controller peers stay up.
+        inputDiscoveryUnlocked_ = false;
+    }
+}
+
+void BluetoothHostV2::unlockInputDiscoveryAfterPlatformSubscription() {
+    if (!platformOutputLinkActive_) {
+        return;
+    }
+
+    inputDiscoveryUnlocked_ = true;
+}
+
+
 void BluetoothHostV2::poll() {
+    // If the phone has a raw BLE link but has not subscribed to the gamepad
+    // report yet, keep discovery quiet so HOGP enumeration gets the radio.
+    if (
+        platformOutputLinkActive_ &&
+        !inputDiscoveryUnlocked_ &&
+        discoveryPhase_ != DiscoveryPhase::Idle
+    ) {
+        stopDiscovery();
+    }
+
     // pico_cyw43_arch_none + pico_btstack_cyw43 are serviced by the
     // SDK async context. Deliberately do not call cyw43_arch_poll().
     //
@@ -221,6 +290,7 @@ void BluetoothHostV2::poll() {
     if (
         initialized_ &&
         hciWorking_ &&
+        inputDiscoveryUnlocked_ &&
         hasCapacity() &&
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
@@ -638,6 +708,7 @@ void BluetoothHostV2::stopDiscovery() {
 void BluetoothHostV2::startLeScan() {
     if (
         !hciWorking_ ||
+        !inputDiscoveryUnlocked_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -672,6 +743,7 @@ void BluetoothHostV2::startLeScan() {
 void BluetoothHostV2::startClassicInquiry() {
     if (
         !hciWorking_ ||
+        !inputDiscoveryUnlocked_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -690,7 +762,10 @@ void BluetoothHostV2::startClassicInquiry() {
 }
 
 void BluetoothHostV2::resumeDiscovery() {
-    if (!hciWorking_) {
+    if (
+        !hciWorking_ ||
+        !inputDiscoveryUnlocked_
+    ) {
         return;
     }
 
@@ -707,7 +782,11 @@ void BluetoothHostV2::resumeDiscovery() {
 }
 
 bool BluetoothHostV2::beginDiscovery() {
-    if (!initialized_ || !hciWorking_) {
+    if (
+        !initialized_ ||
+        !hciWorking_ ||
+        !inputDiscoveryUnlocked_
+    ) {
         return false;
     }
 
@@ -1253,7 +1332,12 @@ void BluetoothHostV2::handlePacket(
             ) {
                 hciWorking_ = true;
                 pendingKind_ = PendingKind::None;
-                startLeScan();
+
+                // Phone-first bootstrap. JoypadBleOutput unlocks discovery only
+                // after Android subscribes to gamepad Report ID 3.
+                if (inputDiscoveryUnlocked_) {
+                    startLeScan();
+                }
             }
             break;
 
@@ -1374,10 +1458,18 @@ void BluetoothHostV2::handlePacket(
                         packet
                     );
 
-                if (
-                    role == HCI_ROLE_SLAVE ||
-                    !hasCapacity()
-                ) {
+                if (role == HCI_ROLE_SLAVE) {
+                    // This is the phone/PC consuming our BLE HID peripheral.
+                    // Never feed it into the controller-input peer allocator and
+                    // never disconnect it. JoypadBleOutput owns this link.
+                    platformOutputLinkActive_ = true;
+                    inputDiscoveryUnlocked_ = false;
+                    pendingKind_ = PendingKind::None;
+                    discoveryPhase_ = DiscoveryPhase::PausedForConnection;
+                    break;
+                }
+
+                if (!hasCapacity()) {
                     gap_disconnect(connectionHandle);
                     pendingKind_ = PendingKind::None;
                     resumeDiscovery();
