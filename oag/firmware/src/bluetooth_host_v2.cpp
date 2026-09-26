@@ -680,7 +680,7 @@ void BluetoothHostV2::startLeScan() {
 void BluetoothHostV2::startClassicInquiry() {
     if (
         !hciWorking_ ||
-        platformOutputLinkActive_ ||
+        !inputDiscoveryUnlocked_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -699,7 +699,10 @@ void BluetoothHostV2::startClassicInquiry() {
 }
 
 void BluetoothHostV2::resumeDiscovery() {
-    if (!hciWorking_ || platformOutputLinkActive_) {
+    if (
+        !hciWorking_ ||
+        !inputDiscoveryUnlocked_
+    ) {
         return;
     }
 
@@ -716,7 +719,11 @@ void BluetoothHostV2::resumeDiscovery() {
 }
 
 bool BluetoothHostV2::beginDiscovery() {
-    if (!initialized_ || !hciWorking_) {
+    if (
+        !initialized_ ||
+        !hciWorking_ ||
+        !inputDiscoveryUnlocked_
+    ) {
         return false;
     }
 
