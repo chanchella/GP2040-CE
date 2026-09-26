@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5K-BT-OUT1",
+    "phase": "U10F-PM1-UI5K-BT-OUT3",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -114,7 +114,11 @@ manifest = {
         "bluetooth_host_only": False,
         "bluetooth_peripheral_output": True,
         "bluetooth_peripheral_transport": "BLE_HID_OVER_GATT",
-        "bluetooth_peripheral_profile": "GENERIC_BLE_HID_GAMEPAD",
+        "bluetooth_peripheral_profile": "PURE_GENERIC_BLE_HID_GAMEPAD",
+        "bluetooth_peripheral_input_report_count": 1,
+        "bluetooth_peripheral_report_bytes": 15,
+        "bluetooth_peripheral_pnp_vid": "CAFE",
+        "bluetooth_peripheral_pnp_pid": "4016",
         "bluetooth_peripheral_primary_only": True,
         "bluetooth_peripheral_services": ["HID", "Battery", "Device Information"],
         "bluetooth_peripheral_sm_policy": "PLATFORM_SC_BOND_NO_IO__INPUT_UI5K_BOND",
@@ -335,7 +339,9 @@ manifest = {
         "u10f_pm1_ui5g_win_xusb20_km_composite_2s": "PARTIAL_HARDWARE_NATIVE_KM_AND_BT_CONTROLLER_WORKING_OTHER_CONTROLLERS_NOT_VISIBLE_BY_USER",
         "u10f_pm1_ui5j_win_xusb20_iad8_km_composite_2s": "REJECTED_HARDWARE_NO_CONTROLLERS_NO_KEYBOARD_NO_MOUSE_BY_USER",
         "u10f_pm1_ui5k_win_xusb20_4func_km_composite_2s": "HARDWARE_VERIFIED_BY_USER",
-        "u10f_pm1_ui5k_bt_out1": "PENDING_HARDWARE",
+        "u10f_pm1_ui5k_bt_out1": "HARDWARE_CONNECTED_NO_INPUT",
+        "u10f_pm1_ui5k_bt_out2": "HARDWARE_CONNECTED_NO_INPUT",
+        "u10f_pm1_ui5k_bt_out3": "PENDING_HARDWARE",
     },
 }
 
