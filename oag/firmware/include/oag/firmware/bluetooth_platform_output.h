@@ -65,6 +65,12 @@ private:
     bool canSendPending_ = false;
     bool reportDirty_ = true;
 
+    // OUT4-DIAG only: once Android subscribes to the HIDS Input Report,
+    // alternate a synthetic D-pad Down/Neutral pulse so the BLE output path can
+    // be validated without depending on any physical controller state.
+    std::uint32_t diagnosticNextToggleMs_ = 0;
+    bool diagnosticDown_ = false;
+
     std::uint16_t connectionHandle_ = kInvalidHandle;
     std::uint8_t peerAddressType_ = 0;
     std::array<std::uint8_t, 6> peerAddress_ {};
