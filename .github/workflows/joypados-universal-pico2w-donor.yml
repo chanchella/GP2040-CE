@@ -82,22 +82,16 @@ jobs:
           cp "$UF2" artifacts/JOYPADOS_UNIVERSAL_PICO2W_969c232c.uf2
           sha256sum artifacts/JOYPADOS_UNIVERSAL_PICO2W_969c232c.uf2 | tee artifacts/SHA256SUMS.txt
 
-          cat > artifacts/PROVENANCE.txt <<'EOF'
-Source: https://github.com/joypad-ai/joypad-os
-Pinned source commit: 969c232c4e3332e6df6af524b001e1d65613f6bc
-Upstream target: universal_pico2_w
-CMake target: joypad_universal
-Board: Raspberry Pi Pico 2 W
-Compile contract:
-  REQUIRE_BLE_OUTPUT=1
-  REQUIRE_BT_INPUT=1
-  BTSTACK_USE_CYW43=1
-  CONFIG_BT_HOST=1
-Purpose:
-  Independent proof that one Pico 2 W can run Bluetooth controller input
-  and BLE HID gamepad output in the same upstream runtime before any OAG merge.
-License: upstream project license applies.
-EOF
+          printf '%s\n' \
+            'Source: https://github.com/joypad-ai/joypad-os' \
+            'Pinned source commit: 969c232c4e3332e6df6af524b001e1d65613f6bc' \
+            'Upstream target: universal_pico2_w' \
+            'CMake target: joypad_universal' \
+            'Board: Raspberry Pi Pico 2 W' \
+            'Compile contract: REQUIRE_BLE_OUTPUT=1 REQUIRE_BT_INPUT=1 BTSTACK_USE_CYW43=1 CONFIG_BT_HOST=1' \
+            'Purpose: independent BT-input plus BLE-output coexistence proof before OAG merge.' \
+            'License: upstream project license applies.' \
+            > artifacts/PROVENANCE.txt
 
           arm-none-eabi-size joypad-os/src/build/joypad_universal.elf | tee artifacts/SIZE.txt || true
           ls -lh artifacts
