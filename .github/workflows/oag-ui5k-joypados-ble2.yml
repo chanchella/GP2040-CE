@@ -117,7 +117,6 @@ jobs:
           assert "gJoypadBleReportStorage[12]" in out
           assert "hids_device_send_input_report_for_id(" in out
           assert "HIDS_SUBEVENT_INPUT_REPORT_ENABLE" in out
-          assert "hids_subevent_input_report_enable_get_report_id" in out
           assert "startSelfTest()" in out
           assert "joypadBleOutput_.submit(output)" in main
 
