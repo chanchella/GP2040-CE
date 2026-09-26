@@ -22,10 +22,8 @@
 #define ENABLE_L2CAP_ENHANCED_RETRANSMISSION_MODE
 #endif
 
-#if defined(ENABLE_CLASSIC) && defined(ENABLE_BLE)
-#define ENABLE_CROSS_TRANSPORT_KEY_DERIVATION
-#endif
-
+// JoypadOS-derived coexistence path intentionally leaves CTKD disabled.
+// Classic HID input and BLE HOGP output bond independently.
 #define HCI_OUTGOING_PRE_BUFFER_SIZE 4
 #define HCI_ACL_PAYLOAD_SIZE (1691 + 4)
 #define HCI_ACL_CHUNK_SIZE_ALIGNMENT 4
@@ -34,7 +32,8 @@
 // This is a software/resource budget until proven on physical hardware.
 #define MAX_NR_BTSTACK_LINK_KEY_DB_MEMORY_ENTRIES 8
 #define MAX_NR_GATT_CLIENTS 4
-#define MAX_NR_HCI_CONNECTIONS 4
+// Four controller-input peers plus one BLE HID peripheral link to phone/PC.
+#define MAX_NR_HCI_CONNECTIONS 5
 #define MAX_NR_HID_HOST_CONNECTIONS 4
 #define MAX_NR_HIDS_HOSTS 4
 #define MAX_NR_L2CAP_CHANNELS 16
