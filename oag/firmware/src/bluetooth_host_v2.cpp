@@ -1004,25 +1004,40 @@ void BluetoothHostV2::handleSmPacket(
     }
 
     switch (hci_event_packet_get_type(packet)) {
-        case SM_EVENT_JUST_WORKS_REQUEST:
-            sm_just_works_confirm(
-                sm_event_just_works_request_get_handle(
-                    packet
-                )
-            );
-            break;
+        case SM_EVENT_JUST_WORKS_REQUEST: {
+            const std::uint16_t handle =
+                sm_event_just_works_request_get_handle(packet);
 
-        case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
-            sm_numeric_comparison_confirm(
-                sm_event_numeric_comparison_request_get_handle(
-                    packet
-                )
-            );
+            // JoypadOS role gate: only confirm pairing for BLE controller
+            // links allocated by this Central. The phone/peripheral link is
+            // handled by JoypadBleOutput's SM listener.
+            if (findBleByHandle(handle) == nullptr) {
+                break;
+            }
+
+            sm_just_works_confirm(handle);
             break;
+        }
+
+        case SM_EVENT_NUMERIC_COMPARISON_REQUEST: {
+            const std::uint16_t handle =
+                sm_event_numeric_comparison_request_get_handle(packet);
+
+            if (findBleByHandle(handle) == nullptr) {
+                break;
+            }
+
+            sm_numeric_comparison_confirm(handle);
+            break;
+        }
 
         case SM_EVENT_PAIRING_COMPLETE: {
             const std::uint16_t handle =
                 sm_event_pairing_complete_get_handle(packet);
+
+            if (findBleByHandle(handle) == nullptr) {
+                break;
+            }
 
             if (
                 sm_event_pairing_complete_get_status(packet) ==
@@ -1038,6 +1053,10 @@ void BluetoothHostV2::handleSmPacket(
         case SM_EVENT_REENCRYPTION_COMPLETE: {
             const std::uint16_t handle =
                 sm_event_reencryption_complete_get_handle(packet);
+
+            if (findBleByHandle(handle) == nullptr) {
+                break;
+            }
 
             const std::uint8_t status =
                 sm_event_reencryption_complete_get_status(packet);
