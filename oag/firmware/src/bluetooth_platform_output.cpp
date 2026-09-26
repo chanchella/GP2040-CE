@@ -262,7 +262,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT1"
+        "U10F-PM1-UI5K-BT-OUT2"
     );
     device_information_service_server_set_pnp_id(
         2,
@@ -483,6 +483,12 @@ void BluetoothPlatformOutput::handleHciPacket(
                 if (host_ != nullptr) {
                     host_->setPlatformOutputLinkActive(true);
                 }
+
+                // OUT2: do not wait for Android to touch an encrypted HIDS
+                // characteristic before SMP starts. Proactively request
+                // pairing/re-encryption on the live peripheral connection so
+                // the HID service can reach notification subscription state.
+                sm_request_pairing(connectionHandle_);
             }
             break;
 
@@ -551,7 +557,11 @@ void BluetoothPlatformOutput::handleSmPacket(
                 ERROR_CODE_SUCCESS
             ) {
                 gap_disconnect(handle);
+                break;
             }
+
+            reportDirty_ = true;
+            requestCanSend();
             break;
         }
 
@@ -567,6 +577,8 @@ void BluetoothPlatformOutput::handleSmPacket(
                 sm_event_reencryption_complete_get_status(packet);
 
             if (status == ERROR_CODE_SUCCESS) {
+                reportDirty_ = true;
+                requestCanSend();
                 break;
             }
 
@@ -616,17 +628,13 @@ void BluetoothPlatformOutput::handleHidsPacket(
                     packet
                 );
 
-            const std::uint8_t reportId =
-                hids_subevent_input_report_enable_get_report_id(
-                    packet
-                );
-
-            if (
-                handle != connectionHandle_ ||
-                reportId != kInputReportId
-            ) {
+            if (handle != connectionHandle_) {
                 break;
             }
+
+            // There is exactly one HIDS Input Report characteristic in the
+            // generated profile. Accept the subscription event by connection
+            // handle instead of depending on a remote-stack report-id quirk.
 
             inputSubscribed_ =
                 hids_subevent_input_report_enable_get_enable(packet) != 0;
