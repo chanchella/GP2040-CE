@@ -29,7 +29,6 @@ namespace {
 
 oag::firmware::JoypadBleOutput* gJoypadBleOutput = nullptr;
 btstack_packet_callback_registration_t gJoypadBleHciRegistration {};
-btstack_packet_callback_registration_t gJoypadBleSmRegistration {};
 
 void joypadBlePacketThunk(
     std::uint8_t packetType,
@@ -281,9 +280,6 @@ bool JoypadBleOutput::initialize(BluetoothHostV2& host) {
     gJoypadBleHciRegistration.callback = &joypadBlePacketThunk;
     hci_add_event_handler(&gJoypadBleHciRegistration);
 
-    gJoypadBleSmRegistration.callback = &joypadBlePacketThunk;
-    sm_add_event_handler(&gJoypadBleSmRegistration);
-
     hids_device_register_packet_handler(
         joypadBlePacketThunk
     );
@@ -508,18 +504,6 @@ void JoypadBleOutput::handlePacket(
             setAdvertising(true);
             break;
         }
-
-        case SM_EVENT_JUST_WORKS_REQUEST:
-            sm_just_works_confirm(
-                sm_event_just_works_request_get_handle(packet)
-            );
-            break;
-
-        case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
-            sm_numeric_comparison_confirm(
-                sm_event_passkey_display_number_get_handle(packet)
-            );
-            break;
 
         case HCI_EVENT_HIDS_META:
             switch (
