@@ -53,7 +53,7 @@ private:
     static constexpr std::uint16_t kInvalidHandle = 0xFFFFu;
     static constexpr std::uint8_t kInputReportId = 1u;
 
-    void startAdvertising();
+    bool startAdvertising();
     void requestCanSend();
     void sendCurrentReport();
 
@@ -61,6 +61,9 @@ private:
 
     bool initialized_ = false;
     bool hciWorking_ = false;
+    bool advertisingPending_ = false;
+    bool advertisingActive_ = false;
+    std::uint32_t advertisingRetryNotBeforeMs_ = 0;
     bool inputSubscribed_ = false;
     bool canSendPending_ = false;
     bool reportDirty_ = true;
