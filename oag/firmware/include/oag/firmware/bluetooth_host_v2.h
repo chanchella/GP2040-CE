@@ -49,6 +49,16 @@ public:
     static constexpr std::size_t kMaxServicesPerPeer = 3;
 
     bool initialize(BluetoothHostV2Observer& observer);
+
+    // JoypadOS-style coexistence lifecycle:
+    // core -> BLE peripheral ATT/HIDS owner -> input profiles -> HCI power.
+    bool initializeCore(BluetoothHostV2Observer& observer);
+    bool initializeInputProfiles();
+    bool startController();
+
+    void setPlatformOutputLinkActive(bool active);
+    void unlockInputDiscoveryAfterPlatformSubscription();
+
     void poll();
     bool beginDiscovery();
 
@@ -166,8 +176,14 @@ private:
     void startLeHids(std::uint16_t connectionHandle);
 
     BluetoothHostV2Observer* observer_ = nullptr;
+    bool coreInitialized_ = false;
+    bool inputProfilesInitialized_ = false;
+    bool controllerStarted_ = false;
     bool initialized_ = false;
     bool hciWorking_ = false;
+
+    bool platformOutputLinkActive_ = false;
+    bool inputDiscoveryUnlocked_ = false;
 
     DiscoveryPhase discoveryPhase_ = DiscoveryPhase::Idle;
     PendingKind pendingKind_ = PendingKind::None;
