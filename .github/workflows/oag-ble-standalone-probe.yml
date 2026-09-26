@@ -1,0 +1,73 @@
+name: OAG Standalone Arduino-Pico BLE Joystick Probe
+
+on:
+  push:
+    branches:
+      - chatgpt/ble-standalone-joystick-probe
+    paths:
+      - 'oag/standalone/ble_joystick_probe/**'
+      - '.github/workflows/oag-ble-standalone-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout probe branch
+        uses: actions/checkout@v4
+
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Configure Arduino-Pico package index
+        run: |
+          set -euxo pipefail
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls \
+            https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli core update-index
+
+      - name: Install pinned Arduino-Pico core
+        run: |
+          set -euxo pipefail
+          arduino-cli core install rp2040:rp2040@6.1.1
+          arduino-cli core list
+
+      - name: Verify Pico 2 W board
+        run: |
+          set -euxo pipefail
+          arduino-cli board details -b rp2040:rp2040:rpipico2w
+
+      - name: Compile standalone BLE joystick probe
+        run: |
+          set -euxo pipefail
+          rm -rf build
+          mkdir -p build
+          arduino-cli compile \
+            --fqbn rp2040:rp2040:rpipico2w \
+            --output-dir build \
+            oag/standalone/ble_joystick_probe
+
+      - name: Verify UF2
+        run: |
+          set -euxo pipefail
+          find build -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          UF2="$(find build -maxdepth 1 -type f -name '*.uf2' | head -n 1)"
+          test -n "$UF2"
+          sha256sum "$UF2" | tee build/SHA256SUMS.txt
+          cp "$UF2" build/OAG_STANDALONE_BLE_JOYSTICK_PROBE_Pico2W.uf2
+
+      - name: Upload standalone probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: OAG-STANDALONE-BLE-JOYSTICK-PROBE
+          path: |
+            build/OAG_STANDALONE_BLE_JOYSTICK_PROBE_Pico2W.uf2
+            build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
