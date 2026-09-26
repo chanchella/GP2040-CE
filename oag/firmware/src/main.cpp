@@ -1122,10 +1122,11 @@ private:
     // PlayStation labels:
     //   Hold Square (Xbox X / ButtonWest) for 1 second -> activate.
     //   While active: hold L2 (Xbox LT) at 100% and pulse Cross
-    //   (Xbox A / ButtonSouth) twice per second.
+    //   (Xbox A / ButtonSouth) for 100 ms, then release it for 750 ms
+    //   before the next pulse.
     //   Releasing Square ends the combo immediately.
     static constexpr std::uint64_t kSquareHoldComboActivationUs = 1000000ull;
-    static constexpr std::uint64_t kSquareHoldComboPulsePeriodUs = 500000ull;
+    static constexpr std::uint64_t kSquareHoldComboPulsePeriodUs = 850000ull;
     static constexpr std::uint64_t kSquareHoldComboPulseOnUs = 100000ull;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
