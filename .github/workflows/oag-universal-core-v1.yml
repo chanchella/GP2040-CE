@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui5k-s1-square-l2-cross-pulse-policy-and-tests:
+  ui5k-s2-square-l2-cross-pulse-200-400-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -68,7 +68,7 @@ jobs:
             'oag/include/oag/mapping/native_km_combo_engine.h' \
             'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI5K_S1_SQUARE_L2_CROSS_PULSE_RUNTIME_DIFF ==="
+          echo "=== UI5K_S2_SQUARE_L2_CROSS_PULSE_200_400_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -179,8 +179,8 @@ jobs:
           assert "PcNativeKmOutput nativeKmOutput_" in main
           assert "NativeKmComboEngine nativeKmCombos_" in main
           assert "kSquarePulseActivationUs = 1000000ull" in main
-          assert "kSquarePulseCrossOnUs = 150000ull" in main
-          assert "kSquarePulseCrossOffUs = 500000ull" in main
+          assert "kSquarePulseCrossOnUs = 200000ull" in main
+          assert "kSquarePulseCrossOffUs = 400000ull" in main
           assert "kSquarePulseCycleUs" in main
           assert "serviceSquarePulseCombo()" in main
           assert "applySquarePulseCombo" in main
@@ -197,7 +197,7 @@ jobs:
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5K_S1_SQUARE_L2_CROSS_PULSE_POLICY=PASS")
+          print("UI5K_S2_SQUARE_L2_CROSS_PULSE_200_400_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -222,8 +222,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui5k-s1-square-l2-cross-pulse:
-    needs: ui5k-s1-square-l2-cross-pulse-policy-and-tests
+  firmware-ui5k-s2-square-l2-cross-pulse-200-400:
+    needs: ui5k-s2-square-l2-cross-pulse-200-400-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -298,7 +298,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5K-S1-SQUARE-L2-CROSS-PULSE"
+          assert manifest["phase"] == "U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -342,9 +342,9 @@ jobs:
           assert f["gamepad_square_activation_ms"] == 1000
           assert f["gamepad_square_suppressed_after_activation"] is True
           assert f["gamepad_square_l2_held_percent"] == 100
-          assert f["gamepad_square_cross_on_ms"] == 150
-          assert f["gamepad_square_cross_off_ms"] == 500
-          assert f["gamepad_square_cross_cycle_ms"] == 650
+          assert f["gamepad_square_cross_on_ms"] == 200
+          assert f["gamepad_square_cross_off_ms"] == 400
+          assert f["gamepad_square_cross_cycle_ms"] == 600
           assert f["gamepad_square_release_immediate"] is True
           assert f["gamepad_square_all_slots"] is True
           assert f["gamepad_square_non_blocking"] is True
@@ -368,18 +368,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5K_S1_SQUARE_L2_CROSS_PULSE=PASS")
+          print("BUILD_MANIFEST_UI5K_S2_SQUARE_L2_CROSS_PULSE_200_400=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S1-SQUARE-L2-CROSS-PULSE_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S1-SQUARE-L2-CROSS-PULSE_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S1-SQUARE-L2-CROSS-PULSE_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5K-S1-SQUARE-L2-CROSS-PULSE_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K-S1 Square L2 Cross pulse candidate bundle
+      - name: Upload UI5K-S2 Square L2 Cross pulse 200-400 candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5K-S1-SQUARE-L2-CROSS-PULSE-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
