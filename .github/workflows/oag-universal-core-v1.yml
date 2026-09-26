@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui5k-c1-efootball-sqhold-l2-cross2hz-policy-and-tests:
+  ui5k-c2-efootball-sqhold-l2-cross750-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -68,7 +68,7 @@ jobs:
             'oag/include/oag/mapping/native_km_combo_engine.h' \
             'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI5K_C1_EFOOTBALL_SQHOLD_L2_CROSS2HZ_RUNTIME_DIFF ==="
+          echo "=== UI5K_C2_EFOOTBALL_SQHOLD_L2_CROSS750_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -179,7 +179,7 @@ jobs:
           assert "PcNativeKmOutput nativeKmOutput_" in main
           assert "NativeKmComboEngine nativeKmCombos_" in main
           assert "kSquareHoldComboActivationUs = 1000000ull" in main
-          assert "kSquareHoldComboPulsePeriodUs = 500000ull" in main
+          assert "kSquareHoldComboPulsePeriodUs = 850000ull" in main
           assert "kSquareHoldComboPulseOnUs = 100000ull" in main
           assert "(state.buttons & oag::ButtonWest) != 0" in main
           assert "output.buttons &= ~static_cast<std::uint64_t>(oag::ButtonWest)" in main
@@ -192,7 +192,7 @@ jobs:
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5K_C1_EFOOTBALL_SQHOLD_L2_CROSS2HZ_POLICY=PASS")
+          print("UI5K_C2_EFOOTBALL_SQHOLD_L2_CROSS750_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -217,8 +217,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui5k-c1-efootball-sqhold-l2-cross2hz:
-    needs: ui5k-c1-efootball-sqhold-l2-cross2hz-policy-and-tests
+  firmware-ui5k-c2-efootball-sqhold-l2-cross750:
+    needs: ui5k-c2-efootball-sqhold-l2-cross750-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -293,7 +293,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5K-C1-EFOOTBALL-SQHOLD-L2-CROSS2HZ"
+          assert manifest["phase"] == "U10F-PM1-UI5K-C2-EFOOTBALL-SQHOLD-L2-CROSS750"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -340,8 +340,9 @@ jobs:
           assert f["gamepad_square_hold_combo_held_xbox"] == "LT"
           assert f["gamepad_square_hold_combo_pulse_ps"] == "CROSS"
           assert f["gamepad_square_hold_combo_pulse_xbox"] == "A"
-          assert f["gamepad_square_hold_combo_pulse_hz"] == 2
           assert f["gamepad_square_hold_combo_pulse_on_ms"] == 100
+          assert f["gamepad_square_hold_combo_pulse_off_ms"] == 750
+          assert f["gamepad_square_hold_combo_pulse_period_ms"] == 850
           assert f["gamepad_square_hold_combo_all_slots"] is True
           assert f["km_mouse_sensitivity_x"] == 1.0
           assert f["km_mouse_response_exponent"] == 0.58
@@ -363,18 +364,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5K_C1_EFOOTBALL_SQHOLD_L2_CROSS2HZ=PASS")
+          print("BUILD_MANIFEST_UI5K_C2_EFOOTBALL_SQHOLD_L2_CROSS750=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C1-EFOOTBALL-SQHOLD-L2-CROSS2HZ_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C1-EFOOTBALL-SQHOLD-L2-CROSS2HZ_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C1-EFOOTBALL-SQHOLD-L2-CROSS2HZ_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5K-C1-EFOOTBALL-SQHOLD-L2-CROSS2HZ_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C2-EFOOTBALL-SQHOLD-L2-CROSS750_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C2-EFOOTBALL-SQHOLD-L2-CROSS750_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-C2-EFOOTBALL-SQHOLD-L2-CROSS750_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5K-C2-EFOOTBALL-SQHOLD-L2-CROSS750_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K-C1 eFootball Square-hold combo candidate bundle
+      - name: Upload UI5K-C2 eFootball Square-hold 750ms combo candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5K-C1-EFOOTBALL-SQHOLD-L2-CROSS2HZ-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5K-C2-EFOOTBALL-SQHOLD-L2-CROSS750-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
