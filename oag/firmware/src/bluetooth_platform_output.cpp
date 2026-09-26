@@ -328,7 +328,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT7-PREPOWER"
+        "U10F-PM1-UI5K-BT-OUT8-DEFERRED-ADV"
     );
     // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
     // Source 0x02 = USB Implementer's Forum.
@@ -372,14 +372,33 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     // leave advertising dependent on that timing. If the controller is already
     // working, enter the exact same advertising path immediately.
     hciWorking_ = hci_get_state() == HCI_STATE_WORKING;
-    if (hciWorking_) {
-        startAdvertising();
-    }
+    advertisingPending_ = hciWorking_;
+    advertisingActive_ = false;
+    advertisingRetryNotBeforeMs_ = 0;
 
     return true;
 }
 
 void BluetoothPlatformOutput::poll() {
+    if (
+        hciWorking_ &&
+        !connected() &&
+        advertisingPending_
+    ) {
+        const std::uint32_t nowMs = btstack_run_loop_get_time_ms();
+
+        if (
+            advertisingRetryNotBeforeMs_ == 0u ||
+            static_cast<std::int32_t>(
+                nowMs - advertisingRetryNotBeforeMs_
+            ) >= 0
+        ) {
+            if (!startAdvertising()) {
+                advertisingRetryNotBeforeMs_ = nowMs + 100u;
+            }
+        }
+    }
+
     if (
         reportDirty_ &&
         inputSubscribed_ &&
@@ -403,12 +422,13 @@ void BluetoothPlatformOutput::submit(
     requestCanSend();
 }
 
-void BluetoothPlatformOutput::startAdvertising() {
+bool BluetoothPlatformOutput::startAdvertising() {
     if (!initialized_ || !hciWorking_ || connected()) {
-        return;
+        return false;
     }
 
     BtstackContextLock btLock;
+
     bd_addr_t nullAddress {};
     gap_advertisements_set_params(
         0x0030,
@@ -425,7 +445,19 @@ void BluetoothPlatformOutput::startAdvertising() {
         const_cast<std::uint8_t*>(kAdvertisingData)
     );
 
-    (void)gap_advertisements_enable(1);
+    const std::uint8_t status =
+        gap_advertisements_enable(1);
+
+    if (status != ERROR_CODE_SUCCESS) {
+        advertisingPending_ = true;
+        advertisingActive_ = false;
+        return false;
+    }
+
+    advertisingPending_ = false;
+    advertisingActive_ = true;
+    advertisingRetryNotBeforeMs_ = 0;
+    return true;
 }
 
 void BluetoothPlatformOutput::requestCanSend() {
@@ -513,7 +545,13 @@ void BluetoothPlatformOutput::handleHciPacket(
                 HCI_STATE_WORKING
             ) {
                 hciWorking_ = true;
-                startAdvertising();
+
+                // OUT8: never issue GAP advertising commands from inside the
+                // HCI state callback. Defer to poll/main context and retry if
+                // the controller is temporarily busy with Host discovery.
+                advertisingPending_ = true;
+                advertisingActive_ = false;
+                advertisingRetryNotBeforeMs_ = 0;
             }
             break;
 
@@ -567,6 +605,8 @@ void BluetoothPlatformOutput::handleHciPacket(
                 inputSubscribed_ = false;
                 canSendPending_ = false;
                 reportDirty_ = true;
+                advertisingPending_ = false;
+                advertisingActive_ = false;
 
                 // G2: Android-compatible Just Works Secure Connections.
                 // This policy is activated only while a central owns our
@@ -634,6 +674,8 @@ void BluetoothPlatformOutput::handleHciPacket(
                 inputSubscribed_ = false;
                 canSendPending_ = false;
                 reportDirty_ = true;
+                advertisingPending_ = false;
+                advertisingActive_ = false;
 
                 sm_set_authentication_requirements(
                     SM_AUTHREQ_BONDING |
@@ -660,6 +702,10 @@ void BluetoothPlatformOutput::handleHciPacket(
             inputSubscribed_ = false;
             canSendPending_ = false;
             reportDirty_ = true;
+            advertisingPending_ = true;
+            advertisingActive_ = false;
+            advertisingRetryNotBeforeMs_ =
+                btstack_run_loop_get_time_ms() + 100u;
 
             // Restore the exact UI5K host security policy before controller
             // discovery resumes.
@@ -671,7 +717,6 @@ void BluetoothPlatformOutput::handleHciPacket(
                 host_->setPlatformOutputLinkActive(false);
             }
 
-            startAdvertising();
             break;
         }
 
@@ -793,6 +838,8 @@ void BluetoothPlatformOutput::handleHidsPacket(
                 connectionHandle_ = handle;
                 canSendPending_ = false;
                 reportDirty_ = true;
+                advertisingPending_ = false;
+                advertisingActive_ = false;
 
                 sm_set_authentication_requirements(
                     SM_AUTHREQ_BONDING |
