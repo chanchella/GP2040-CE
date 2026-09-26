@@ -91,7 +91,7 @@ pico_set_program_name(
     OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W
     "OAG Abo Gemi Ultra Gaming"
 )
-pico_set_program_version(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W "U10F-PM1-UI5K-BT-OUT1")
+pico_set_program_version(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W "U10F-PM1-UI5K-BT-OUT2")
 
 target_link_options(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W PRIVATE
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W.map"
@@ -99,7 +99,7 @@ target_link_options(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W PR
 
 pico_add_extra_outputs(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W)
 
-# UI5K-BT-OUT1: generate a single ATT database containing GAP + HOG/HIDS,
+# UI5K-BT-OUT2: generate a single ATT database containing GAP + HOG/HIDS,
 # Battery, and Device Information services. BluetoothHostV2 continues to own
 # CYW43/BTstack initialization; BluetoothPlatformOutput is only a peripheral
 # backend on that existing stack.
