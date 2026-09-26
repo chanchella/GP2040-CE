@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ui5k-s2-square-l2-cross-pulse-200-400-policy-and-tests:
+  ui5k-fsc1-tri-r1-rs-up-macro-policy-and-tests:
     runs-on: ubuntu-22.04
 
     steps:
@@ -68,7 +68,7 @@ jobs:
             'oag/include/oag/mapping/native_km_combo_engine.h' \
             'oag/src/mapping/native_km_combo_engine.cpp' | sort)"
 
-          echo "=== UI5K_S2_SQUARE_L2_CROSS_PULSE_200_400_RUNTIME_DIFF ==="
+          echo "=== UI5K_FSC1_TRI_R1_RS_UP_MACRO_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -178,26 +178,32 @@ jobs:
           assert "serviceNativeKeyboardMouseOutput()" in main
           assert "PcNativeKmOutput nativeKmOutput_" in main
           assert "NativeKmComboEngine nativeKmCombos_" in main
-          assert "kSquarePulseActivationUs = 1000000ull" in main
-          assert "kSquarePulseCrossOnUs = 200000ull" in main
-          assert "kSquarePulseCrossOffUs = 400000ull" in main
-          assert "kSquarePulseCycleUs" in main
-          assert "serviceSquarePulseCombo()" in main
-          assert "applySquarePulseCombo" in main
-          assert "(state.buttons & oag::ButtonWest) != 0" in main
-          assert "oag::ButtonSouth" in main
-          assert "output.leftTrigger =" in main
-          assert "std::numeric_limits<std::uint32_t>::max()" in main
+          assert "kMacroRightStickUpThreshold" in main
+          assert "kMacroRightStickHoldUs = 20000ull" in main
+          assert "serviceRightStickMacroTrigger()" in main
+          assert "serviceFakeStopCurlerMacro()" in main
+          assert "applyGameplayOverlays" in main
+          assert "oag::ButtonNorth" in main
+          assert "oag::ButtonRightBumper" in main
+          assert "output.rx = 0" in main
+          assert "output.ry = 0" in main
+          assert "kMacroSquareEndUs = 30000ull" in main
+          assert "kMacroCrossStartUs = 45000ull" in main
+          assert "kMacroCrossEndUs = 85000ull" in main
+          assert "kMacroManualAimStartUs = 265000ull" in main
+          assert "kMacroR2StartUs = 385000ull" in main
+          assert "kMacroShotStartUs = 405000ull" in main
+          assert "kMacroEndUs = 615000ull" in main
+          assert "delay(" not in main
+          assert "Arduino.h" not in main
           assert "PicoGamepad" not in main
-          assert "PIN_PHYSICAL_SQUARE" not in main
-          assert "digitalRead" not in main
 
           assert "requestPairingAssist()" in host
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5K_S2_SQUARE_L2_CROSS_PULSE_200_400_POLICY=PASS")
+          print("UI5K_FSC1_TRI_R1_RS_UP_MACRO_POLICY=PASS")
           print("UNIVERSAL_INPUT_UI1_PRESERVED=PASS")
           PY
 
@@ -222,8 +228,8 @@ jobs:
           cmake --build build/oag-host --parallel 2
           ctest --test-dir build/oag-host --output-on-failure
 
-  firmware-ui5k-s2-square-l2-cross-pulse-200-400:
-    needs: ui5k-s2-square-l2-cross-pulse-200-400-policy-and-tests
+  firmware-ui5k-fsc1-tri-r1-rs-up-macro:
+    needs: ui5k-fsc1-tri-r1-rs-up-macro-policy-and-tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -298,7 +304,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400"
+          assert manifest["phase"] == "U10F-PM1-UI5K-FSC1-TRI-R1-RS-UP-MACRO"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -337,17 +343,21 @@ jobs:
           assert f["windows_usb_mode_switch_reenumerates"] is False
           assert f["native_km_combo_engine"] is True
           assert f["native_km_combo_slots"] == 8
-          assert f["gamepad_square_l2_cross_pulse_combo"] is True
-          assert f["gamepad_square_normal_before_activation"] is True
-          assert f["gamepad_square_activation_ms"] == 1000
-          assert f["gamepad_square_suppressed_after_activation"] is True
-          assert f["gamepad_square_l2_held_percent"] == 100
-          assert f["gamepad_square_cross_on_ms"] == 200
-          assert f["gamepad_square_cross_off_ms"] == 400
-          assert f["gamepad_square_cross_cycle_ms"] == 600
-          assert f["gamepad_square_release_immediate"] is True
-          assert f["gamepad_square_all_slots"] is True
-          assert f["gamepad_square_non_blocking"] is True
+          assert f["triangle_plus_r1_overlay"] is True
+          assert f["right_stick_up_macro_trigger"] is True
+          assert f["right_stick_up_trigger_hold_ms"] == 20
+          assert f["right_stick_up_trigger_threshold_percent"] == 50
+          assert f["right_stick_up_trigger_consumed"] is True
+          assert f["right_stick_up_trigger_rearm_on_exit"] is True
+          assert f["fake_stop_curler_macro"] is True
+          assert f["fake_stop_curler_non_blocking"] is True
+          assert f["fake_stop_curler_square_1_ms"] == 30
+          assert f["fake_stop_curler_cross_ms"] == 40
+          assert f["fake_stop_curler_dead_stop_until_ms"] == 265
+          assert f["fake_stop_curler_manual_left_stick_from_ms"] == 265
+          assert f["fake_stop_curler_r2_start_ms"] == 385
+          assert f["fake_stop_curler_square_2_start_ms"] == 405
+          assert f["fake_stop_curler_end_ms"] == 615
           assert f["km_mouse_sensitivity_x"] == 1.0
           assert f["km_mouse_response_exponent"] == 0.58
           assert f["km_mouse_anti_deadzone_x"] == 0.0
@@ -368,18 +378,18 @@ jobs:
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5K_S2_SQUARE_L2_CROSS_PULSE_200_400=PASS")
+          print("BUILD_MANIFEST_UI5K_FSC1_TRI_R1_RS_UP_MACRO=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-FSC1-TRI-R1-RS-UP-MACRO_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-FSC1-TRI-R1-RS-UP-MACRO_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-FSC1-TRI-R1-RS-UP-MACRO_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5K-FSC1-TRI-R1-RS-UP-MACRO_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K-S2 Square L2 Cross pulse 200-400 candidate bundle
+      - name: Upload UI5K-FSC1 Triangle R1 Right-Stick macro candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5K-S2-SQUARE-L2-CROSS-PULSE-200-400-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5K-FSC1-TRI-R1-RS-UP-MACRO-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
