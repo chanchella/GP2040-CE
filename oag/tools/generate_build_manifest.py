@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5K-C3-EFOOTBALL-SQHOLD-L2-X200-W750-SQ200-W1250",
+    "phase": "U10F-PM1-UI5K-C4-EFOOTBALL-TRI-DURATION-PASS",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -274,6 +274,41 @@ manifest = {
         "gamepad_square_hold_combo_square_passthrough_before_activation": True,
         "gamepad_square_hold_combo_square_suppressed_while_active": True,
         "gamepad_square_hold_combo_all_slots": True,
+        "gamepad_triangle_duration_combo_experiment": True,
+        "gamepad_triangle_trigger_ps": "TRIANGLE",
+        "gamepad_triangle_trigger_xbox": "Y",
+        "gamepad_triangle_selector_bands_ms": {
+            "ground_short_max": 120,
+            "ground_medium_long_max": 200,
+            "lofted_max": 230,
+            "trivela_min_exclusive": 230
+        },
+        "gamepad_triangle_ground_short": {
+            "ps": "R2+TRIANGLE",
+            "xbox": "RT+Y",
+            "hold_ms": 120
+        },
+        "gamepad_triangle_ground_medium_long": {
+            "ps": "R2+TRIANGLE",
+            "xbox": "RT+Y",
+            "hold_ms": 200
+        },
+        "gamepad_triangle_lofted": {
+            "ps": "L1+R2+TRIANGLE",
+            "xbox": "LB+RT+Y",
+            "hold_ms": 230
+        },
+        "gamepad_triangle_trivela": {
+            "stick_45deg_at_ms": 0,
+            "buttons_ps": "R2+TRIANGLE",
+            "buttons_xbox": "RT+Y",
+            "buttons_start_ms": 50,
+            "buttons_end_ms": 200,
+            "stick_center_ms": 230,
+            "direction_source": "OPPOSITE_CURRENT_HORIZONTAL_PRESERVE_VERTICAL"
+        },
+        "gamepad_triangle_raw_passthrough_while_measuring": False,
+        "gamepad_triangle_all_slots": True,
         "pc_generic_hid_profile_runtime": False,
         "android_generic_hid_profile_runtime": False,
         "ios_generic_hid_profile_foundation": True,
@@ -358,6 +393,7 @@ manifest = {
         "u10f_pm1_ui5k_c1_efootball_sqhold_l2_cross2hz": "HARDWARE_VERIFIED_BY_USER_COMBO_WORKING",
         "u10f_pm1_ui5k_c2_efootball_sqhold_l2_cross750": "HARDWARE_VERIFIED_BY_USER_COMBO_WORKING",
         "u10f_pm1_ui5k_c3_efootball_sqhold_l2_x200_w750_sq200_w1250": "PENDING_HARDWARE",
+        "u10f_pm1_ui5k_c4_efootball_triangle_duration_pass": "PENDING_HARDWARE",
     },
 }
 
