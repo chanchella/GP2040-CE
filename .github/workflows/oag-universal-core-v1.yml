@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - chatgpt/oag-universal-core-v1
-      - chatgpt/ui5k-bt-out1
+      - chatgpt/ui5k-bt-out3
     paths:
       - 'oag/**'
       - '.github/workflows/oag-universal-core-v1.yml'
@@ -27,11 +27,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-bt-out1"
+          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-bt-out3"
           UI5K_BASE="01af260742a6a402a851cceef0707ae69bd6a301"
           git merge-base --is-ancestor "${UI5K_BASE}" HEAD
 
-      - name: Verify UI5K-BT-OUT1 minimal runtime delta
+      - name: Verify UI5K-BT-OUT3 minimal runtime delta
         shell: bash
         run: |
           set -euo pipefail
@@ -57,7 +57,7 @@ jobs:
             'oag/firmware/src/bluetooth_platform_output.cpp' \
             'oag/firmware/src/main.cpp' | sort)"
 
-          echo "=== UI5K_BT_OUT1_RUNTIME_DIFF ==="
+          echo "=== UI5K_BT_OUT3_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -118,7 +118,7 @@ jobs:
           assert "!platformOutputLinkActive_ &&" in host
 
           # BLE HOG output, advertising, pairing, and report format.
-          assert "hids_device_init(" in out
+          assert "hids_device_init_with_storage(" in out
           assert "hids_device_send_input_report_for_id(" in out
           assert "GAP_SUBEVENT_LE_CONNECTION_COMPLETE" in out
           assert "gap_advertisements_enable(1)" in out
@@ -129,7 +129,7 @@ jobs:
           assert "kInputReportId = 1u" in Path(
               "oag/firmware/include/oag/firmware/bluetooth_platform_output.h"
           ).read_text()
-          assert "std::array<std::uint8_t, 13> report_" in Path(
+          assert "std::array<std::uint8_t, 15> report_" in Path(
               "oag/firmware/include/oag/firmware/bluetooth_platform_output.h"
           ).read_text()
 
@@ -143,11 +143,18 @@ jobs:
           assert "#define ENABLE_LE_SECURE_CONNECTIONS" in bt_cfg
           assert "#define ENABLE_CROSS_TRANSPORT_KEY_DERIVATION" not in bt_cfg
 
-          # Generated ATT database uses official HOG service imports.
-          assert "#import <hids.gatt>" in gatt
+          # OUT3 uses one pure gamepad Input Report instead of the generic
+          # keyboard/mouse/output/feature HIDS template.
+          assert "PRIMARY_SERVICE, ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE" in gatt
+          assert "REPORT_REFERENCE, READ, 1, 1" in gatt
           assert "#import <battery_service.gatt>" in gatt
           assert "#import <device_information_service.gatt>" in gatt
+          assert "BOOT_KEYBOARD" not in gatt
+          assert "BOOT_MOUSE" not in gatt
           assert "OAG Universal Pad" in gatt
+          assert "hids_device_register_get_report_callback(" in out
+          assert "0xCAFE" in out
+          assert "0x4016" in out
 
           # Existing Bluetooth input path invariants remain present.
           assert "requestPairingAssist()" in host
@@ -155,7 +162,7 @@ jobs:
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5K_BT_OUT1_MINIMAL_DELTA=PASS")
+          print("UI5K_BT_OUT3_MINIMAL_DELTA=PASS")
           print("UI5K_USB_XINPUT_KM_PROTECTED=PASS")
           print("BT_HOST_PLUS_BLE_PERIPHERAL_ARCH=PASS")
           PY
@@ -257,7 +264,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5K-BT-OUT1"
+          assert manifest["phase"] == "U10F-PM1-UI5K-BT-OUT3"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -314,26 +321,30 @@ jobs:
           assert f["bluetooth_host_only"] is False
           assert f["bluetooth_peripheral_output"] is True
           assert f["bluetooth_peripheral_transport"] == "BLE_HID_OVER_GATT"
-          assert f["bluetooth_peripheral_profile"] == "GENERIC_BLE_HID_GAMEPAD"
+          assert f["bluetooth_peripheral_profile"] == "PURE_GENERIC_BLE_HID_GAMEPAD"
           assert f["bluetooth_peripheral_primary_only"] is True
+          assert f["bluetooth_peripheral_input_report_count"] == 1
+          assert f["bluetooth_peripheral_report_bytes"] == 15
+          assert f["bluetooth_peripheral_pnp_vid"] == "CAFE"
+          assert f["bluetooth_peripheral_pnp_pid"] == "4016"
           assert f["bluetooth_ctkd"] is False
           assert f["usb_root_ports"] == 3
           assert f["usb_hub_host"] is True
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5K_BT_OUT1=PASS")
+          print("BUILD_MANIFEST_UI5K_BT_OUT3=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT1_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT1_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT1_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5K-BT-OUT1_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT3_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT3_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT3_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5K-BT-OUT3_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K-BT-OUT1 Android BLE gamepad candidate bundle
+      - name: Upload UI5K-BT-OUT3 Android BLE gamepad candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5K-BT-OUT1-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5K-BT-OUT3-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
