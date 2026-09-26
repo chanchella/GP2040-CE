@@ -226,7 +226,7 @@ void BluetoothHostV2::poll() {
     if (
         initialized_ &&
         hciWorking_ &&
-        !platformOutputLinkActive_ &&
+        inputDiscoveryUnlocked_ &&
         hasCapacity() &&
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
@@ -385,6 +385,7 @@ void BluetoothHostV2::servicePairingAssist() {
     if (
         !initialized_ ||
         !hciWorking_ ||
+        !inputDiscoveryUnlocked_ ||
         !hasCapacity()
     ) {
         return;
@@ -644,7 +645,7 @@ void BluetoothHostV2::stopDiscovery() {
 void BluetoothHostV2::startLeScan() {
     if (
         !hciWorking_ ||
-        platformOutputLinkActive_ ||
+        !inputDiscoveryUnlocked_ ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -731,29 +732,54 @@ void BluetoothHostV2::setPlatformOutputLinkActive(bool active) {
     platformOutputLinkActive_ = active;
 
     if (active) {
-        // Keep already-connected input controllers alive. Only quiesce
-        // background discovery while Android/PC completes peripheral-side
-        // HID pairing and GATT subscription.
+        // OUT10: freeze all new controller discovery until Android has
+        // completed HOGP enumeration and enabled the Input Report CCCD.
         if (
+            !inputDiscoveryUnlocked_ &&
             pendingKind_ == PendingKind::None &&
             !deferredBleCandidateValid_
         ) {
             stopDiscoveryTimer();
             gap_stop_scan();
             gap_inquiry_stop();
+            gap_connect_cancel();
             discoveryPhase_ =
                 DiscoveryPhase::PausedForConnection;
         }
         return;
     }
 
+    // Once the one-time phone-first bootstrap has succeeded, keep controller
+    // discovery unlocked across phone disconnects. Existing peers stay alive.
     if (
+        inputDiscoveryUnlocked_ &&
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_
     ) {
         discoveryPhase_ = DiscoveryPhase::Idle;
         resumeDiscovery();
     }
+}
+
+void BluetoothHostV2::unlockInputDiscoveryAfterPlatformSubscription() {
+    if (inputDiscoveryUnlocked_) {
+        return;
+    }
+
+    inputDiscoveryUnlocked_ = true;
+
+    if (
+        !initialized_ ||
+        !hciWorking_ ||
+        !hasCapacity() ||
+        pendingKind_ != PendingKind::None ||
+        deferredBleCandidateValid_
+    ) {
+        return;
+    }
+
+    discoveryPhase_ = DiscoveryPhase::Idle;
+    resumeDiscovery();
 }
 
 void BluetoothHostV2::handleDiscoveryTimer() {
@@ -1294,7 +1320,13 @@ void BluetoothHostV2::handlePacket(
             ) {
                 hciWorking_ = true;
                 pendingKind_ = PendingKind::None;
-                startLeScan();
+
+                // OUT10 phone-first bootstrap: advertise to Android first.
+                // Do not start BLE scan / Classic inquiry until the platform
+                // output receives HIDS_SUBEVENT_INPUT_REPORT_ENABLE.
+                if (inputDiscoveryUnlocked_) {
+                    startLeScan();
+                }
             }
             break;
 
