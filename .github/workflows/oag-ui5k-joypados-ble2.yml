@@ -1,0 +1,298 @@
+name: OAG UI5K JoypadOS BLE2
+
+on:
+  push:
+    branches:
+      - chatgpt/ui5k-joypados-ble2
+    paths:
+      - 'oag/**'
+      - '.github/workflows/oag-ui5k-joypados-ble1.yml'
+      - '.gitmodules'
+      - 'lib/pico_pio_usb'
+      - 'lib/tinyusb'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy-and-tests:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout BLE1 branch
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify UI5K ancestry and isolated runtime delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-joypados-ble2"
+          UI5K_BASE="01af260742a6a402a851cceef0707ae69bd6a301"
+          git merge-base --is-ancestor "${UI5K_BASE}" HEAD
+
+          ACTUAL_RUNTIME="$(git diff --name-only "${UI5K_BASE}" -- \
+            oag/firmware/CMakeLists.txt \
+            oag/firmware/btstack_config.h \
+            oag/firmware/oag_joypados_ble.gatt \
+            oag/firmware/include \
+            oag/firmware/src \
+            oag/include \
+            oag/src | sort)"
+
+          EXPECTED_RUNTIME="$(printf '%s\n' \
+            'oag/firmware/CMakeLists.txt' \
+            'oag/firmware/btstack_config.h' \
+            'oag/firmware/oag_joypados_ble.gatt' \
+            'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
+            'oag/firmware/include/oag/firmware/joypados_ble_output.h' \
+            'oag/firmware/src/bluetooth_host_v2.cpp' \
+            'oag/firmware/src/joypados_ble_output.cpp' \
+            'oag/firmware/src/main.cpp' | sort)"
+
+          echo "=== UI5K_JOYPADOS_BLE2_RUNTIME_DIFF ==="
+          printf '%s\n' "${ACTUAL_RUNTIME}"
+          test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
+
+          # Protect all hardware-proven USB/XInput/KM/input paths.
+          git diff --exit-code "${UI5K_BASE}" -- \
+            oag/firmware/tusb_config.h \
+            oag/firmware/src/usb_descriptors.cpp \
+            oag/firmware/src/pc_xinput_device.cpp \
+            oag/firmware/src/pc_xinput_platform_driver.cpp \
+            oag/firmware/src/pc_native_km_output.cpp \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/usb_pio_probe.c \
+            oag/firmware/src/xinput_host.cpp \
+            oag/firmware/src/bluetooth_hid_parser_v2.cpp \
+            oag/src/mapping \
+            oag/src/protocol/xusb \
+            oag/src/protocol/xgip \
+            oag/src/protocol/hid \
+            oag/src/feedback
+
+      - name: Verify JoypadOS coexistence architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path("oag/firmware/src/main.cpp").read_text()
+          host_h = Path("oag/firmware/include/oag/firmware/bluetooth_host_v2.h").read_text()
+          host = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
+          out_h = Path("oag/firmware/include/oag/firmware/joypados_ble_output.h").read_text()
+          out = Path("oag/firmware/src/joypados_ble_output.cpp").read_text()
+          gatt = Path("oag/firmware/oag_joypados_ble.gatt").read_text()
+          cmake = Path("oag/firmware/CMakeLists.txt").read_text()
+          cfg = Path("oag/firmware/btstack_config.h").read_text()
+
+          # Clean backend, no legacy BluetoothPlatformOutput path.
+          assert "JoypadBleOutput" in out_h
+          assert "src/joypados_ble_output.cpp" in cmake
+          assert "pico_btstack_make_gatt_header(" in cmake
+          assert "oag_joypados_ble.gatt" in cmake
+
+          # Single ATT owner: output owns the server, Host never creates another.
+          assert "att_server_init(" in out
+          assert "\n    att_server_init(" not in host
+          assert "initializeCore(" in host_h
+          assert "initializeInputProfiles()" in host_h
+          assert "startController()" in host_h
+
+          # Required lifecycle ordering in main.
+          assert "bluetoothHost_.initializeCore(*this)" in main
+          assert "joypadBleOutput_.initialize(bluetoothHost_)" in main
+          assert "bluetoothHost_.initializeInputProfiles()" in main
+          assert "bluetoothHost_.startController()" in main
+          assert main.index("bluetoothHost_.initializeCore(*this)") < main.index("joypadBleOutput_.initialize(bluetoothHost_)")
+          assert main.index("joypadBleOutput_.initialize(bluetoothHost_)") < main.index("bluetoothHost_.initializeInputProfiles()")
+          assert main.index("bluetoothHost_.initializeInputProfiles()") < main.index("bluetoothHost_.startController()")
+
+          # JoypadOS standard gamepad contract.
+          assert "kGamepadReportId = 3u" in out_h
+          assert "GamepadReport" in out_h
+          assert "gJoypadBleReportStorage[12]" in out
+          assert "hids_device_send_input_report_for_id(" in out
+          assert "HIDS_SUBEVENT_INPUT_REPORT_ENABLE" in out
+          assert "hids_subevent_input_report_enable_get_report_id" in out
+          assert "startSelfTest()" in out
+          assert "joypadBleOutput_.submit(output)" in main
+
+          # Advertising is deliberately small; name is in scan response.
+          assert "kScanResponse" not in out
+          assert "gap_scan_response_set_data(" not in out
+          assert "OAG BLE2 Gamepad" in out
+          assert "GAP_RANDOM_ADDRESS_TYPE_STATIC" in out
+          assert "gJoypadBleSmRegistration" in out
+          assert "SM_EVENT_JUST_WORKS_REQUEST" in out
+          assert "hids_subevent_input_report_enable_get_report_id" not in out
+          assert "BLUETOOTH_DATA_TYPE_APPEARANCE" in out
+
+          # Exact first-service report ordering from JoypadOS standard profile.
+          for token in [
+              "REPORT_REFERENCE, READ, 1, 1",
+              "REPORT_REFERENCE, READ, 1, 2",
+              "REPORT_REFERENCE, READ, 2, 1",
+              "REPORT_REFERENCE, READ, 3, 1",
+              "REPORT_REFERENCE, READ, 3, 2",
+              "REPORT_REFERENCE, READ, 4, 2",
+              "REPORT_REFERENCE, READ, 5, 3",
+          ]:
+              assert token in gatt
+
+          # Phone must never be allocated/disconnected as an input peer.
+          assert "role == HCI_ROLE_SLAVE" in host
+          assert "JoypadBleOutput owns this link" in host
+
+          # Four controller peers + one phone and independent BLE/Classic bonds.
+          assert "#define MAX_NR_HCI_CONNECTIONS 5" in cfg
+          assert "ENABLE_CROSS_TRANSPORT_KEY_DERIVATION" not in cfg
+
+          print("UI5K_JOYPADOS_BLE2_ARCH=PASS")
+          print("SINGLE_ATT_OWNER=PASS")
+          print("UI5K_USB_XINPUT_KM_PROTECTED=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build and run host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: policy-and-tests
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact Pico SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-u9d
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-u9d rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          test "$(git -C pico-sdk-u9d/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
+          test "$(git -C pico-sdk-u9d/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-u9d" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Configure and build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-u9d" \
+          cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Discover outputs and verify manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          mapfile -t UF2_FILES < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF_FILES < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP_FILES < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+
+          test "${#UF2_FILES[@]}" -eq 1
+          test "${#ELF_FILES[@]}" -eq 1
+          test "${#MAP_FILES[@]}" -eq 1
+
+          arm-none-eabi-size "${ELF_FILES[0]}" | tee artifacts/size-report.txt
+
+          python3 oag/tools/generate_build_manifest.py \
+            build/oag-fw \
+            artifacts/build-manifest.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
+          f = manifest["features"]
+
+          assert manifest["phase"] == "UI5K-JOYPADOS-BLE2"
+          assert f["pc_xinput_output"] is True
+          assert f["pc_xinput_output_slots"] == 4
+          assert f["pc_native_keyboard_output"] is True
+          assert f["pc_native_mouse_output"] is True
+          assert f["usb_root_ports"] == 3
+          assert f["usb_hub_host"] is True
+
+          assert f["bluetooth_host_v2"] is True
+          assert f["bluetooth_host_only"] is False
+          assert f["bluetooth_peripheral_output"] is True
+          assert f["bluetooth_output_backend"] == "JOYPADOS_DERIVED_STANDARD_HOGP"
+          assert f["bluetooth_att_owner"] == "JoypadBleOutput"
+          assert f["bluetooth_host_att_server_init"] is False
+          assert f["bluetooth_output_gamepad_report_id"] == 3
+          assert f["bluetooth_output_gamepad_report_bytes"] == 15
+          assert f["bluetooth_output_selftest_after_subscription"] is True
+          assert f["bluetooth_output_phone_first_enumeration"] is True
+          assert f["bluetooth_output_hids_ready_on_any_input_subscription"] is True
+          assert f["bluetooth_output_separate_sm_listener"] is True
+          assert f["bluetooth_host_sm_role_gated"] is True
+          assert f["bluetooth_output_fresh_static_random_identity"] == "C2:A5:B2:55:10:02"
+          assert f["bluetooth_output_device_name"] == "OAG BLE2 Gamepad"
+          assert f["bluetooth_output_ctkd"] is False
+          assert f["bluetooth_hci_connection_budget"] == 5
+          assert f["android_generic_hid_profile_runtime"] is True
+
+          print("BUILD_MANIFEST_UI5K_JOYPADOS_BLE2=PASS")
+          PY
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+          cp "${UF2_FILES[0]}" "artifacts/OAG_UI5K_JOYPADOS_BLE2_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_UI5K_JOYPADOS_BLE2_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_UI5K_JOYPADOS_BLE2_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_UI5K_JOYPADOS_BLE2_* > artifacts/SHA256SUMS.txt
+
+      - name: Upload UI5K JoypadOS BLE1 bundle
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-UI5K-JOYPADOS-BLE2-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
