@@ -5,6 +5,7 @@
 #include <limits>
 
 #include "btstack.h"
+#include "pico/cyw43_arch.h"
 #include "ble/gatt-service/battery_service_server.h"
 #include "ble/gatt-service/device_information_service_server.h"
 #include "ble/gatt-service/hids_device.h"
@@ -283,7 +284,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT3"
+        "U10F-PM1-UI5K-BT-OUT4-DIAG"
     );
     // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
     // Source 0x02 = USB Implementer's Forum.
@@ -335,11 +336,38 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
 }
 
 void BluetoothPlatformOutput::poll() {
+    if (connectionHandle_ == kInvalidHandle) {
+        return;
+    }
+
+    // OUT4-DIAG status LED:
+    // - BLE link only, no HIDS subscription: slow blink
+    // - HIDS Input Report subscribed: solid ON
+    const std::uint32_t nowMs = btstack_run_loop_get_time_ms();
+
+    if (!inputSubscribed_) {
+        cyw43_arch_gpio_put(
+            CYW43_WL_GPIO_LED_PIN,
+            ((nowMs / 500u) & 1u) != 0u
+        );
+        return;
+    }
+
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
+
+    // Independent synthetic HID proof. Android Settings should receive a
+    // repeated D-pad Down / Neutral transition even with NO controller input.
     if (
-        reportDirty_ &&
-        inputSubscribed_ &&
-        connectionHandle_ != kInvalidHandle
+        diagnosticNextToggleMs_ == 0u ||
+        static_cast<std::int32_t>(nowMs - diagnosticNextToggleMs_) >= 0
     ) {
+        diagnosticDown_ = !diagnosticDown_;
+        report_[2] = diagnosticDown_ ? 5u : 0u;
+        reportDirty_ = true;
+        diagnosticNextToggleMs_ = nowMs + 750u;
+    }
+
+    if (reportDirty_) {
         requestCanSend();
     }
 }
@@ -517,6 +545,9 @@ void BluetoothPlatformOutput::handleHciPacket(
                 inputSubscribed_ = false;
                 canSendPending_ = false;
                 reportDirty_ = true;
+                diagnosticNextToggleMs_ = 0u;
+                diagnosticDown_ = false;
+                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
                 // G2: Android-compatible Just Works Secure Connections.
                 // This policy is activated only while a central owns our
@@ -548,6 +579,9 @@ void BluetoothPlatformOutput::handleHciPacket(
             inputSubscribed_ = false;
             canSendPending_ = false;
             reportDirty_ = true;
+            diagnosticNextToggleMs_ = 0u;
+            diagnosticDown_ = false;
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
             // Restore the exact UI5K host security policy before controller
             // discovery resumes.
@@ -678,6 +712,13 @@ void BluetoothPlatformOutput::handleHidsPacket(
 
             inputSubscribed_ =
                 hids_subevent_input_report_enable_get_enable(packet) != 0;
+
+            diagnosticNextToggleMs_ = 0u;
+            diagnosticDown_ = false;
+            cyw43_arch_gpio_put(
+                CYW43_WL_GPIO_LED_PIN,
+                inputSubscribed_
+            );
 
             reportDirty_ = true;
             requestCanSend();
