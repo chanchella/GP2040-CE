@@ -41,7 +41,7 @@ jobs:
       - name: Verify Pico 2 W board
         run: |
           set -euxo pipefail
-          arduino-cli board details -b rp2040:rp2040:rpipico2w
+          arduino-cli board details -b rp2040:rp2040:rpipico2w:ipbtstack=ipv4btcble
 
       - name: Compile standalone BLE joystick probe
         run: |
@@ -49,7 +49,7 @@ jobs:
           rm -rf build
           mkdir -p build
           arduino-cli compile \
-            --fqbn rp2040:rp2040:rpipico2w \
+            --fqbn rp2040:rp2040:rpipico2w:ipbtstack=ipv4btcble \
             --output-dir build \
             oag/standalone/ble_joystick_probe
 
