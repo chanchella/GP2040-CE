@@ -15,7 +15,7 @@ class BluetoothHostV2;
 // reinitialize CYW43, L2CAP, SM, or the Bluetooth input-host stack.
 class BluetoothPlatformOutput {
 public:
-    bool initialize(BluetoothHostV2& host);
+    bool initializeStandalone();
     void poll();
     void submit(const oag::LogicalGamepadState& state);
 
