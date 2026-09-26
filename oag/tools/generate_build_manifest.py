@@ -59,7 +59,7 @@ cyw43_sha = git_in(pico_sdk_path / "lib/cyw43-driver", "rev-parse", "HEAD")
 manifest = {
     "product": "AOG Abo Gemi ultra gaming",
     "firmware_family": "OAG Universal Input Dongle",
-    "phase": "U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT",
+    "phase": "U10F-PM1-UI5K-BT-OUT13-STANDALONE-OWNER",
     "board": "Raspberry Pi Pico 2 W",
     "git_sha": repo_sha,
     "branch": branch,
@@ -148,6 +148,11 @@ manifest = {
         "bluetooth_peripheral_get_report_callback": False,
         "bluetooth_peripheral_boot_characteristics_present": True,
         "bluetooth_peripheral_feature_report_characteristic_present": True,
+        "bluetooth_runtime_owner": "BLUETOOTH_PLATFORM_OUTPUT_STANDALONE",
+        "bluetooth_host_v2_runtime_initialized": False,
+        "bluetooth_platform_output_owns_cyw43_init": True,
+        "bluetooth_platform_output_owns_l2cap_sm_att_hci": True,
+        "bluetooth_advertising_configured_before_hci_power_on": True,
         "bluetooth_ctkd": False,
         "bluetooth_max_simultaneous_peers": 4,
         "bluetooth_ble_hid_host": True,
@@ -377,7 +382,8 @@ manifest = {
         "u10f_pm1_ui5k_bt_out9_selftest_live": "HARDWARE_CONNECTED_NO_SELFTEST_NO_INPUT",
         "u10f_pm1_ui5k_bt_out10_phone_first": "HARDWARE_CONNECTED_NO_SELFTEST_NO_INPUT",
         "u10f_pm1_ui5k_bt_out11_output_isolation": "HARDWARE_CONNECTED_NO_SELFTEST_NO_INPUT",
-        "u10f_pm1_ui5k_bt_out12_arduino_att": "PENDING_HARDWARE",
+        "u10f_pm1_ui5k_bt_out12_arduino_att": "HARDWARE_CONNECTED_NO_SELFTEST_NO_INPUT",
+        "u10f_pm1_ui5k_bt_out13_standalone_owner": "PENDING_HARDWARE",
     },
 }
 
