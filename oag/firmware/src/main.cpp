@@ -15,6 +15,7 @@
 #include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
+#include "oag/firmware/joypados_ble_output.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/firmware/pc_native_km_output.h"
 #include "oag/firmware/usb_pio_host.h"
@@ -1130,7 +1131,17 @@ private:
                 return;
             }
 
-            if (bluetoothHost_.initialize(*this)) {
+            // JoypadOS-derived coexistence lifecycle:
+            // 1) Shared CYW43/L2CAP/SM core.
+            // 2) BLE output owns the single ATT server + HIDS device.
+            // 3) Bluetooth controller-input clients attach afterwards.
+            // 4) HCI power-on is last.
+            if (
+                bluetoothHost_.initializeCore(*this) &&
+                joypadBleOutput_.initialize(bluetoothHost_) &&
+                bluetoothHost_.initializeInputProfiles() &&
+                bluetoothHost_.startController()
+            ) {
                 bluetoothInitialized_ = true;
                 bluetoothInitNotBeforeUs_ = 0;
                 return;
@@ -1142,6 +1153,7 @@ private:
         }
 
         bluetoothHost_.poll();
+        joypadBleOutput_.poll();
     }
 
     static oag::GenericHidGamepadQuirks genericHidQuirksFor(
@@ -1807,10 +1819,14 @@ private:
         // Physical gamepads keep their normal route while K/M are forwarded
         // through the standard HID keyboard/mouse interfaces.
         if (keyboardMouseMode_ == KeyboardMouseOutputMode::Native) {
+            const oag::LogicalGamepadState output =
+                basePrimaryOutput();
+
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                basePrimaryOutput()
+                output
             );
+            joypadBleOutput_.submit(output);
             return;
         }
 
@@ -1835,14 +1851,18 @@ private:
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
+            const oag::LogicalGamepadState neutral {};
+
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                oag::LogicalGamepadState {}
+                neutral
             );
+            joypadBleOutput_.submit(neutral);
             return;
         }
 
         platformOutput_.submit(hostPrimaryOutputSlot_, output);
+        joypadBleOutput_.submit(output);
     }
 
     void serviceKeyboardMouseModeToggle() {
@@ -2139,6 +2159,7 @@ private:
     oag::firmware::UsbPioHost usbHost_;
 
     oag::firmware::BluetoothHostV2 bluetoothHost_;
+    oag::firmware::JoypadBleOutput joypadBleOutput_;
     oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
     bool bluetoothInitialized_ = false;
     std::uint64_t bluetoothInitNotBeforeUs_ = 0;
