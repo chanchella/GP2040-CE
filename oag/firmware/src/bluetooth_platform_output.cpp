@@ -283,7 +283,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT3"
+        "U10F-PM1-UI5K-BT-OUT5-HANDLE-FIX"
     );
     // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
     // Source 0x02 = USB Implementer's Forum.
@@ -534,6 +534,68 @@ void BluetoothPlatformOutput::handleHciPacket(
             }
             break;
 
+        case HCI_EVENT_LE_META:
+            if (
+                hci_event_le_meta_get_subevent_code(packet) !=
+                HCI_SUBEVENT_LE_CONNECTION_COMPLETE
+            ) {
+                break;
+            } else {
+                const std::uint8_t status =
+                    hci_subevent_le_connection_complete_get_status(packet);
+
+                if (status != ERROR_CODE_SUCCESS) {
+                    break;
+                }
+
+                const std::uint8_t role =
+                    hci_subevent_le_connection_complete_get_role(packet);
+
+                if (role != HCI_ROLE_SLAVE) {
+                    break;
+                }
+
+                const std::uint16_t handle =
+                    hci_subevent_le_connection_complete_get_connection_handle(
+                        packet
+                    );
+
+                // GAP_META is BTstack's preferred normalized event, but some
+                // shared Host+Peripheral paths can still surface the raw LE
+                // meta event first. Accept either source and make connection
+                // adoption idempotent.
+                connectionHandle_ = handle;
+                peerAddressType_ =
+                    hci_subevent_le_connection_complete_get_peer_address_type(
+                        packet
+                    );
+
+                bd_addr_t address {};
+                hci_subevent_le_connection_complete_get_peer_address(
+                    packet,
+                    address
+                );
+                std::copy(
+                    address,
+                    address + peerAddress_.size(),
+                    peerAddress_.begin()
+                );
+
+                inputSubscribed_ = false;
+                canSendPending_ = false;
+                reportDirty_ = true;
+
+                sm_set_authentication_requirements(
+                    SM_AUTHREQ_BONDING |
+                    SM_AUTHREQ_SECURE_CONNECTION
+                );
+
+                if (host_ != nullptr) {
+                    host_->setPlatformOutputLinkActive(true);
+                }
+            }
+            break;
+
         case HCI_EVENT_DISCONNECTION_COMPLETE: {
             const std::uint16_t handle =
                 hci_event_disconnection_complete_get_connection_handle(
@@ -669,10 +731,30 @@ void BluetoothPlatformOutput::handleHidsPacket(
                     packet
                 );
 
-            if (
-                handle != connectionHandle_ ||
-                reportId != kInputReportId
-            ) {
+            if (reportId != kInputReportId) {
+                break;
+            }
+
+            // The HIDS subscription event is authoritative for the ATT link.
+            // If the earlier GAP/LE connection event was missed by this
+            // coexisting host+peripheral backend, adopt the handle here instead
+            // of discarding the first usable HID subscription.
+            if (connectionHandle_ == kInvalidHandle) {
+                connectionHandle_ = handle;
+                canSendPending_ = false;
+                reportDirty_ = true;
+
+                sm_set_authentication_requirements(
+                    SM_AUTHREQ_BONDING |
+                    SM_AUTHREQ_SECURE_CONNECTION
+                );
+
+                if (host_ != nullptr) {
+                    host_->setPlatformOutputLinkActive(true);
+                }
+            }
+
+            if (handle != connectionHandle_) {
                 break;
             }
 
