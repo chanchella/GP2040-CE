@@ -62,6 +62,10 @@ public:
     // phone/PC owns the peripheral link; existing input peers remain active.
     void setPlatformOutputLinkActive(bool active);
 
+    // OUT10 phone-first bootstrap: input-controller discovery stays locked
+    // until Android has actually enabled the BLE HID Input Report CCCD.
+    void unlockInputDiscoveryAfterPlatformSubscription();
+
     // Cable Pairing Assist starts only after a known Bluetooth-capable
     // controller leaves USB. While the controller is wired, U10F USB Host
     // behavior is left completely undisturbed.
@@ -180,6 +184,7 @@ private:
     bool controllerStarted_ = false;
     bool hciWorking_ = false;
     bool platformOutputLinkActive_ = false;
+    bool inputDiscoveryUnlocked_ = false;
 
     DiscoveryPhase discoveryPhase_ = DiscoveryPhase::Idle;
     PendingKind pendingKind_ = PendingKind::None;
