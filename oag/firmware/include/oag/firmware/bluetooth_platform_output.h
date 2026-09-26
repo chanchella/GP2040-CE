@@ -56,6 +56,8 @@ private:
     void startAdvertising();
     void requestCanSend();
     void sendCurrentReport();
+    void startConnectionSelfTest();
+    void serviceConnectionSelfTest();
 
     BluetoothHostV2* host_ = nullptr;
 
@@ -65,11 +67,19 @@ private:
     bool canSendPending_ = false;
     bool reportDirty_ = true;
 
+    bool selfTestActive_ = false;
+    std::uint32_t selfTestStartedMs_ = 0;
+    std::uint8_t selfTestStep_ = 0;
+
     std::uint16_t connectionHandle_ = kInvalidHandle;
     std::uint8_t peerAddressType_ = 0;
     std::array<std::uint8_t, 6> peerAddress_ {};
 
+    // report_ is the currently transmitted BLE report.
+    // liveReport_ always tracks the real Primary controller state so OUT9 can
+    // run a short synthetic connection proof, then hand over seamlessly.
     std::array<std::uint8_t, 17> report_ {};
+    std::array<std::uint8_t, 17> liveReport_ {};
 };
 
 } // namespace oag::firmware
