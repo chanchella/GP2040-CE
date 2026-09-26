@@ -151,16 +151,15 @@ jobs:
           assert "#define ENABLE_LE_SECURE_CONNECTIONS" in bt_cfg
           assert "#define ENABLE_CROSS_TRANSPORT_KEY_DERIVATION" not in bt_cfg
 
-          # OUT3 uses one pure gamepad Input Report instead of the generic
-          # keyboard/mouse/output/feature HIDS template.
+          # OUT12 mirrors Arduino-Pico JoystickBLE ATT/HIDS layout.
           assert "PRIMARY_SERVICE, ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE" in gatt
           assert "REPORT_REFERENCE, READ, 1, 1" in gatt
           assert "#import <battery_service.gatt>" in gatt
           assert "#import <device_information_service.gatt>" in gatt
-          assert "BOOT_KEYBOARD" not in gatt
-          assert "BOOT_MOUSE" not in gatt
+          assert "BOOT_KEYBOARD_INPUT_REPORT" in gatt
+          assert "BOOT_MOUSE_INPUT_REPORT" in gatt
           assert "OAG Universal Pad" in gatt
-          assert "hids_device_register_get_report_callback(" in out
+          assert "hids_device_register_get_report_callback(" not in out
           assert "0xCAFE" in out
           assert "0x4016" in out
           assert "HCI_EVENT_LE_META" in out
