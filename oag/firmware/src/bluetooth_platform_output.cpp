@@ -151,7 +151,7 @@ constexpr std::uint8_t kAdvertisingData[] = {
     0x03, BLUETOOTH_DATA_TYPE_APPEARANCE, 0xC4, 0x03,
 };
 
-hids_device_report_t gHidReportStorage[1] {};
+hids_device_report_t gHidReportStorage[2] {};
 
 std::int16_t encodeSignedAxis(std::int32_t value) {
     if (value <= std::numeric_limits<std::int32_t>::min()) {
@@ -328,7 +328,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT11-OUTPUT-ISOLATION"
+        "U10F-PM1-UI5K-BT-OUT12-ARDUINO-ATT"
     );
     // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
     // Source 0x02 = USB Implementer's Forum.
@@ -345,12 +345,12 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
         0,
         kHidDescriptor,
         sizeof(kHidDescriptor),
-        1,
+        2,
         gHidReportStorage
     );
-    hids_device_register_get_report_callback(
-        platformGetReportThunk
-    );
+
+    // Match PicoBluetoothBLEHID: no get-report callback is registered for the
+    // joystick-only probe. Android only needs the encrypted CCCD + notify path.
     hids_device_register_packet_handler(
         platformHidsThunk
     );
