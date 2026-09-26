@@ -328,7 +328,7 @@ bool BluetoothPlatformOutput::initialize(BluetoothHostV2& host) {
     device_information_service_server_set_manufacturer_name("OAG");
     device_information_service_server_set_model_number("Universal Pad");
     device_information_service_server_set_firmware_revision(
-        "U10F-PM1-UI5K-BT-OUT9-SELFTEST-LIVE"
+        "U10F-PM1-UI5K-BT-OUT10-PHONE-FIRST"
     );
     // Reuse the existing UI5K USB identity for a stable, non-zero PnP tuple.
     // Source 0x02 = USB Implementer's Forum.
@@ -953,7 +953,15 @@ void BluetoothPlatformOutput::handleHidsPacket(
                 hids_subevent_input_report_enable_get_enable(packet) != 0;
 
             if (inputSubscribed_) {
+                // OUT10: Android HOGP is now genuinely ready. Start the
+                // visible self-test first, then unlock BluetoothHostV2 so the
+                // physical controller can connect while the phone remains
+                // subscribed to our BLE gamepad output.
                 startConnectionSelfTest();
+
+                if (host_ != nullptr) {
+                    host_->unlockInputDiscoveryAfterPlatformSubscription();
+                }
             } else {
                 selfTestActive_ = false;
                 report_ = liveReport_;
