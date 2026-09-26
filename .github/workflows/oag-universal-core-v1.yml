@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - chatgpt/oag-universal-core-v1
-      - chatgpt/ui5k-bt-out9-selftest-live
+      - chatgpt/ui5k-bt-out10-phone-first
     paths:
       - 'oag/**'
       - '.github/workflows/oag-universal-core-v1.yml'
@@ -27,11 +27,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-bt-out9-selftest-live"
+          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-bt-out10-phone-first"
           UI5K_BASE="01af260742a6a402a851cceef0707ae69bd6a301"
           git merge-base --is-ancestor "${UI5K_BASE}" HEAD
 
-      - name: Verify UI5K-BT-OUT9-SELFTEST-LIVE minimal runtime delta
+      - name: Verify UI5K-BT-OUT10-PHONE-FIRST minimal runtime delta
         shell: bash
         run: |
           set -euo pipefail
@@ -57,7 +57,7 @@ jobs:
             'oag/firmware/src/bluetooth_platform_output.cpp' \
             'oag/firmware/src/main.cpp' | sort)"
 
-          echo "=== UI5K_BT_OUT9_SELFTEST_LIVE_RUNTIME_DIFF ==="
+          echo "=== UI5K_BT_OUT10_PHONE_FIRST_RUNTIME_DIFF ==="
           printf '%s\n' "${ACTUAL_RUNTIME}"
           test "${ACTUAL_RUNTIME}" = "${EXPECTED_RUNTIME}"
 
@@ -165,6 +165,7 @@ jobs:
           assert "async_context_release_lock" in out
           assert "Arduino-Pico JoystickBLE compatibility profile." in out
           assert "startConnectionSelfTest()" in out
+          assert "unlockInputDiscoveryAfterPlatformSubscription();" in out
           assert "serviceConnectionSelfTest()" in out
           assert "report_ = liveReport_;" in out
           assert "probe[12] = 5u;" in out
@@ -172,6 +173,9 @@ jobs:
           host = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
           main = Path("oag/firmware/src/main.cpp").read_text()
           assert "bool BluetoothHostV2::startController()" in host
+          assert "unlockInputDiscoveryAfterPlatformSubscription()" in host
+          assert "inputDiscoveryUnlocked_" in host
+          assert "if (inputDiscoveryUnlocked_) {" in host
           assert "SM_AUTHREQ_SECURE_CONNECTION |" in host
           assert "SM_AUTHREQ_BONDING" in host
           assert "hci_power_control(HCI_POWER_ON);" in host
@@ -187,7 +191,7 @@ jobs:
           assert "kLeLowLatencyIntervalMin = 6u" in host
           assert "kLeLowLatencyIntervalMax = 12u" in host
 
-          print("UI5K_BT_OUT9_SELFTEST_LIVE_MINIMAL_DELTA=PASS")
+          print("UI5K_BT_OUT10_PHONE_FIRST_MINIMAL_DELTA=PASS")
           print("UI5K_USB_XINPUT_KM_PROTECTED=PASS")
           print("BT_HOST_PLUS_BLE_PERIPHERAL_ARCH=PASS")
           PY
@@ -289,7 +293,7 @@ jobs:
           manifest = json.loads(Path("artifacts/build-manifest.json").read_text())
           f = manifest["features"]
 
-          assert manifest["phase"] == "U10F-PM1-UI5K-BT-OUT9-SELFTEST-LIVE"
+          assert manifest["phase"] == "U10F-PM1-UI5K-BT-OUT10-PHONE-FIRST"
           assert f["universal_input_ui1"] is True
           assert f["usb_report_protocol_keyboard"] is True
           assert f["usb_report_protocol_mouse"] is True
@@ -364,24 +368,27 @@ jobs:
           assert f["bluetooth_connection_selftest_step_ms"] == 900
           assert f["bluetooth_connection_selftest_steps"] == 6
           assert f["bluetooth_connection_selftest_then_live_primary"] is True
+          assert f["bluetooth_phone_first_bootstrap"] is True
+          assert f["bluetooth_input_discovery_locked_until_platform_hids_subscription"] is True
+          assert f["bluetooth_input_discovery_unlock_event"] == "HIDS_SUBEVENT_INPUT_REPORT_ENABLE"
           assert f["bluetooth_ctkd"] is False
           assert f["usb_root_ports"] == 3
           assert f["usb_hub_host"] is True
           assert f["keyboard_boot_host"] is True
           assert f["mouse_boot_host"] is True
 
-          print("BUILD_MANIFEST_UI5K_BT_OUT9_SELFTEST_LIVE=PASS")
+          print("BUILD_MANIFEST_UI5K_BT_OUT10_PHONE_FIRST=PASS")
           PY
 
           SHORT_SHA="${GITHUB_SHA::8}"
-          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT9-SELFTEST-LIVE_${SHORT_SHA}_Pico2W.uf2"
-          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT9-SELFTEST-LIVE_${SHORT_SHA}_Pico2W.elf"
-          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT9-SELFTEST-LIVE_${SHORT_SHA}_Pico2W.map"
-          sha256sum artifacts/OAG_U10F-PM1-UI5K-BT-OUT9-SELFTEST-LIVE_* > artifacts/SHA256SUMS.txt
+          cp "${UF2_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT10-PHONE-FIRST_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT10-PHONE-FIRST_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP_FILES[0]}" "artifacts/OAG_U10F-PM1-UI5K-BT-OUT10-PHONE-FIRST_${SHORT_SHA}_Pico2W.map"
+          sha256sum artifacts/OAG_U10F-PM1-UI5K-BT-OUT10-PHONE-FIRST_* > artifacts/SHA256SUMS.txt
 
-      - name: Upload UI5K-BT-OUT9-SELFTEST-LIVE Android BLE gamepad candidate bundle
+      - name: Upload UI5K-BT-OUT10-PHONE-FIRST Android BLE gamepad candidate bundle
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-U10F-PM1-UI5K-BT-OUT9-SELFTEST-LIVE-${{ github.sha }}
+          name: OAG-U10F-PM1-UI5K-BT-OUT10-PHONE-FIRST-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
