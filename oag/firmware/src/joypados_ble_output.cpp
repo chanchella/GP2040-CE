@@ -294,12 +294,10 @@ void JoypadBleOutput::setAdvertising(bool enabled) {
         return;
     }
 
-    const std::uint8_t status =
-        gap_advertisements_enable(enabled ? 1 : 0);
-
-    if (status == ERROR_CODE_SUCCESS) {
-        advertising_ = enabled;
-    }
+    // Pinned BTstack 075a078 exposes gap_advertisements_enable() as void.
+    // Match JoypadOS' idempotent advertising-state pattern exactly.
+    advertising_ = enabled;
+    gap_advertisements_enable(enabled ? 1 : 0);
 }
 
 void JoypadBleOutput::submit(
