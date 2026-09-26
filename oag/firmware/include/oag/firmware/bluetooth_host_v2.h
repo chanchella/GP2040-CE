@@ -52,6 +52,11 @@ public:
     void poll();
     bool beginDiscovery();
 
+    // UI5K-BT-OUT1 shares the same BTstack instance for Central/Host input
+    // and Peripheral/Device output. Pause only background discovery while a
+    // phone/PC owns the peripheral link; existing input peers remain active.
+    void setPlatformOutputLinkActive(bool active);
+
     // Cable Pairing Assist starts only after a known Bluetooth-capable
     // controller leaves USB. While the controller is wired, U10F USB Host
     // behavior is left completely undisturbed.
@@ -168,6 +173,7 @@ private:
     BluetoothHostV2Observer* observer_ = nullptr;
     bool initialized_ = false;
     bool hciWorking_ = false;
+    bool platformOutputLinkActive_ = false;
 
     DiscoveryPhase discoveryPhase_ = DiscoveryPhase::Idle;
     PendingKind pendingKind_ = PendingKind::None;
