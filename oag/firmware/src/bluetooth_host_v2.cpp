@@ -231,7 +231,11 @@ void BluetoothHostV2::poll() {
         hasCapacity() &&
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
-        discoveryPhase_ == DiscoveryPhase::Idle
+        discoveryPhase_ == DiscoveryPhase::Idle &&
+        !(
+            gPhoneGamepadOutput.connected() &&
+            !gPhoneGamepadOutput.subscribed()
+        )
     ) {
         resumeDiscovery();
     }
@@ -704,6 +708,18 @@ void BluetoothHostV2::startClassicInquiry() {
 
 void BluetoothHostV2::resumeDiscovery() {
     if (!hciWorking_) {
+        return;
+    }
+
+    // Keep the radio quiet while the PC/platform BLE link is between the
+    // connection-complete event and HIDS input-report subscription. The
+    // standalone Arduino-Pico probe proved this pairing path without any
+    // concurrent central scan. Discovery resumes immediately after HIDS
+    // subscription is confirmed.
+    if (
+        gPhoneGamepadOutput.connected() &&
+        !gPhoneGamepadOutput.subscribed()
+    ) {
         return;
     }
 
