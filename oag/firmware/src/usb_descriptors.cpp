@@ -63,22 +63,16 @@ const std::uint8_t kGamepadReportDescriptor[] = {
     0x81, 0x42,       //   Input (Data, Variable, Absolute, Null State)
     0x65, 0x00,       //   Unit (None)
 
-    // 18 buttons deliberately mirror Web Gamepad standard button indices.
-    // D-pad and analog triggers are duplicated as buttons so browsers that
-    // expose only raw HID arrays still receive every gameplay control.
+    // Canonical 16-button Android/Linux/TinyUSB bitmap.
+    // D-pad is intentionally Hat-only; it is not duplicated as buttons.
     0x05, 0x09,       //   Usage Page (Button)
     0x19, 0x01,       //   Usage Minimum (Button 1)
-    0x29, 0x12,       //   Usage Maximum (Button 18)
+    0x29, 0x10,       //   Usage Maximum (Button 16)
     0x15, 0x00,       //   Logical Minimum (0)
     0x25, 0x01,       //   Logical Maximum (1)
     0x75, 0x01,       //   Report Size (1)
-    0x95, 0x12,       //   Report Count (18)
+    0x95, 0x10,       //   Report Count (16)
     0x81, 0x02,       //   Input (Data, Variable, Absolute)
-
-    // Pad button bits to the next byte boundary.
-    0x75, 0x01,       //   Report Size (1)
-    0x95, 0x06,       //   Report Count (6)
-    0x81, 0x03,       //   Input (Constant, Variable, Absolute)
 
     0xC0,             // End Collection
 };
