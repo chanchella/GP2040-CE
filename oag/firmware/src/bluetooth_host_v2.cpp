@@ -11,9 +11,12 @@
 #include "btstack_tlv.h"
 #include "ble/gatt-service/hids_host.h"
 
+#include "oag/firmware/ble_phone_gamepad_output.h"
+
 namespace {
 
 oag::firmware::BluetoothHostV2* gBluetoothHostV2 = nullptr;
+oag::firmware::BlePhoneGamepadOutput gPhoneGamepadOutput {};
 
 btstack_packet_callback_registration_t gHciRegistration {};
 btstack_packet_callback_registration_t gSmRegistration {};
@@ -89,27 +92,6 @@ constexpr std::uint16_t kLeLowLatencyIntervalMax = 12u;
 constexpr std::uint16_t kLeLowLatencyConnLatency = 0u;
 constexpr std::uint16_t kLeLowLatencySupervisionTimeout = 400u; // 4 seconds
 
-// Minimal GAP Device Name ATT database. This mirrors the historical
-// BluetoothHCI behavior where the Pico exposes a local GAP service even while
-// acting as the BLE HID Host/Central.
-constexpr std::uint8_t kLocalGapProfile[] = {
-    0x01,
-
-    // 0x0001 PRIMARY_SERVICE, GAP_SERVICE (0x1800)
-    0x0a, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x28, 0x00, 0x18,
-
-    // 0x0002 CHARACTERISTIC, GAP_DEVICE_NAME (0x2A00), READ
-    0x0d, 0x00, 0x02, 0x00, 0x02, 0x00, 0x03, 0x28,
-    0x02, 0x03, 0x00, 0x00, 0x2a,
-
-    // 0x0003 VALUE, "OAG Abo Gemi Ultra Gaming"
-    0x21, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x2a,
-    'O','A','G',' ','A','b','o',' ','G','e','m','i',' ',
-    'U','l','t','r','a',' ','G','a','m','i','n','g',
-
-    0x00, 0x00
-};
-
 } // namespace
 
 namespace oag::firmware {
@@ -135,19 +117,32 @@ bool BluetoothHostV2::initialize(
         IO_CAPABILITY_NO_INPUT_NO_OUTPUT
     );
 
+    // Phone-facing HOGP uses the exact Arduino-Pico security policy at
+    // startup. Before every outgoing controller connection we restore UI5K's
+    // original Bonding-only policy so controller pairing semantics stay intact.
     sm_set_authentication_requirements(
+        SM_AUTHREQ_SECURE_CONNECTION |
         SM_AUTHREQ_BONDING
     );
 
     gatt_client_init();
 
-    // Historical BluetoothHCI installed a local GAP/ATT server before power-on.
-    // Keep runtime Host-only: this does not start advertising.
+    // One ATT server only. Its database is the exact Arduino-Pico 6.1.1
+    // JoystickBLE/PicoBluetoothBLEHID layout that was hardware-proven on the
+    // user's phone. BluetoothHostV2 still owns ATT installation and HCI power.
+    if (!gPhoneGamepadOutput.prepareAttDatabase()) {
+        return false;
+    }
+
     att_server_init(
-        kLocalGapProfile,
+        gPhoneGamepadOutput.attDatabase(),
         nullptr,
         nullptr
     );
+
+    if (!gPhoneGamepadOutput.installDeviceServices()) {
+        return false;
+    }
 
     hid_host_init(
         classicDescriptorStorage_.data(),
@@ -205,6 +200,18 @@ bool BluetoothHostV2::initialize(
 }
 
 void BluetoothHostV2::poll() {
+    gPhoneGamepadOutput.poll();
+
+    // Once Android/iOS has genuinely enabled the HIDS input-report data plane,
+    // return the shared SM policy to UI5K's controller-friendly Bonding-only
+    // mode and resume controller discovery. The phone remains connected.
+    if (gPhoneGamepadOutput.takeSubscriptionReadySignal()) {
+        sm_set_authentication_requirements(
+            SM_AUTHREQ_BONDING
+        );
+        resumeDiscovery();
+    }
+
     // pico_cyw43_arch_none + pico_btstack_cyw43 are serviced by the
     // SDK async context. Deliberately do not call cyw43_arch_poll().
     //
@@ -224,10 +231,20 @@ void BluetoothHostV2::poll() {
         hasCapacity() &&
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
-        discoveryPhase_ == DiscoveryPhase::Idle
+        discoveryPhase_ == DiscoveryPhase::Idle &&
+        !(
+            gPhoneGamepadOutput.connected() &&
+            !gPhoneGamepadOutput.subscribed()
+        )
     ) {
         resumeDiscovery();
     }
+}
+
+void BluetoothHostV2::submitPhoneGamepad(
+    const oag::LogicalGamepadState& state
+) {
+    gPhoneGamepadOutput.submit(state);
 }
 
 std::size_t BluetoothHostV2::connectedPeerCount() const {
@@ -694,6 +711,18 @@ void BluetoothHostV2::resumeDiscovery() {
         return;
     }
 
+    // Keep the radio quiet while the PC/platform BLE link is between the
+    // connection-complete event and HIDS input-report subscription. The
+    // standalone Arduino-Pico probe proved this pairing path without any
+    // concurrent central scan. Discovery resumes immediately after HIDS
+    // subscription is confirmed.
+    if (
+        gPhoneGamepadOutput.connected() &&
+        !gPhoneGamepadOutput.subscribed()
+    ) {
+        return;
+    }
+
     if (!hasCapacity()) {
         stopDiscovery();
         return;
@@ -822,6 +851,12 @@ void BluetoothHostV2::connectLeCandidate(
     discoveryPhase_ =
         DiscoveryPhase::PausedForConnection;
 
+    // Preserve the hardware-good UI5K controller-side SMP policy for every
+    // outgoing BLE HID controller connection.
+    sm_set_authentication_requirements(
+        SM_AUTHREQ_BONDING
+    );
+
     const std::uint8_t status = gap_connect(
         pendingAddress_.data(),
         static_cast<bd_addr_type_t>(
@@ -945,10 +980,17 @@ void BluetoothHostV2::handleSmPacket(
             const std::uint16_t handle =
                 sm_event_pairing_complete_get_handle(packet);
 
-            if (
-                sm_event_pairing_complete_get_status(packet) ==
-                ERROR_CODE_SUCCESS
-            ) {
+            const std::uint8_t status =
+                sm_event_pairing_complete_get_status(packet);
+
+            if (gPhoneGamepadOutput.ownsConnection(handle)) {
+                if (status != ERROR_CODE_SUCCESS) {
+                    gap_disconnect(handle);
+                }
+                break;
+            }
+
+            if (status == ERROR_CODE_SUCCESS) {
                 startLeHids(handle);
             } else if (findBleByHandle(handle) != nullptr) {
                 gap_disconnect(handle);
@@ -962,6 +1004,13 @@ void BluetoothHostV2::handleSmPacket(
 
             const std::uint8_t status =
                 sm_event_reencryption_complete_get_status(packet);
+
+            if (gPhoneGamepadOutput.ownsConnection(handle)) {
+                if (status != ERROR_CODE_SUCCESS) {
+                    gap_disconnect(handle);
+                }
+                break;
+            }
 
             if (status == ERROR_CODE_SUCCESS) {
                 startLeHids(handle);
@@ -1374,10 +1423,38 @@ void BluetoothHostV2::handlePacket(
                         packet
                     );
 
-                if (
-                    role == HCI_ROLE_SLAVE ||
-                    !hasCapacity()
-                ) {
+                if (role == HCI_ROLE_SLAVE) {
+                    // A phone is an OUTPUT/platform link, never an input Peer
+                    // and never an internal gamepad slot. Avoid a global SM
+                    // policy race if a controller connection is already being
+                    // established; the phone can retry from advertising.
+                    if (
+                        gPhoneGamepadOutput.connected() ||
+                        pendingKind_ != PendingKind::None ||
+                        deferredBleCandidateValid_
+                    ) {
+                        gap_disconnect(connectionHandle);
+                        break;
+                    }
+
+                    stopDiscovery();
+
+                    sm_set_authentication_requirements(
+                        SM_AUTHREQ_SECURE_CONNECTION |
+                        SM_AUTHREQ_BONDING
+                    );
+
+                    if (
+                        !gPhoneGamepadOutput.adoptPeripheralConnection(
+                            connectionHandle
+                        )
+                    ) {
+                        gap_disconnect(connectionHandle);
+                    }
+                    break;
+                }
+
+                if (!hasCapacity()) {
                     gap_disconnect(connectionHandle);
                     pendingKind_ = PendingKind::None;
                     resumeDiscovery();
@@ -1452,6 +1529,17 @@ void BluetoothHostV2::handlePacket(
                 hci_event_disconnection_complete_get_connection_handle(
                     packet
                 );
+
+            if (gPhoneGamepadOutput.ownsConnection(handle)) {
+                gPhoneGamepadOutput.handleDisconnection(handle);
+
+                sm_set_authentication_requirements(
+                    SM_AUTHREQ_BONDING
+                );
+
+                resumeDiscovery();
+                break;
+            }
 
             Peer* peer =
                 findBleByHandle(handle);
