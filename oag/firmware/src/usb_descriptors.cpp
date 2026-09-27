@@ -8,22 +8,25 @@
 #include "tusb.h"
 
 #include "oag/core/product_identity.h"
+#include "oag/firmware/output_profile_selector.h"
+#include "oag/firmware/pc_hid_output.h"
 #include "oag/firmware/pc_xinput_device.h"
 #include "oag/firmware/windows_xusb20_compat.h"
 
 namespace {
 
-constexpr std::uint16_t kReceiverVid = 0xCAFE;
-constexpr std::uint16_t kReceiverPid = 0x4016;
-constexpr std::uint8_t kMsOsVendorCode = 0x90;
-constexpr std::size_t kOutputSlots =
-    oag::firmware::PcXinputDevice::kOutputSlots;
 
-const std::uint8_t kKeyboardReportDescriptor[] = {
+constexpr std::uint16_t kPcReceiverVid = 0xCAFE;
+constexpr std::uint16_t kPcReceiverPid = 0x4016;
+constexpr std::uint8_t kPcMsOsVendorCode = 0x90;
+constexpr std::size_t kPcOutputSlots =
+    oag::firmware::PcXinputDevice::kPcOutputSlots;
+
+const std::uint8_t kPcKeyboardReportDescriptor[] = {
     TUD_HID_REPORT_DESC_KEYBOARD()
 };
 
-const std::uint8_t kMouseReportDescriptor[] = {
+const std::uint8_t kPcMouseReportDescriptor[] = {
     TUD_HID_REPORT_DESC_MOUSE()
 };
 
@@ -43,7 +46,7 @@ const std::uint8_t kMouseReportDescriptor[] = {
 // The configuration below is byte-shaped from real 045E:0719 descriptor
 // captures. Gamepad interfaces use the 20-byte 0x22 receiver descriptor;
 // auxiliary interfaces use the 12-byte 0x22 descriptor.
-const std::uint8_t kDeviceDescriptor[] = {
+const std::uint8_t kPcDeviceDescriptor[] = {
     0x12, 0x01,
     0x00, 0x02,
     0x00, 0x00, 0x00,
@@ -55,7 +58,7 @@ const std::uint8_t kDeviceDescriptor[] = {
     0x01,
 };
 
-const std::uint8_t kConfigurationDescriptor[] = {
+const std::uint8_t kPcConfigurationDescriptor[] = {
     // Xbox receiver core = 321 bytes. Two standard HID interfaces add
     // 25 bytes each, giving 371 bytes total (0x0173).
     0x09, 0x02, 0x73, 0x01,
@@ -130,7 +133,7 @@ const std::uint8_t kConfigurationDescriptor[] = {
         0x08,
         0,
         HID_ITF_PROTOCOL_KEYBOARD,
-        sizeof(kKeyboardReportDescriptor),
+        sizeof(kPcKeyboardReportDescriptor),
         0x89,
         8,
         1
@@ -141,22 +144,22 @@ const std::uint8_t kConfigurationDescriptor[] = {
         0x09,
         0,
         HID_ITF_PROTOCOL_MOUSE,
-        sizeof(kMouseReportDescriptor),
+        sizeof(kPcMouseReportDescriptor),
         0x8A,
         8,
         1
     ),
 };
 
-static_assert(sizeof(kDeviceDescriptor) == 18);
-static_assert(kOutputSlots == 4);
-static_assert(sizeof(kConfigurationDescriptor) == 0x0173);
+static_assert(sizeof(kPcDeviceDescriptor) == 18);
+static_assert(kPcOutputSlots == 4);
+static_assert(sizeof(kPcConfigurationDescriptor) == 0x0173);
 
-alignas(2) const std::uint8_t kMsOsStringDescriptor[] = {
+alignas(2) const std::uint8_t kPcMsOsStringDescriptor[] = {
     0x12, 0x03,
     0x4D, 0x00, 0x53, 0x00, 0x46, 0x00,
     0x54, 0x00, 0x31, 0x00, 0x30, 0x00, 0x30, 0x00,
-    kMsOsVendorCode,
+    kPcMsOsVendorCode,
     0x00,
 };
 
@@ -165,7 +168,7 @@ alignas(2) const std::uint8_t kMsOsStringDescriptor[] = {
 // controller/auxiliary interface pair as its own XUSB20 function so Windows
 // can bind four independent receiver functions while interfaces 8/9 remain
 // ordinary HID keyboard/mouse functions.
-const std::uint8_t kExtendedCompatIdDescriptor[] = {
+const std::uint8_t kPcExtendedCompatIdDescriptor[] = {
     0x70, 0x00, 0x00, 0x00,
     0x00, 0x01,
     0x04, 0x00,
@@ -197,18 +200,209 @@ const std::uint8_t kExtendedCompatIdDescriptor[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
-static_assert(sizeof(kMsOsStringDescriptor) == 18);
-static_assert(sizeof(kExtendedCompatIdDescriptor) == 0x70);
+static_assert(sizeof(kPcMsOsStringDescriptor) == 18);
+static_assert(sizeof(kPcExtendedCompatIdDescriptor) == 0x70);
 
-std::uint16_t gStringDescriptor[32] {};
-char gSerial[24] {};
+
+
+
+constexpr std::uint16_t kMobileDeviceVid = 0xCAFE;
+constexpr std::uint16_t kMobileDevicePid = 0x4017;
+constexpr std::size_t kMobileOutputSlots =
+    oag::firmware::PcHidOutput::kMobileOutputSlots;
+
+constexpr std::uint8_t kMobileGamepadEndpointSize = 16;
+constexpr std::uint8_t kMobileKmEndpointSize = 8;
+constexpr std::uint8_t kMobilePollingIntervalMs = 1;
+
+const std::uint8_t kMobileGamepadReportDescriptor[] = {
+    0x05, 0x01,       // Usage Page (Generic Desktop)
+    0x09, 0x05,       // Usage (Game Pad)
+    0xA1, 0x01,       // Collection (Application)
+
+    // First four axes intentionally match Web Gamepad axes[0..3]:
+    // left X/Y then right X/Y.
+    0x05, 0x01,       //   Usage Page (Generic Desktop)
+    0x09, 0x30,       //   Usage (X)
+    0x09, 0x31,       //   Usage (Y)
+    0x09, 0x32,       //   Usage (Z)
+    0x09, 0x35,       //   Usage (Rz)
+    0x15, 0x81,       //   Logical Minimum (-127)
+    0x25, 0x7F,       //   Logical Maximum (127)
+    0x75, 0x08,       //   Report Size (8)
+    0x95, 0x04,       //   Report Count (4)
+    0x81, 0x02,       //   Input (Data, Variable, Absolute)
+
+    // Android/Linux-friendly analog trigger usages.
+    // Brake = left trigger, Accelerator = right trigger.
+    0x05, 0x02,       //   Usage Page (Simulation Controls)
+    0x09, 0xC5,       //   Usage (Brake)
+    0x09, 0xC4,       //   Usage (Accelerator)
+    0x15, 0x00,       //   Logical Minimum (0)
+    0x26, 0xFF, 0x00, //   Logical Maximum (255)
+    0x75, 0x08,       //   Report Size (8)
+    0x95, 0x02,       //   Report Count (2)
+    0x81, 0x02,       //   Input (Data, Variable, Absolute)
+
+    // Keep a native HID hat for Android/native games.
+    0x05, 0x01,       //   Usage Page (Generic Desktop)
+    0x09, 0x39,       //   Usage (Hat Switch)
+    0x15, 0x00,       //   Logical Minimum (0)
+    0x25, 0x07,       //   Logical Maximum (7)
+    0x35, 0x00,       //   Physical Minimum (0)
+    0x46, 0x3B, 0x01, //   Physical Maximum (315)
+    0x65, 0x14,       //   Unit (English Rotation, Degrees)
+    0x75, 0x08,       //   Report Size (8)
+    0x95, 0x01,       //   Report Count (1)
+    0x81, 0x42,       //   Input (Data, Variable, Absolute, Null State)
+    0x65, 0x00,       //   Unit (None)
+
+    // Canonical 16-button Android/Linux/TinyUSB bitmap.
+    // D-pad is intentionally Hat-only; it is not duplicated as buttons.
+    0x05, 0x09,       //   Usage Page (Button)
+    0x19, 0x01,       //   Usage Minimum (Button 1)
+    0x29, 0x10,       //   Usage Maximum (Button 16)
+    0x15, 0x00,       //   Logical Minimum (0)
+    0x25, 0x01,       //   Logical Maximum (1)
+    0x75, 0x01,       //   Report Size (1)
+    0x95, 0x10,       //   Report Count (16)
+    0x81, 0x02,       //   Input (Data, Variable, Absolute)
+
+    0xC0,             // End Collection
+};
+
+const std::uint8_t kMobileKeyboardReportDescriptor[] = {
+    TUD_HID_REPORT_DESC_KEYBOARD()
+};
+
+const std::uint8_t kMobileMouseReportDescriptor[] = {
+    TUD_HID_REPORT_DESC_MOUSE()
+};
+
+const std::uint8_t kMobileDeviceDescriptor[] = {
+    0x12, 0x01,             // bLength, bDescriptorType
+    0x00, 0x02,             // USB 2.00
+    0x00, 0x00, 0x00,       // class/subclass/protocol per interface
+    0x40,                   // EP0 = 64
+    static_cast<std::uint8_t>(kMobileDeviceVid & 0xFFu),
+    static_cast<std::uint8_t>(kMobileDeviceVid >> 8),
+    static_cast<std::uint8_t>(kMobileDevicePid & 0xFFu),
+    static_cast<std::uint8_t>(kMobileDevicePid >> 8),
+    0x00, 0x01,             // bcdDevice 1.00
+    0x01, 0x02, 0x03,       // manufacturer/product/serial
+    0x01,                   // one configuration
+};
+
+constexpr std::uint8_t kMobileInterfaceCount = 6;
+constexpr std::uint16_t kMobileConfigurationLength =
+    TUD_CONFIG_DESC_LEN +
+    static_cast<std::uint16_t>(kMobileInterfaceCount) * TUD_HID_DESC_LEN;
+
+const std::uint8_t kMobileConfigurationDescriptor[] = {
+    // Configuration: four independent standard HID gamepads followed by the
+    // Golden native keyboard and mouse interfaces.
+    TUD_CONFIG_DESCRIPTOR(
+        1,
+        kMobileInterfaceCount,
+        0,
+        kMobileConfigurationLength,
+        0x00,
+        100
+    ),
+
+    // Gamepad 1 — HID instance 0 — interface 0 — EP 81
+    TUD_HID_DESCRIPTOR(
+        0,
+        0,
+        HID_ITF_PROTOCOL_NONE,
+        sizeof(kMobileGamepadReportDescriptor),
+        0x81,
+        kMobileGamepadEndpointSize,
+        kMobilePollingIntervalMs
+    ),
+
+    // Gamepad 2 — HID instance 1 — interface 1 — EP 82
+    TUD_HID_DESCRIPTOR(
+        1,
+        0,
+        HID_ITF_PROTOCOL_NONE,
+        sizeof(kMobileGamepadReportDescriptor),
+        0x82,
+        kMobileGamepadEndpointSize,
+        kMobilePollingIntervalMs
+    ),
+
+    // Gamepad 3 — HID instance 2 — interface 2 — EP 83
+    TUD_HID_DESCRIPTOR(
+        2,
+        0,
+        HID_ITF_PROTOCOL_NONE,
+        sizeof(kMobileGamepadReportDescriptor),
+        0x83,
+        kMobileGamepadEndpointSize,
+        kMobilePollingIntervalMs
+    ),
+
+    // Gamepad 4 — HID instance 3 — interface 3 — EP 84
+    TUD_HID_DESCRIPTOR(
+        3,
+        0,
+        HID_ITF_PROTOCOL_NONE,
+        sizeof(kMobileGamepadReportDescriptor),
+        0x84,
+        kMobileGamepadEndpointSize,
+        kMobilePollingIntervalMs
+    ),
+
+    // Native keyboard — HID instance 4 — interface 4 — EP 85
+    TUD_HID_DESCRIPTOR(
+        4,
+        0,
+        HID_ITF_PROTOCOL_KEYBOARD,
+        sizeof(kMobileKeyboardReportDescriptor),
+        0x85,
+        kMobileKmEndpointSize,
+        kMobilePollingIntervalMs
+    ),
+
+    // Native mouse — HID instance 5 — interface 5 — EP 86
+    TUD_HID_DESCRIPTOR(
+        5,
+        0,
+        HID_ITF_PROTOCOL_MOUSE,
+        sizeof(kMobileMouseReportDescriptor),
+        0x86,
+        kMobileKmEndpointSize,
+        kMobilePollingIntervalMs
+    ),
+};
+
+static_assert(sizeof(kMobileDeviceDescriptor) == 18);
+static_assert(kMobileOutputSlots == 4);
+static_assert(kMobileInterfaceCount == 6);
+static_assert(sizeof(kMobileConfigurationDescriptor) == kMobileConfigurationLength);
+
+
+
+std::uint16_t gStringDescriptor[64] {};
+char gSerial[32] {};
+
+bool mobileProfile() {
+    return
+        oag::firmware::activeOutputProfile() ==
+        oag::firmware::OutputProfileId::Phone;
+}
 
 const char* stringValue(std::uint8_t index) {
     switch (index) {
         case 1:
             return oag::product::kManufacturer;
+
         case 2:
-            return "AOG Abo Gemi ultra gaming";
+            return mobileProfile()
+                ? "OAG Mobile USB Gamepad"
+                : "AOG Abo Gemi ultra gaming";
+
         case 3: {
             pico_unique_board_id_t id {};
             pico_get_unique_board_id(&id);
@@ -216,7 +410,9 @@ const char* stringValue(std::uint8_t index) {
             std::snprintf(
                 gSerial,
                 sizeof(gSerial),
-                "AOG-XI2-%02X%02X%02X%02X%02X%02X",
+                mobileProfile()
+                    ? "OAG-MOB-%02X%02X%02X%02X%02X%02X"
+                    : "AOG-XI2-%02X%02X%02X%02X%02X%02X",
                 id.id[2],
                 id.id[3],
                 id.id[4],
@@ -226,6 +422,7 @@ const char* stringValue(std::uint8_t index) {
             );
             return gSerial;
         }
+
         default:
             return nullptr;
     }
@@ -234,14 +431,47 @@ const char* stringValue(std::uint8_t index) {
 } // namespace
 
 extern "C" std::uint8_t const* tud_descriptor_device_cb(void) {
-    return kDeviceDescriptor;
+    return mobileProfile()
+        ? kMobileDeviceDescriptor
+        : kPcDeviceDescriptor;
 }
 
 extern "C" std::uint8_t const* tud_descriptor_configuration_cb(
     std::uint8_t index
 ) {
     (void)index;
-    return kConfigurationDescriptor;
+
+    return mobileProfile()
+        ? kMobileConfigurationDescriptor
+        : kPcConfigurationDescriptor;
+}
+
+extern "C" std::uint8_t const* tud_hid_descriptor_report_cb(
+    std::uint8_t instance
+) {
+    if (mobileProfile()) {
+        if (instance < kMobileOutputSlots) {
+            return kMobileGamepadReportDescriptor;
+        }
+
+        switch (instance) {
+            case 4:
+                return kMobileKeyboardReportDescriptor;
+            case 5:
+                return kMobileMouseReportDescriptor;
+            default:
+                return nullptr;
+        }
+    }
+
+    switch (instance) {
+        case 0:
+            return kPcKeyboardReportDescriptor;
+        case 1:
+            return kPcMouseReportDescriptor;
+        default:
+            return nullptr;
+    }
 }
 
 extern "C" std::uint16_t const* tud_descriptor_string_cb(
@@ -250,16 +480,18 @@ extern "C" std::uint16_t const* tud_descriptor_string_cb(
 ) {
     (void)langid;
 
-    if (index == 0xEE) {
+    if (!mobileProfile() && index == 0xEE) {
         return reinterpret_cast<std::uint16_t const*>(
-            kMsOsStringDescriptor
+            kPcMsOsStringDescriptor
         );
     }
 
     if (index == 0) {
         gStringDescriptor[1] = 0x0409;
         gStringDescriptor[0] =
-            static_cast<std::uint16_t>((TUSB_DESC_STRING << 8) | 4);
+            static_cast<std::uint16_t>(
+                (TUSB_DESC_STRING << 8) | 4
+            );
         return gStringDescriptor;
     }
 
@@ -269,33 +501,23 @@ extern "C" std::uint16_t const* tud_descriptor_string_cb(
     }
 
     const std::size_t length =
-        std::min<std::size_t>(std::strlen(text), 31);
+        std::min<std::size_t>(
+            std::strlen(text),
+            63
+        );
 
     for (std::size_t i = 0; i < length; ++i) {
         gStringDescriptor[i + 1] =
             static_cast<std::uint8_t>(text[i]);
     }
 
-    gStringDescriptor[0] = static_cast<std::uint16_t>(
-        (TUSB_DESC_STRING << 8) |
-        (2u * length + 2u)
-    );
+    gStringDescriptor[0] =
+        static_cast<std::uint16_t>(
+            (TUSB_DESC_STRING << 8) |
+            (2u * length + 2u)
+        );
 
     return gStringDescriptor;
-}
-
-
-extern "C" std::uint8_t const* tud_hid_descriptor_report_cb(
-    std::uint8_t instance
-) {
-    switch (instance) {
-        case 0:
-            return kKeyboardReportDescriptor;
-        case 1:
-            return kMouseReportDescriptor;
-        default:
-            return nullptr;
-    }
 }
 
 extern "C" std::uint16_t tud_hid_get_report_cb(
@@ -327,17 +549,20 @@ extern "C" void tud_hid_set_report_cb(
     (void)bufferSize;
 }
 
-
 namespace oag::firmware {
 
 bool handleWindowsXusb20CompatIdRequest(
     std::uint8_t rhport,
     tusb_control_request_t const* request
 ) {
+    if (mobileUsbProfileActive()) {
+        return false;
+    }
+
     if (
         request == nullptr ||
         request->bmRequestType != 0xC0 ||
-        request->bRequest != kMsOsVendorCode ||
+        request->bRequest != kPcMsOsVendorCode ||
         request->wValue != 0x0000 ||
         request->wIndex != 0x0004
     ) {
@@ -348,7 +573,7 @@ bool handleWindowsXusb20CompatIdRequest(
         std::min<std::uint16_t>(
             request->wLength,
             static_cast<std::uint16_t>(
-                sizeof(kExtendedCompatIdDescriptor)
+                sizeof(kPcExtendedCompatIdDescriptor)
             )
         );
 
@@ -356,7 +581,7 @@ bool handleWindowsXusb20CompatIdRequest(
         rhport,
         request,
         const_cast<std::uint8_t*>(
-            kExtendedCompatIdDescriptor
+            kPcExtendedCompatIdDescriptor
         ),
         transferLength
     );
