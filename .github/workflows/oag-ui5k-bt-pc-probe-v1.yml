@@ -82,7 +82,7 @@ jobs:
           mkdir -p build/bt-pc-probe
 
           arduino-cli compile \
-            --fqbn rp2040:rp2040:rpipico2w,ipbtstack=ipv4btcble \
+            --fqbn rp2040:rp2040:rpipico2w:ipbtstack=ipv4btcble \
             --output-dir build/bt-pc-probe \
             oag/standalone/bt_pc_probe
 
@@ -105,7 +105,7 @@ jobs:
           printf '%s\n' \
             "BASELINE=01af260742a6a402a851cceef0707ae69bd6a301" \
             "ARDUINO_PICO=6.1.1" \
-            "FQBN=rp2040:rp2040:rpipico2w,ipbtstack=ipv4btcble" \
+            "FQBN=rp2040:rp2040:rpipico2w:ipbtstack=ipv4btcble" \
             "BLUETOOTH_NAME=OAG PC BLE GAMEPAD" \
             > artifacts/BUILD-INFO.txt
 
