@@ -43,32 +43,51 @@ std::uint8_t hatFromDpad(std::uint8_t dpad) {
     return 8;
 }
 
-constexpr std::uint32_t webButton(std::uint8_t index) {
+constexpr std::uint32_t hidButton(std::uint8_t index) {
     return static_cast<std::uint32_t>(1u) << index;
 }
 
-constexpr std::uint32_t kButtonSouth       = webButton(0);
-constexpr std::uint32_t kButtonEast        = webButton(1);
-constexpr std::uint32_t kButtonWest        = webButton(2);
-constexpr std::uint32_t kButtonNorth       = webButton(3);
-constexpr std::uint32_t kButtonLeftBumper  = webButton(4);
-constexpr std::uint32_t kButtonRightBumper = webButton(5);
-constexpr std::uint32_t kButtonLeftTrigger = webButton(6);
-constexpr std::uint32_t kButtonRightTrigger= webButton(7);
-constexpr std::uint32_t kButtonBack        = webButton(8);
-constexpr std::uint32_t kButtonStart       = webButton(9);
-constexpr std::uint32_t kButtonLeftStick   = webButton(10);
-constexpr std::uint32_t kButtonRightStick  = webButton(11);
-constexpr std::uint32_t kButtonDpadUp      = webButton(12);
-constexpr std::uint32_t kButtonDpadDown    = webButton(13);
-constexpr std::uint32_t kButtonDpadLeft    = webButton(14);
-constexpr std::uint32_t kButtonDpadRight   = webButton(15);
-constexpr std::uint32_t kButtonGuide       = webButton(16);
-constexpr std::uint32_t kButtonShare       = webButton(17);
+// Android/Linux/TinyUSB Generic HID gamepad button order.
+//
+// TinyUSB's canonical Linux naming is:
+//   0  A / South
+//   1  B / East
+//   2  C (intentionally unused)
+//   3  X / West
+//   4  Y / North
+//   5  Z (intentionally unused)
+//   6  TL / L1
+//   7  TR / R1
+//   8  TL2 / L2
+//   9  TR2 / R2
+//   10 Select / Back
+//   11 Start
+//   12 Mode / Guide / Home
+//   13 Thumb-L / L3
+//   14 Thumb-R / R3
+//   15 Share/Capture extension
+//
+// D-pad is NOT duplicated into the button bitmap. It is exposed only through
+// the HID Hat Switch, preventing Android from interpreting directions as
+// Home/L3/R3 buttons.
+constexpr std::uint32_t kButtonSouth        = hidButton(0);
+constexpr std::uint32_t kButtonEast         = hidButton(1);
+constexpr std::uint32_t kButtonWest         = hidButton(3);
+constexpr std::uint32_t kButtonNorth        = hidButton(4);
+constexpr std::uint32_t kButtonLeftBumper   = hidButton(6);
+constexpr std::uint32_t kButtonRightBumper  = hidButton(7);
+constexpr std::uint32_t kButtonLeftTrigger  = hidButton(8);
+constexpr std::uint32_t kButtonRightTrigger = hidButton(9);
+constexpr std::uint32_t kButtonBack         = hidButton(10);
+constexpr std::uint32_t kButtonStart        = hidButton(11);
+constexpr std::uint32_t kButtonGuide        = hidButton(12);
+constexpr std::uint32_t kButtonLeftStick    = hidButton(13);
+constexpr std::uint32_t kButtonRightStick   = hidButton(14);
+constexpr std::uint32_t kButtonShare        = hidButton(15);
 
 constexpr std::uint32_t kTriggerButtonThreshold = 0x10000000u;
 
-std::uint32_t buttonsToWebStandard(
+std::uint32_t buttonsToAndroidHid(
     const LogicalGamepadState& state
 ) {
     std::uint32_t out = 0;
@@ -79,25 +98,19 @@ std::uint32_t buttonsToWebStandard(
     if (state.buttons & ButtonNorth)       out |= kButtonNorth;
     if (state.buttons & ButtonLeftBumper)  out |= kButtonLeftBumper;
     if (state.buttons & ButtonRightBumper) out |= kButtonRightBumper;
+
+    // Keep trigger buttons in their Android/Linux TL2/TR2 positions while
+    // preserving their analog Brake/Accelerator axes in the report.
     if (state.leftTrigger > kTriggerButtonThreshold)
         out |= kButtonLeftTrigger;
     if (state.rightTrigger > kTriggerButtonThreshold)
         out |= kButtonRightTrigger;
+
     if (state.buttons & ButtonBack)        out |= kButtonBack;
     if (state.buttons & ButtonStart)       out |= kButtonStart;
+    if (state.buttons & ButtonGuide)       out |= kButtonGuide;
     if (state.buttons & ButtonLeftStick)   out |= kButtonLeftStick;
     if (state.buttons & ButtonRightStick)  out |= kButtonRightStick;
-
-    if (state.dpad & static_cast<std::uint8_t>(DpadBits::Up))
-        out |= kButtonDpadUp;
-    if (state.dpad & static_cast<std::uint8_t>(DpadBits::Down))
-        out |= kButtonDpadDown;
-    if (state.dpad & static_cast<std::uint8_t>(DpadBits::Left))
-        out |= kButtonDpadLeft;
-    if (state.dpad & static_cast<std::uint8_t>(DpadBits::Right))
-        out |= kButtonDpadRight;
-
-    if (state.buttons & ButtonGuide)       out |= kButtonGuide;
     if (state.buttons & ButtonShare)       out |= kButtonShare;
 
     return out;
@@ -131,7 +144,7 @@ bool PcHidOutput::send(
     report.hat = hatFromDpad(state.dpad);
 
     const std::uint32_t buttons =
-        buttonsToWebStandard(state);
+        buttonsToAndroidHid(state);
 
     report.buttons0To7 =
         static_cast<std::uint8_t>(buttons & 0xFFu);
