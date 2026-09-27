@@ -1124,6 +1124,8 @@ private:
     static constexpr std::uint8_t kProfileF9Usage = 0x42;
     static constexpr std::uint8_t kProfileDigit1Usage = 0x1E;
     static constexpr std::uint8_t kProfileDigit6Usage = 0x23;
+    static constexpr std::uint8_t kProfileDigit0Usage = 0x27;
+    static constexpr std::uint8_t kNoOutputProfileCandidate = 0xFF;
 
     void serviceBluetoothHostV2() {
         const std::uint64_t nowUs =
@@ -1867,6 +1869,7 @@ private:
 
         keyboard.setPressed(kProfileF8Usage, false);
         keyboard.setPressed(kProfileF9Usage, false);
+        keyboard.setPressed(kProfileDigit0Usage, false);
 
         for (
             std::uint8_t usage = kProfileDigit1Usage;
@@ -1887,12 +1890,19 @@ private:
         if (!baseChordDown) {
             outputProfileChordStartedUs_ = 0;
             outputProfileChordLatched_ = false;
-            outputProfileCandidate_ = 0;
+            outputProfileCandidate_ = kNoOutputProfileCandidate;
             return;
         }
 
-        std::uint8_t candidate = 0;
+        std::uint8_t candidate = kNoOutputProfileCandidate;
         std::uint8_t pressedDigits = 0;
+
+        if (keyboard.pressed(kProfileDigit0Usage)) {
+            candidate = static_cast<std::uint8_t>(
+                oag::firmware::OutputProfileId::Pc
+            );
+            ++pressedDigits;
+        }
 
         for (
             std::uint8_t usage = kProfileDigit1Usage;
@@ -1912,7 +1922,7 @@ private:
         if (pressedDigits != 1) {
             outputProfileChordStartedUs_ = 0;
             outputProfileChordLatched_ = false;
-            outputProfileCandidate_ = 0;
+            outputProfileCandidate_ = kNoOutputProfileCandidate;
             return;
         }
 
@@ -2278,7 +2288,7 @@ private:
     bool keyboardMouseModeChordLatched_ = false;
 
     std::uint64_t outputProfileChordStartedUs_ = 0;
-    std::uint8_t outputProfileCandidate_ = 0;
+    std::uint8_t outputProfileCandidate_ = kNoOutputProfileCandidate;
     bool outputProfileChordLatched_ = false;
 
     std::int16_t currentNativeWheel_ = 0;
