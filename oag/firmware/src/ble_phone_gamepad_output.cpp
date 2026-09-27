@@ -41,7 +41,7 @@ void phoneHidsThunk(
 }
 
 constexpr std::uint8_t kHidDescriptor[] = {
-    0x05, 0x01, 0x09, 0x05, 0xA1, 0x01, 0x85, 0x01,
+    0x05, 0x01, 0x09, 0x05, 0xA1, 0x01, 0x85, 0x04,
     0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32,
     0x09, 0x35, 0x09, 0x33, 0x09, 0x34,
     0x16, 0x01, 0x80, 0x26, 0xFF, 0x7F,
@@ -282,7 +282,7 @@ constexpr std::uint8_t kAttTail[] = {
 
 
 
-hids_device_report_t gPhoneReportStorage[2] {};
+hids_device_report_t gPhoneReportStorage[5] {};
 
 std::int16_t encodeSignedAxis(std::int32_t value) {
     if (value <= std::numeric_limits<std::int32_t>::min()) {
@@ -491,7 +491,7 @@ bool BlePhoneGamepadOutput::installDeviceServices() {
         0,
         kHidDescriptor,
         sizeof(kHidDescriptor),
-        2,
+        5,
         gPhoneReportStorage
     );
 
