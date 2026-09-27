@@ -117,11 +117,10 @@ bool BluetoothHostV2::initialize(
         IO_CAPABILITY_NO_INPUT_NO_OUTPUT
     );
 
-    // Phone-facing HOGP uses the exact Arduino-Pico security policy at
-    // startup. Before every outgoing controller connection we restore UI5K's
-    // original Bonding-only policy so controller pairing semantics stay intact.
+    // Forensic pairing baseline: restore the exact OUT1/OUT3 startup policy.
+    // UI5K starts Bonding-only. Secure Connections is enabled only after an
+    // incoming platform/Peripheral link is established.
     sm_set_authentication_requirements(
-        SM_AUTHREQ_SECURE_CONNECTION |
         SM_AUTHREQ_BONDING
     );
 
@@ -202,15 +201,10 @@ bool BluetoothHostV2::initialize(
 void BluetoothHostV2::poll() {
     gPhoneGamepadOutput.poll();
 
-    // Once Android/iOS has genuinely enabled the HIDS input-report data plane,
-    // return the shared SM policy to UI5K's controller-friendly Bonding-only
-    // mode and resume controller discovery. The phone remains connected.
-    if (gPhoneGamepadOutput.takeSubscriptionReadySignal()) {
-        sm_set_authentication_requirements(
-            SM_AUTHREQ_BONDING
-        );
-        resumeDiscovery();
-    }
+    // Forensic OUT1/OUT3 pairing baseline: keep controller discovery paused
+    // and keep Secure Connections active for the entire platform link.
+    // Discovery resumes only after platform disconnect in this candidate.
+    (void)gPhoneGamepadOutput.takeSubscriptionReadySignal();
 
     // pico_cyw43_arch_none + pico_btstack_cyw43 are serviced by the
     // SDK async context. Deliberately do not call cyw43_arch_poll().
@@ -232,10 +226,7 @@ void BluetoothHostV2::poll() {
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
         discoveryPhase_ == DiscoveryPhase::Idle &&
-        !(
-            gPhoneGamepadOutput.connected() &&
-            !gPhoneGamepadOutput.subscribed()
-        )
+        !gPhoneGamepadOutput.connected()
     ) {
         resumeDiscovery();
     }
@@ -655,6 +646,7 @@ void BluetoothHostV2::stopDiscovery() {
 void BluetoothHostV2::startLeScan() {
     if (
         !hciWorking_ ||
+        gPhoneGamepadOutput.connected() ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -689,6 +681,7 @@ void BluetoothHostV2::startLeScan() {
 void BluetoothHostV2::startClassicInquiry() {
     if (
         !hciWorking_ ||
+        gPhoneGamepadOutput.connected() ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -707,19 +700,7 @@ void BluetoothHostV2::startClassicInquiry() {
 }
 
 void BluetoothHostV2::resumeDiscovery() {
-    if (!hciWorking_) {
-        return;
-    }
-
-    // Keep the radio quiet while the PC/platform BLE link is between the
-    // connection-complete event and HIDS input-report subscription. The
-    // standalone Arduino-Pico probe proved this pairing path without any
-    // concurrent central scan. Discovery resumes immediately after HIDS
-    // subscription is confirmed.
-    if (
-        gPhoneGamepadOutput.connected() &&
-        !gPhoneGamepadOutput.subscribed()
-    ) {
+    if (!hciWorking_ || gPhoneGamepadOutput.connected()) {
         return;
     }
 
@@ -1437,11 +1418,19 @@ void BluetoothHostV2::handlePacket(
                         break;
                     }
 
-                    stopDiscovery();
+                    // OUT1/OUT3 hardware-proven pairing lifecycle:
+                    // quiesce only scan/inquiry after the incoming Peripheral
+                    // connection completes. Do NOT call gap_connect_cancel()
+                    // here; the older pairable builds never did so.
+                    stopDiscoveryTimer();
+                    gap_stop_scan();
+                    gap_inquiry_stop();
+                    discoveryPhase_ =
+                        DiscoveryPhase::PausedForConnection;
 
                     sm_set_authentication_requirements(
-                        SM_AUTHREQ_SECURE_CONNECTION |
-                        SM_AUTHREQ_BONDING
+                        SM_AUTHREQ_BONDING |
+                        SM_AUTHREQ_SECURE_CONNECTION
                     );
 
                     if (
