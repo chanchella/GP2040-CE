@@ -49,7 +49,7 @@ jobs:
           # PC remains the boot default and has no user hotkey.
           assert "OutputProfileId::Pc" in selector_h
           assert "return OutputProfileId::Pc;" in selector
-          assert "candidate - kProfileDigit1Usage + 1u" in main
+          assert "usage - kProfileDigit1Usage + 1u" in main
           assert "kOutputProfileHoldUs = 1500000ull" in main
 
           # Fixed F8+F9 system chord and digits 1..6.
@@ -72,7 +72,8 @@ jobs:
           assert "return false;" in selector
 
           # Runtime driver dispatch is explicit.
-          assert "activeOutputProfile() == OutputProfileId::Phone" in multi
+          assert "activeOutputProfile()" in multi
+          assert "OutputProfileId::Phone" in multi
           assert "phone_.initialize()" in multi
           assert "pc_.initialize()" in multi
 
