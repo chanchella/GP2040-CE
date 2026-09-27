@@ -121,6 +121,13 @@ jobs:
           assert "selfTestActive_" not in out
           assert "bluetoothHost_.submitPhoneGamepad(output)" in main
 
+          header = Path("oag/firmware/include/oag/firmware/ble_phone_gamepad_output.h").read_text()
+          assert "kInputReportId = 4u" in header
+          assert "0x85, 0x04" in out
+          assert "gPhoneReportStorage[5]" in out
+          assert "        5,\n        gPhoneReportStorage" in out
+          assert "0x2d, 0x00, 0x08, 0x29, 0x4, 0x1" in out
+
           assert "#define MAX_NR_HCI_CONNECTIONS 5" in cfg
           assert "#define MAX_ATT_DB_SIZE 1024" in cfg
 
