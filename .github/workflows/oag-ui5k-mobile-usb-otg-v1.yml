@@ -9,6 +9,8 @@ on:
       - 'oag/firmware/CMakeLists.txt'
       - 'oag/firmware/tusb_config.h'
       - 'oag/firmware/src/usb_descriptors.cpp'
+      - 'oag/firmware/include/oag/firmware/pc_hid_output.h'
+      - 'oag/firmware/src/pc_hid_output.cpp'
       - 'oag/firmware/include/oag/firmware/pc_native_km_output.h'
       - '.github/workflows/oag-ui5k-mobile-usb-otg-v1.yml'
   workflow_dispatch:
@@ -36,8 +38,10 @@ jobs:
           EXPECTED="$(printf '%s\n' \
             '.github/workflows/oag-ui5k-mobile-usb-otg-v1.yml' \
             'oag/firmware/CMakeLists.txt' \
+            'oag/firmware/include/oag/firmware/pc_hid_output.h' \
             'oag/firmware/include/oag/firmware/pc_native_km_output.h' \
             'oag/firmware/src/main.cpp' \
+            'oag/firmware/src/pc_hid_output.cpp' \
             'oag/firmware/src/usb_descriptors.cpp' \
             'oag/firmware/tusb_config.h' | sort)"
 
@@ -91,6 +95,26 @@ jobs:
 
           assert "kKeyboardInstance = 4" in km
           assert "kMouseInstance = 5" in km
+
+          hid_header = Path("oag/firmware/include/oag/firmware/pc_hid_output.h").read_text()
+          hid_source = Path("oag/firmware/src/pc_hid_output.cpp").read_text()
+
+          assert "sizeof(Report) == 10" in hid_header
+          assert "buttons0To7" in hid_header
+          assert "buttons8To15" in hid_header
+          assert "buttons16To17" in hid_header
+
+          assert "kButtonLeftTrigger = webButton(6)" in hid_source
+          assert "kButtonRightTrigger= webButton(7)" in hid_source
+          assert "kButtonDpadUp      = webButton(12)" in hid_source
+          assert "kButtonDpadRight   = webButton(15)" in hid_source
+          assert "kButtonGuide       = webButton(16)" in hid_source
+          assert "kButtonShare       = webButton(17)" in hid_source
+
+          assert "0x09, 0xC5" in desc
+          assert "0x09, 0xC4" in desc
+          assert "0x29, 0x12" in desc
+          assert "0x95, 0x12" in desc
 
           print("MOBILE_OTG_ARCHITECTURE_GUARD=PASS")
           PY
