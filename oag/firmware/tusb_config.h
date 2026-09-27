@@ -19,7 +19,7 @@ extern "C" {
 
 #define CFG_TUD_ENABLED 1
 // The genuine Xbox 360 Wireless Receiver is full-speed with an 8-byte EP0.
-#define CFG_TUD_ENDPOINT0_SIZE 8
+#define CFG_TUD_ENDPOINT0_SIZE 64
 #define CFG_TUD_CDC 0
 #define CFG_TUD_MSC 0
 #define CFG_TUD_MIDI 0
@@ -27,7 +27,8 @@ extern "C" {
 // TinyUSB 0.17 compile anchor. OAG's custom XInput application driver is
 // registered first and claims the target-facing XInput interfaces.
 #define CFG_TUD_VENDOR 1
-#define CFG_TUD_HID 2
+#define CFG_TUD_HID 6
+#define CFG_TUD_HID_EP_BUFSIZE 16
 
 #define CFG_TUH_ENABLED 1
 #define CFG_TUH_RPI_PIO_USB 1
