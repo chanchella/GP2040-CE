@@ -47,7 +47,7 @@ jobs:
           cmake = Path("oag/firmware/CMakeLists.txt").read_text()
 
           # PC remains the boot default and has no user hotkey.
-          assert "OutputProfileId::Pc" in selector_h
+          assert "Pc = 0" in selector_h
           assert "return OutputProfileId::Pc;" in selector
           assert "usage - kProfileDigit1Usage + 1u" in main
           assert "kOutputProfileHoldUs = 1500000ull" in main
