@@ -202,6 +202,28 @@ bool BluetoothHostV2::initialize(
 void BluetoothHostV2::poll() {
     gPhoneGamepadOutput.poll();
 
+    // Do not let missing/late SM or HIDS callbacks block controller input.
+    // Pairing used to work while controller discovery was fully independent.
+    // Give Windows 3 seconds to finish its Bluetooth/HID setup, then resume
+    // UI5K controller discovery regardless of subscription callbacks.
+    if (
+        gPhoneGamepadOutput.connected() &&
+        !platformSecurityReady_ &&
+        platformConnectedAtUs_ != 0 &&
+        time_us_64() - platformConnectedAtUs_ >= 3000000ull
+    ) {
+        platformSecurityReady_ = true;
+        sm_set_authentication_requirements(
+            SM_AUTHREQ_BONDING
+        );
+
+        if (discoveryPhase_ == DiscoveryPhase::PausedForConnection) {
+            discoveryPhase_ = DiscoveryPhase::Idle;
+        }
+
+        resumeDiscovery();
+    }
+
     // pico_cyw43_arch_none + pico_btstack_cyw43 are serviced by the
     // SDK async context. Deliberately do not call cyw43_arch_poll().
     //
@@ -978,6 +1000,7 @@ void BluetoothHostV2::handleSmPacket(
             if (gPhoneGamepadOutput.ownsConnection(handle)) {
                 if (status == ERROR_CODE_SUCCESS) {
                     platformSecurityReady_ = true;
+                    platformConnectedAtUs_ = 0;
 
                     // Windows/platform pairing is complete. Controller input
                     // discovery must not depend on HIDS subscription events.
@@ -1010,6 +1033,7 @@ void BluetoothHostV2::handleSmPacket(
             if (gPhoneGamepadOutput.ownsConnection(handle)) {
                 if (status == ERROR_CODE_SUCCESS) {
                     platformSecurityReady_ = true;
+                    platformConnectedAtUs_ = 0;
 
                     sm_set_authentication_requirements(
                         SM_AUTHREQ_BONDING
@@ -1463,6 +1487,7 @@ void BluetoothHostV2::handlePacket(
 
                 if (role == HCI_ROLE_SLAVE) {
                     platformSecurityReady_ = false;
+                    platformConnectedAtUs_ = time_us_64();
 
                     // A phone is an OUTPUT/platform link, never an input Peer
                     // and never an internal gamepad slot. Avoid a global SM
@@ -1580,6 +1605,7 @@ void BluetoothHostV2::handlePacket(
 
             if (gPhoneGamepadOutput.ownsConnection(handle)) {
                 platformSecurityReady_ = false;
+                platformConnectedAtUs_ = 0;
                 gPhoneGamepadOutput.handleDisconnection(handle);
 
                 // Prepare the next Windows/platform pairing exactly like
