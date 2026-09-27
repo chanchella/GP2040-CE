@@ -117,10 +117,11 @@ bool BluetoothHostV2::initialize(
         IO_CAPABILITY_NO_INPUT_NO_OUTPUT
     );
 
-    // Forensic pairing baseline: restore the exact OUT1/OUT3 startup policy.
-    // UI5K starts Bonding-only. Secure Connections is enabled only after an
-    // incoming platform/Peripheral link is established.
+    // Exact hardware-proven Arduino-Pico JoystickBLE output policy.
+    // Windows must see Secure Connections + Bonding before pairing starts so
+    // the HOGP encrypted service can complete discovery/subscription.
     sm_set_authentication_requirements(
+        SM_AUTHREQ_SECURE_CONNECTION |
         SM_AUTHREQ_BONDING
     );
 
@@ -201,10 +202,15 @@ bool BluetoothHostV2::initialize(
 void BluetoothHostV2::poll() {
     gPhoneGamepadOutput.poll();
 
-    // Forensic OUT1/OUT3 pairing baseline: keep controller discovery paused
-    // and keep Secure Connections active for the entire platform link.
-    // Discovery resumes only after platform disconnect in this candidate.
-    (void)gPhoneGamepadOutput.takeSubscriptionReadySignal();
+    // Once Windows has genuinely enabled the HIDS input report, the output
+    // link is fully established. Return the shared SM policy to UI5K's
+    // controller-friendly Bonding-only mode and resume controller discovery.
+    if (gPhoneGamepadOutput.takeSubscriptionReadySignal()) {
+        sm_set_authentication_requirements(
+            SM_AUTHREQ_BONDING
+        );
+        resumeDiscovery();
+    }
 
     // pico_cyw43_arch_none + pico_btstack_cyw43 are serviced by the
     // SDK async context. Deliberately do not call cyw43_arch_poll().
@@ -226,7 +232,10 @@ void BluetoothHostV2::poll() {
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
         discoveryPhase_ == DiscoveryPhase::Idle &&
-        !gPhoneGamepadOutput.connected()
+        !(
+            gPhoneGamepadOutput.connected() &&
+            !gPhoneGamepadOutput.subscribed()
+        )
     ) {
         resumeDiscovery();
     }
@@ -646,7 +655,10 @@ void BluetoothHostV2::stopDiscovery() {
 void BluetoothHostV2::startLeScan() {
     if (
         !hciWorking_ ||
-        gPhoneGamepadOutput.connected() ||
+        (
+            gPhoneGamepadOutput.connected() &&
+            !gPhoneGamepadOutput.subscribed()
+        ) ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -681,7 +693,10 @@ void BluetoothHostV2::startLeScan() {
 void BluetoothHostV2::startClassicInquiry() {
     if (
         !hciWorking_ ||
-        gPhoneGamepadOutput.connected() ||
+        (
+            gPhoneGamepadOutput.connected() &&
+            !gPhoneGamepadOutput.subscribed()
+        ) ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -700,7 +715,13 @@ void BluetoothHostV2::startClassicInquiry() {
 }
 
 void BluetoothHostV2::resumeDiscovery() {
-    if (!hciWorking_ || gPhoneGamepadOutput.connected()) {
+    if (
+        !hciWorking_ ||
+        (
+            gPhoneGamepadOutput.connected() &&
+            !gPhoneGamepadOutput.subscribed()
+        )
+    ) {
         return;
     }
 
@@ -1440,7 +1461,10 @@ void BluetoothHostV2::handlePacket(
                     // policy race if a controller connection is already being
                     // established; the phone can retry from advertising.
                     if (
-                        gPhoneGamepadOutput.connected() ||
+                        (
+            gPhoneGamepadOutput.connected() &&
+            !gPhoneGamepadOutput.subscribed()
+        ) ||
                         pendingKind_ != PendingKind::None ||
                         deferredBleCandidateValid_
                     ) {
