@@ -40,8 +40,6 @@ private:
     void startAdvertising();
     void requestCanSend();
     void sendCurrentReport();
-    void startConnectionSelfTest();
-    void serviceConnectionSelfTest();
 
     std::array<std::uint8_t, 1024> attDatabase_ {};
     std::size_t attDatabaseLength_ = 0;
@@ -53,9 +51,6 @@ private:
     bool reportDirty_ = true;
     bool subscriptionReadySignal_ = false;
 
-    bool selfTestActive_ = false;
-    std::uint32_t selfTestStartedMs_ = 0;
-    std::uint8_t selfTestStep_ = 0;
 
     std::uint16_t connectionHandle_ = kInvalidHandle;
     std::uint8_t protocolMode_ = 1;
