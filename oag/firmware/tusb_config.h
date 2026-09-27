@@ -19,7 +19,7 @@ extern "C" {
 
 #define CFG_TUD_ENABLED 1
 // The genuine Xbox 360 Wireless Receiver is full-speed with an 8-byte EP0.
-#define CFG_TUD_ENDPOINT0_SIZE 64
+#define CFG_TUD_ENDPOINT0_SIZE 8
 #define CFG_TUD_CDC 0
 #define CFG_TUD_MSC 0
 #define CFG_TUD_MIDI 0
