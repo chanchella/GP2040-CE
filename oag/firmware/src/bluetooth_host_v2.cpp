@@ -202,16 +202,6 @@ bool BluetoothHostV2::initialize(
 void BluetoothHostV2::poll() {
     gPhoneGamepadOutput.poll();
 
-    // Once Windows has genuinely enabled the HIDS input report, the output
-    // link is fully established. Return the shared SM policy to UI5K's
-    // controller-friendly Bonding-only mode and resume controller discovery.
-    if (gPhoneGamepadOutput.takeSubscriptionReadySignal()) {
-        sm_set_authentication_requirements(
-            SM_AUTHREQ_BONDING
-        );
-        resumeDiscovery();
-    }
-
     // pico_cyw43_arch_none + pico_btstack_cyw43 are serviced by the
     // SDK async context. Deliberately do not call cyw43_arch_poll().
     //
@@ -234,7 +224,7 @@ void BluetoothHostV2::poll() {
         discoveryPhase_ == DiscoveryPhase::Idle &&
         !(
             gPhoneGamepadOutput.connected() &&
-            !gPhoneGamepadOutput.subscribed()
+            !platformSecurityReady_
         )
     ) {
         resumeDiscovery();
@@ -657,7 +647,7 @@ void BluetoothHostV2::startLeScan() {
         !hciWorking_ ||
         (
             gPhoneGamepadOutput.connected() &&
-            !gPhoneGamepadOutput.subscribed()
+            !platformSecurityReady_
         ) ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
@@ -695,7 +685,7 @@ void BluetoothHostV2::startClassicInquiry() {
         !hciWorking_ ||
         (
             gPhoneGamepadOutput.connected() &&
-            !gPhoneGamepadOutput.subscribed()
+            !platformSecurityReady_
         ) ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
@@ -719,7 +709,7 @@ void BluetoothHostV2::resumeDiscovery() {
         !hciWorking_ ||
         (
             gPhoneGamepadOutput.connected() &&
-            !gPhoneGamepadOutput.subscribed()
+            !platformSecurityReady_
         )
     ) {
         return;
@@ -986,7 +976,17 @@ void BluetoothHostV2::handleSmPacket(
                 sm_event_pairing_complete_get_status(packet);
 
             if (gPhoneGamepadOutput.ownsConnection(handle)) {
-                if (status != ERROR_CODE_SUCCESS) {
+                if (status == ERROR_CODE_SUCCESS) {
+                    platformSecurityReady_ = true;
+
+                    // Windows/platform pairing is complete. Controller input
+                    // discovery must not depend on HIDS subscription events.
+                    sm_set_authentication_requirements(
+                        SM_AUTHREQ_BONDING
+                    );
+                    resumeDiscovery();
+                } else {
+                    platformSecurityReady_ = false;
                     gap_disconnect(handle);
                 }
                 break;
@@ -1009,6 +1009,12 @@ void BluetoothHostV2::handleSmPacket(
 
             if (gPhoneGamepadOutput.ownsConnection(handle)) {
                 if (status == ERROR_CODE_SUCCESS) {
+                    platformSecurityReady_ = true;
+
+                    sm_set_authentication_requirements(
+                        SM_AUTHREQ_BONDING
+                    );
+                    resumeDiscovery();
                     break;
                 }
 
@@ -1456,6 +1462,8 @@ void BluetoothHostV2::handlePacket(
                     );
 
                 if (role == HCI_ROLE_SLAVE) {
+                    platformSecurityReady_ = false;
+
                     // A phone is an OUTPUT/platform link, never an input Peer
                     // and never an internal gamepad slot. Avoid a global SM
                     // policy race if a controller connection is already being
@@ -1571,6 +1579,7 @@ void BluetoothHostV2::handlePacket(
                 );
 
             if (gPhoneGamepadOutput.ownsConnection(handle)) {
+                platformSecurityReady_ = false;
                 gPhoneGamepadOutput.handleDisconnection(handle);
 
                 // Prepare the next Windows/platform pairing exactly like
