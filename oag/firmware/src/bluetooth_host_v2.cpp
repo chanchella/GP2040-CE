@@ -11,9 +11,12 @@
 #include "btstack_tlv.h"
 #include "ble/gatt-service/hids_host.h"
 
+#include "oag/firmware/ble_phone_gamepad_output.h"
+
 namespace {
 
 oag::firmware::BluetoothHostV2* gBluetoothHostV2 = nullptr;
+oag::firmware::BlePhoneGamepadOutput gPhoneGamepadOutput {};
 
 btstack_packet_callback_registration_t gHciRegistration {};
 btstack_packet_callback_registration_t gSmRegistration {};
@@ -141,13 +144,23 @@ bool BluetoothHostV2::initialize(
 
     gatt_client_init();
 
-    // Historical BluetoothHCI installed a local GAP/ATT server before power-on.
-    // Keep runtime Host-only: this does not start advertising.
+    // Controller-first architecture:
+    // install the platform HOGP ATT database now, but DO NOT advertise yet.
+    // Until a physical controller reaches HID-ready state, Bluetooth runtime
+    // behavior remains Golden Host/Central only.
+    if (!gPhoneGamepadOutput.prepareAttDatabase()) {
+        return false;
+    }
+
     att_server_init(
-        kLocalGapProfile,
+        gPhoneGamepadOutput.attDatabase(),
         nullptr,
         nullptr
     );
+
+    if (!gPhoneGamepadOutput.installDeviceServices()) {
+        return false;
+    }
 
     hid_host_init(
         classicDescriptorStorage_.data(),
@@ -205,6 +218,27 @@ bool BluetoothHostV2::initialize(
 }
 
 void BluetoothHostV2::poll() {
+    gPhoneGamepadOutput.poll();
+
+    // Preserve Golden controller discovery literally until a controller is
+    // HID-ready. Only then freeze discovery and expose the platform output.
+    // Existing controller links remain alive while Windows owns the BLE
+    // Peripheral role.
+    if (
+        hciWorking_ &&
+        hasReadyInputPeer() &&
+        !gPhoneGamepadOutput.advertisingEnabled()
+    ) {
+        stopDiscovery();
+
+        sm_set_authentication_requirements(
+            SM_AUTHREQ_BONDING |
+            SM_AUTHREQ_SECURE_CONNECTION
+        );
+
+        gPhoneGamepadOutput.enableAdvertising();
+    }
+
     // pico_cyw43_arch_none + pico_btstack_cyw43 are serviced by the
     // SDK async context. Deliberately do not call cyw43_arch_poll().
     //
@@ -214,13 +248,12 @@ void BluetoothHostV2::poll() {
     serviceDeferredBleConnect();
     servicePairingAssist();
 
-    // U10A continuous-discovery guard. Normal BLE -> Classic -> BLE cadence
-    // remains unchanged; this only recovers an unexpected idle state while
-    // peer capacity is still available. At four peers discovery pauses, then
-    // resumes automatically after any disconnect.
+    // Before platform advertising is enabled this is the exact Golden
+    // continuous-discovery guard.
     if (
         initialized_ &&
         hciWorking_ &&
+        !gPhoneGamepadOutput.advertisingEnabled() &&
         hasCapacity() &&
         pendingKind_ == PendingKind::None &&
         !deferredBleCandidateValid_ &&
@@ -240,6 +273,12 @@ std::size_t BluetoothHostV2::connectedPeerCount() const {
     }
 
     return count;
+}
+
+void BluetoothHostV2::submitPhoneGamepad(
+    const oag::LogicalGamepadState& state
+) {
+    gPhoneGamepadOutput.submit(state);
 }
 
 BluetoothHidOutputResult BluetoothHostV2::sendLeOutputReport(
@@ -305,6 +344,16 @@ BluetoothHidOutputResult BluetoothHostV2::sendLeOutputReport(
 
 bool BluetoothHostV2::hasCapacity() const {
     return connectedPeerCount() < kMaxPeers;
+}
+
+bool BluetoothHostV2::hasReadyInputPeer() const {
+    for (const Peer& peer : peers_) {
+        if (peer.active && peer.serviceCount != 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool BluetoothHostV2::isKnownBluetoothCapableUsbGamepad(
@@ -638,6 +687,7 @@ void BluetoothHostV2::stopDiscovery() {
 void BluetoothHostV2::startLeScan() {
     if (
         !hciWorking_ ||
+        gPhoneGamepadOutput.advertisingEnabled() ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -672,6 +722,7 @@ void BluetoothHostV2::startLeScan() {
 void BluetoothHostV2::startClassicInquiry() {
     if (
         !hciWorking_ ||
+        gPhoneGamepadOutput.advertisingEnabled() ||
         !hasCapacity() ||
         pendingKind_ != PendingKind::None
     ) {
@@ -690,7 +741,10 @@ void BluetoothHostV2::startClassicInquiry() {
 }
 
 void BluetoothHostV2::resumeDiscovery() {
-    if (!hciWorking_) {
+    if (
+        !hciWorking_ ||
+        gPhoneGamepadOutput.advertisingEnabled()
+    ) {
         return;
     }
 
@@ -945,10 +999,17 @@ void BluetoothHostV2::handleSmPacket(
             const std::uint16_t handle =
                 sm_event_pairing_complete_get_handle(packet);
 
-            if (
-                sm_event_pairing_complete_get_status(packet) ==
-                ERROR_CODE_SUCCESS
-            ) {
+            const std::uint8_t status =
+                sm_event_pairing_complete_get_status(packet);
+
+            if (gPhoneGamepadOutput.ownsConnection(handle)) {
+                if (status != ERROR_CODE_SUCCESS) {
+                    gap_disconnect(handle);
+                }
+                break;
+            }
+
+            if (status == ERROR_CODE_SUCCESS) {
                 startLeHids(handle);
             } else if (findBleByHandle(handle) != nullptr) {
                 gap_disconnect(handle);
@@ -962,6 +1023,38 @@ void BluetoothHostV2::handleSmPacket(
 
             const std::uint8_t status =
                 sm_event_reencryption_complete_get_status(packet);
+
+            if (gPhoneGamepadOutput.ownsConnection(handle)) {
+                if (status == ERROR_CODE_SUCCESS) {
+                    break;
+                }
+
+                if (status == ERROR_CODE_PIN_OR_KEY_MISSING) {
+                    bd_addr_t identityAddress {};
+                    sm_event_reencryption_complete_get_address(
+                        packet,
+                        identityAddress
+                    );
+
+                    const bd_addr_type_t identityAddressType =
+                        static_cast<bd_addr_type_t>(
+                            sm_event_reencryption_started_get_addr_type(
+                                packet
+                            )
+                        );
+
+                    gap_delete_bonding(
+                        identityAddressType,
+                        identityAddress
+                    );
+
+                    sm_request_pairing(handle);
+                    break;
+                }
+
+                gap_disconnect(handle);
+                break;
+            }
 
             if (status == ERROR_CODE_SUCCESS) {
                 startLeHids(handle);
@@ -1374,10 +1467,28 @@ void BluetoothHostV2::handlePacket(
                         packet
                     );
 
-                if (
-                    role == HCI_ROLE_SLAVE ||
-                    !hasCapacity()
-                ) {
+                if (role == HCI_ROLE_SLAVE) {
+                    stopDiscoveryTimer();
+                    gap_stop_scan();
+                    gap_inquiry_stop();
+
+                    sm_set_authentication_requirements(
+                        SM_AUTHREQ_BONDING |
+                        SM_AUTHREQ_SECURE_CONNECTION
+                    );
+
+                    if (
+                        !gPhoneGamepadOutput.adoptPeripheralConnection(
+                            connectionHandle
+                        )
+                    ) {
+                        gap_disconnect(connectionHandle);
+                    }
+
+                    break;
+                }
+
+                if (!hasCapacity()) {
                     gap_disconnect(connectionHandle);
                     pendingKind_ = PendingKind::None;
                     resumeDiscovery();
@@ -1452,6 +1563,14 @@ void BluetoothHostV2::handlePacket(
                 hci_event_disconnection_complete_get_connection_handle(
                     packet
                 );
+
+            if (gPhoneGamepadOutput.ownsConnection(handle)) {
+                gPhoneGamepadOutput.handleDisconnection(handle);
+
+                // Existing controller peers remain untouched. Keep the
+                // controller-first output persona advertising for Windows.
+                break;
+            }
 
             Peer* peer =
                 findBleByHandle(handle);
