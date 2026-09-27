@@ -58,8 +58,8 @@ constexpr char kPhoneName[] = "OAG UI5K BT BRIDGE";
 
 constexpr std::uint8_t kAdvertisingData[] = {
     0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x06,
-    0x0E, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
-    'O','A','G',' ','B','L','E',' ','P','R','O','B','E',
+    0x13, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
+    'O','A','G',' ','U','I','5','K',' ','B','T',' ','B','R','I','D','G','E',
     0x03, BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS,
     static_cast<std::uint8_t>(
         ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE & 0xFF
