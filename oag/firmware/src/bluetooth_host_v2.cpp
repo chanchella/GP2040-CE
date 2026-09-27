@@ -1461,10 +1461,7 @@ void BluetoothHostV2::handlePacket(
                     // policy race if a controller connection is already being
                     // established; the phone can retry from advertising.
                     if (
-                        (
-            gPhoneGamepadOutput.connected() &&
-            !gPhoneGamepadOutput.subscribed()
-        ) ||
+                        gPhoneGamepadOutput.connected() ||
                         pendingKind_ != PendingKind::None ||
                         deferredBleCandidateValid_
                     ) {
@@ -1576,7 +1573,11 @@ void BluetoothHostV2::handlePacket(
             if (gPhoneGamepadOutput.ownsConnection(handle)) {
                 gPhoneGamepadOutput.handleDisconnection(handle);
 
+                // Prepare the next Windows/platform pairing exactly like
+                // the hardware-proven JoystickBLE path. Controller outgoing
+                // connects will switch this back to Bonding-only explicitly.
                 sm_set_authentication_requirements(
+                    SM_AUTHREQ_SECURE_CONNECTION |
                     SM_AUTHREQ_BONDING
                 );
 
