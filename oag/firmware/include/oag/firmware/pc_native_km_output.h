@@ -28,8 +28,8 @@ public:
     void releaseAll();
 
 private:
-    static constexpr std::uint8_t kKeyboardInstance = 0;
-    static constexpr std::uint8_t kMouseInstance = 1;
+    static constexpr std::uint8_t kKeyboardInstance = 4;
+    static constexpr std::uint8_t kMouseInstance = 5;
     static constexpr std::uint64_t kModeChordGraceUs = 120000;
 
     std::array<std::uint8_t, 8> buildKeyboardReport(
