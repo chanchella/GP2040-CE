@@ -26,15 +26,31 @@ const std::uint8_t kGamepadReportDescriptor[] = {
     0x09, 0x05,       // Usage (Game Pad)
     0xA1, 0x01,       // Collection (Application)
 
-    0x05, 0x09,       //   Usage Page (Button)
-    0x19, 0x01,       //   Usage Minimum (Button 1)
-    0x29, 0x10,       //   Usage Maximum (Button 16)
-    0x15, 0x00,       //   Logical Minimum (0)
-    0x25, 0x01,       //   Logical Maximum (1)
-    0x75, 0x01,       //   Report Size (1)
-    0x95, 0x10,       //   Report Count (16)
+    // First four axes intentionally match Web Gamepad axes[0..3]:
+    // left X/Y then right X/Y.
+    0x05, 0x01,       //   Usage Page (Generic Desktop)
+    0x09, 0x30,       //   Usage (X)
+    0x09, 0x31,       //   Usage (Y)
+    0x09, 0x32,       //   Usage (Z)
+    0x09, 0x35,       //   Usage (Rz)
+    0x15, 0x81,       //   Logical Minimum (-127)
+    0x25, 0x7F,       //   Logical Maximum (127)
+    0x75, 0x08,       //   Report Size (8)
+    0x95, 0x04,       //   Report Count (4)
     0x81, 0x02,       //   Input (Data, Variable, Absolute)
 
+    // Android/Linux-friendly analog trigger usages.
+    // Brake = left trigger, Accelerator = right trigger.
+    0x05, 0x02,       //   Usage Page (Simulation Controls)
+    0x09, 0xC5,       //   Usage (Brake)
+    0x09, 0xC4,       //   Usage (Accelerator)
+    0x15, 0x00,       //   Logical Minimum (0)
+    0x26, 0xFF, 0x00, //   Logical Maximum (255)
+    0x75, 0x08,       //   Report Size (8)
+    0x95, 0x02,       //   Report Count (2)
+    0x81, 0x02,       //   Input (Data, Variable, Absolute)
+
+    // Keep a native HID hat for Android/native games.
     0x05, 0x01,       //   Usage Page (Generic Desktop)
     0x09, 0x39,       //   Usage (Hat Switch)
     0x15, 0x00,       //   Logical Minimum (0)
@@ -42,31 +58,27 @@ const std::uint8_t kGamepadReportDescriptor[] = {
     0x35, 0x00,       //   Physical Minimum (0)
     0x46, 0x3B, 0x01, //   Physical Maximum (315)
     0x65, 0x14,       //   Unit (English Rotation, Degrees)
-    0x75, 0x04,       //   Report Size (4)
+    0x75, 0x08,       //   Report Size (8)
     0x95, 0x01,       //   Report Count (1)
     0x81, 0x42,       //   Input (Data, Variable, Absolute, Null State)
     0x65, 0x00,       //   Unit (None)
-    0x75, 0x04,       //   Report Size (4)
-    0x95, 0x01,       //   Report Count (1)
-    0x81, 0x03,       //   Input (Constant, Variable, Absolute)
 
-    0x09, 0x30,       //   Usage (X)
-    0x09, 0x31,       //   Usage (Y)
-    0x09, 0x33,       //   Usage (Rx)
-    0x09, 0x34,       //   Usage (Ry)
-    0x15, 0x81,       //   Logical Minimum (-127)
-    0x25, 0x7F,       //   Logical Maximum (127)
-    0x75, 0x08,       //   Report Size (8)
-    0x95, 0x04,       //   Report Count (4)
-    0x81, 0x02,       //   Input (Data, Variable, Absolute)
-
-    0x09, 0x32,       //   Usage (Z)
-    0x09, 0x35,       //   Usage (Rz)
+    // 18 buttons deliberately mirror Web Gamepad standard button indices.
+    // D-pad and analog triggers are duplicated as buttons so browsers that
+    // expose only raw HID arrays still receive every gameplay control.
+    0x05, 0x09,       //   Usage Page (Button)
+    0x19, 0x01,       //   Usage Minimum (Button 1)
+    0x29, 0x12,       //   Usage Maximum (Button 18)
     0x15, 0x00,       //   Logical Minimum (0)
-    0x26, 0xFF, 0x00, //   Logical Maximum (255)
-    0x75, 0x08,       //   Report Size (8)
-    0x95, 0x02,       //   Report Count (2)
+    0x25, 0x01,       //   Logical Maximum (1)
+    0x75, 0x01,       //   Report Size (1)
+    0x95, 0x12,       //   Report Count (18)
     0x81, 0x02,       //   Input (Data, Variable, Absolute)
+
+    // Pad button bits to the next byte boundary.
+    0x75, 0x01,       //   Report Size (1)
+    0x95, 0x06,       //   Report Count (6)
+    0x81, 0x03,       //   Input (Constant, Variable, Absolute)
 
     0xC0,             // End Collection
 };
