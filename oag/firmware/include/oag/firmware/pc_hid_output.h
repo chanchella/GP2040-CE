@@ -23,14 +23,23 @@ public:
 
 private:
     struct __attribute__((packed)) Report {
-        std::uint16_t buttons = 0;
-        std::uint8_t hat = 8;
+        // Keep the first four HID axes as the two sticks so Chrome/Web
+        // Gamepad raw mappings see axes[0..3] in the expected order.
         std::int8_t lx = 0;
         std::int8_t ly = 0;
         std::int8_t rx = 0;
         std::int8_t ry = 0;
+
+        // Analog triggers remain native HID axes for Android/native games.
         std::uint8_t leftTrigger = 0;
         std::uint8_t rightTrigger = 0;
+
+        // Hat remains available for native HID consumers.
+        std::uint8_t hat = 8;
+
+        // 16 HID buttons using Android/Linux/TinyUSB semantics.
+        std::uint8_t buttons0To7 = 0;
+        std::uint8_t buttons8To15 = 0;
     };
 
     static_assert(sizeof(Report) == 9);
