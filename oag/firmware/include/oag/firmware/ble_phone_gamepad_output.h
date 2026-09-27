@@ -13,6 +13,7 @@ public:
     bool prepareAttDatabase();
     const std::uint8_t* attDatabase() const;
     bool installDeviceServices();
+    void enableAdvertising();
 
     void poll();
     void submit(const oag::LogicalGamepadState& state);
@@ -46,6 +47,7 @@ private:
 
     bool prepared_ = false;
     bool servicesInstalled_ = false;
+    bool advertisingAllowed_ = false;
     bool inputSubscribed_ = false;
     bool canSendPending_ = false;
     bool reportDirty_ = true;
