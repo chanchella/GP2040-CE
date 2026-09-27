@@ -283,7 +283,7 @@ const std::uint8_t kMobileDeviceDescriptor[] = {
     0x12, 0x01,             // bLength, bDescriptorType
     0x00, 0x02,             // USB 2.00
     0x00, 0x00, 0x00,       // class/subclass/protocol per interface
-    0x40,                   // EP0 = 64
+    0x08,                   // EP0 = 8; shared with UI5K PC persona
     static_cast<std::uint8_t>(kMobileDeviceVid & 0xFFu),
     static_cast<std::uint8_t>(kMobileDeviceVid >> 8),
     static_cast<std::uint8_t>(kMobileDevicePid & 0xFFu),
