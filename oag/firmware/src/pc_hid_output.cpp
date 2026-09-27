@@ -43,59 +43,62 @@ std::uint8_t hatFromDpad(std::uint8_t dpad) {
     return 8;
 }
 
-constexpr std::uint16_t hidButton(std::uint8_t usageNumber) {
-    return static_cast<std::uint16_t>(
-        1u << static_cast<unsigned>(usageNumber - 1u)
-    );
+constexpr std::uint32_t webButton(std::uint8_t index) {
+    return static_cast<std::uint32_t>(1u) << index;
 }
 
-// Stable canonical face/shoulder/meta order.
-//
-// The first ten usages intentionally follow Microsoft's documented
-// XUSB-to-HID gamepad mapping. The physical labels from other controller
-// families are normalized into the same semantics before this layer:
-//
-//   1  South  = Xbox A      = PlayStation Cross
-//   2  East   = Xbox B      = PlayStation Circle
-//   3  West   = Xbox X      = PlayStation Square
-//   4  North  = Xbox Y      = PlayStation Triangle
-//   5  LB     = L1
-//   6  RB     = R1
-//   7  Back   = View/Select
-//   8  Start  = Menu/Options
-//   9  L3
-//   10 R3
-//   11 Guide  = Xbox/PS/Home
-//   12 Share  = Share/Create/Capture
-//   13..16 reserved for later platform-specific extensions.
-constexpr std::uint16_t kButtonSouth = hidButton(1);
-constexpr std::uint16_t kButtonEast = hidButton(2);
-constexpr std::uint16_t kButtonWest = hidButton(3);
-constexpr std::uint16_t kButtonNorth = hidButton(4);
-constexpr std::uint16_t kButtonLeftBumper = hidButton(5);
-constexpr std::uint16_t kButtonRightBumper = hidButton(6);
-constexpr std::uint16_t kButtonBack = hidButton(7);
-constexpr std::uint16_t kButtonStart = hidButton(8);
-constexpr std::uint16_t kButtonLeftStick = hidButton(9);
-constexpr std::uint16_t kButtonRightStick = hidButton(10);
-constexpr std::uint16_t kButtonGuide = hidButton(11);
-constexpr std::uint16_t kButtonShare = hidButton(12);
+constexpr std::uint32_t kButtonSouth       = webButton(0);
+constexpr std::uint32_t kButtonEast        = webButton(1);
+constexpr std::uint32_t kButtonWest        = webButton(2);
+constexpr std::uint32_t kButtonNorth       = webButton(3);
+constexpr std::uint32_t kButtonLeftBumper  = webButton(4);
+constexpr std::uint32_t kButtonRightBumper = webButton(5);
+constexpr std::uint32_t kButtonLeftTrigger = webButton(6);
+constexpr std::uint32_t kButtonRightTrigger= webButton(7);
+constexpr std::uint32_t kButtonBack        = webButton(8);
+constexpr std::uint32_t kButtonStart       = webButton(9);
+constexpr std::uint32_t kButtonLeftStick   = webButton(10);
+constexpr std::uint32_t kButtonRightStick  = webButton(11);
+constexpr std::uint32_t kButtonDpadUp      = webButton(12);
+constexpr std::uint32_t kButtonDpadDown    = webButton(13);
+constexpr std::uint32_t kButtonDpadLeft    = webButton(14);
+constexpr std::uint32_t kButtonDpadRight   = webButton(15);
+constexpr std::uint32_t kButtonGuide       = webButton(16);
+constexpr std::uint32_t kButtonShare       = webButton(17);
 
-std::uint16_t buttonsToHid(std::uint64_t buttons) {
-    std::uint16_t out = 0;
+constexpr std::uint32_t kTriggerButtonThreshold = 0x10000000u;
 
-    if (buttons & ButtonSouth) out |= kButtonSouth;
-    if (buttons & ButtonEast) out |= kButtonEast;
-    if (buttons & ButtonWest) out |= kButtonWest;
-    if (buttons & ButtonNorth) out |= kButtonNorth;
-    if (buttons & ButtonLeftBumper) out |= kButtonLeftBumper;
-    if (buttons & ButtonRightBumper) out |= kButtonRightBumper;
-    if (buttons & ButtonBack) out |= kButtonBack;
-    if (buttons & ButtonStart) out |= kButtonStart;
-    if (buttons & ButtonLeftStick) out |= kButtonLeftStick;
-    if (buttons & ButtonRightStick) out |= kButtonRightStick;
-    if (buttons & ButtonGuide) out |= kButtonGuide;
-    if (buttons & ButtonShare) out |= kButtonShare;
+std::uint32_t buttonsToWebStandard(
+    const LogicalGamepadState& state
+) {
+    std::uint32_t out = 0;
+
+    if (state.buttons & ButtonSouth)       out |= kButtonSouth;
+    if (state.buttons & ButtonEast)        out |= kButtonEast;
+    if (state.buttons & ButtonWest)        out |= kButtonWest;
+    if (state.buttons & ButtonNorth)       out |= kButtonNorth;
+    if (state.buttons & ButtonLeftBumper)  out |= kButtonLeftBumper;
+    if (state.buttons & ButtonRightBumper) out |= kButtonRightBumper;
+    if (state.leftTrigger > kTriggerButtonThreshold)
+        out |= kButtonLeftTrigger;
+    if (state.rightTrigger > kTriggerButtonThreshold)
+        out |= kButtonRightTrigger;
+    if (state.buttons & ButtonBack)        out |= kButtonBack;
+    if (state.buttons & ButtonStart)       out |= kButtonStart;
+    if (state.buttons & ButtonLeftStick)   out |= kButtonLeftStick;
+    if (state.buttons & ButtonRightStick)  out |= kButtonRightStick;
+
+    if (state.dpad & static_cast<std::uint8_t>(DpadBits::Up))
+        out |= kButtonDpadUp;
+    if (state.dpad & static_cast<std::uint8_t>(DpadBits::Down))
+        out |= kButtonDpadDown;
+    if (state.dpad & static_cast<std::uint8_t>(DpadBits::Left))
+        out |= kButtonDpadLeft;
+    if (state.dpad & static_cast<std::uint8_t>(DpadBits::Right))
+        out |= kButtonDpadRight;
+
+    if (state.buttons & ButtonGuide)       out |= kButtonGuide;
+    if (state.buttons & ButtonShare)       out |= kButtonShare;
 
     return out;
 }
@@ -117,8 +120,6 @@ bool PcHidOutput::send(
     }
 
     Report report {};
-    report.buttons = buttonsToHid(state.buttons);
-    report.hat = hatFromDpad(state.dpad);
     report.lx = axisToI8(state.lx);
     report.ly = axisToI8(state.ly);
     report.rx = axisToI8(state.rx);
@@ -127,6 +128,17 @@ bool PcHidOutput::send(
         static_cast<std::uint8_t>(state.leftTrigger >> 24);
     report.rightTrigger =
         static_cast<std::uint8_t>(state.rightTrigger >> 24);
+    report.hat = hatFromDpad(state.dpad);
+
+    const std::uint32_t buttons =
+        buttonsToWebStandard(state);
+
+    report.buttons0To7 =
+        static_cast<std::uint8_t>(buttons & 0xFFu);
+    report.buttons8To15 =
+        static_cast<std::uint8_t>((buttons >> 8) & 0xFFu);
+    report.buttons16To17 =
+        static_cast<std::uint8_t>((buttons >> 16) & 0x03u);
 
     reports_[logicalSlot] = report;
     pending_[logicalSlot] = true;
