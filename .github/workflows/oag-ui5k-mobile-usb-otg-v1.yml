@@ -1,0 +1,209 @@
+name: OAG UI5K Mobile USB OTG V1
+
+on:
+  push:
+    branches:
+      - chatgpt/ui5k-mobile-usb-otg-v1
+    paths:
+      - 'oag/firmware/src/main.cpp'
+      - 'oag/firmware/CMakeLists.txt'
+      - 'oag/firmware/tusb_config.h'
+      - 'oag/firmware/src/usb_descriptors.cpp'
+      - 'oag/firmware/include/oag/firmware/pc_native_km_output.h'
+      - '.github/workflows/oag-ui5k-mobile-usb-otg-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact UI5K ancestry and isolated mobile scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          GOLDEN="01af260742a6a402a851cceef0707ae69bd6a301"
+
+          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-mobile-usb-otg-v1"
+          test "$(git merge-base "${GOLDEN}" HEAD)" = "${GOLDEN}"
+
+          ACTUAL="$(git diff --name-only "${GOLDEN}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-ui5k-mobile-usb-otg-v1.yml' \
+            'oag/firmware/CMakeLists.txt' \
+            'oag/firmware/include/oag/firmware/pc_native_km_output.h' \
+            'oag/firmware/src/main.cpp' \
+            'oag/firmware/src/usb_descriptors.cpp' \
+            'oag/firmware/tusb_config.h' | sort)"
+
+          echo "=== MOBILE_OTG_SCOPE ==="
+          printf '%s\n' "${ACTUAL}"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          # Hard protection: all input-side and Bluetooth/PIO USB runtime files
+          # must remain byte-identical to UI5K Golden.
+          git diff --exit-code "${GOLDEN}" HEAD -- \
+            oag/firmware/src/bluetooth_host_v2.cpp \
+            oag/firmware/src/bluetooth_hid_parser_v2.cpp \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/usb_pio_probe.c \
+            oag/firmware/src/xinput_host.cpp \
+            oag/src/device \
+            oag/src/protocol \
+            oag/src/mapping \
+            oag/src/feedback
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path("oag/firmware/src/main.cpp").read_text()
+          cmake = Path("oag/firmware/CMakeLists.txt").read_text()
+          tusb = Path("oag/firmware/tusb_config.h").read_text()
+          desc = Path("oag/firmware/src/usb_descriptors.cpp").read_text()
+          km = Path("oag/firmware/include/oag/firmware/pc_native_km_output.h").read_text()
+
+          assert "pc_hid_platform_driver.h" in main
+          assert "PcHidPlatformDriver platformOutput_" in main
+          assert "PcXinput" not in main
+
+          assert "src/pc_hid_output.cpp" in cmake
+          assert "src/pc_hid_platform_driver.cpp" in cmake
+          assert "src/pc_xinput_device.cpp" not in cmake
+          assert "src/pc_xinput_platform_driver.cpp" not in cmake
+          assert "OAG_UI5K_MOBILE_USB_OTG_V1_Pico2W" in cmake
+
+          assert "#define CFG_TUD_ENDPOINT0_SIZE 64" in tusb
+          assert "#define CFG_TUD_VENDOR 0" in tusb
+          assert "#define CFG_TUD_HID 6" in tusb
+          assert "#define CFG_TUD_HID_EP_BUFSIZE 16" in tusb
+
+          assert "kInterfaceCount = 6" in desc
+          assert "OAG Mobile USB Gamepad" in desc
+          assert "HID_ITF_PROTOCOL_NONE" in desc
+          assert "HID_ITF_PROTOCOL_KEYBOARD" in desc
+          assert "HID_ITF_PROTOCOL_MOUSE" in desc
+          assert "0x81" in desc and "0x86" in desc
+
+          assert "kKeyboardInstance = 4" in km
+          assert "kMouseInstance = 5" in km
+
+          print("MOBILE_OTG_ARCHITECTURE_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build and run host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact UI5K Pico SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned Bluetooth generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          test "$(git -C pico-sdk-ui5k/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
+          test "$(git -C pico-sdk-ui5k/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Configure and build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k" \
+          cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+
+          test "${#UF2[@]}" -eq 1
+          test "${#ELF[@]}" -eq 1
+          test "${#MAP[@]}" -eq 1
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+
+          cp "${UF2[0]}" \
+            "artifacts/OAG_UI5K_MOBILE_USB_OTG_V1_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF[0]}" \
+            "artifacts/OAG_UI5K_MOBILE_USB_OTG_V1_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP[0]}" \
+            "artifacts/OAG_UI5K_MOBILE_USB_OTG_V1_${SHORT_SHA}_Pico2W.map"
+
+          arm-none-eabi-size "${ELF[0]}" | tee artifacts/size-report.txt
+          sha256sum artifacts/OAG_UI5K_MOBILE_USB_OTG_V1_* \
+            > artifacts/SHA256SUMS.txt
+
+          printf '%s\n' \
+            "BASELINE=01af260742a6a402a851cceef0707ae69bd6a301" \
+            "TARGET=USB_STANDARD_HID_OTG" \
+            "GAMEPADS=4" \
+            "NATIVE_KEYBOARD=1" \
+            "NATIVE_MOUSE=1" \
+            "USB_VID=CAFE" \
+            "USB_PID=4017" \
+            > artifacts/BUILD-INFO.txt
+
+      - name: Upload mobile OTG candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-UI5K-MOBILE-USB-OTG-V1-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
