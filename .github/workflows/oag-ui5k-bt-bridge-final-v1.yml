@@ -75,9 +75,11 @@ jobs:
           # Final dual-role contract:
           # 1) Windows/HOGP starts with the exact JoystickBLE security policy.
           # 2) Incoming Peripheral connection never calls gap_connect_cancel().
-          # 3) After HIDS subscription, shared SM policy returns to Bonding-only
-          #    and controller discovery resumes.
-          # 4) Stale platform bonds recover in-place instead of disconnecting.
+          # 3) Controller discovery starts immediately after successful
+          #    platform pairing/re-encryption; it does not depend on HIDS
+          #    subscription callbacks.
+          # 4) Live controller state is sent directly; no self-test exists.
+          # 5) Stale platform bonds recover in-place instead of disconnecting.
           init_slice = host[host.index("l2cap_init();"):host.index("gatt_client_init();")]
           assert "SM_AUTHREQ_SECURE_CONNECTION" in init_slice
           assert "SM_AUTHREQ_BONDING" in init_slice
@@ -91,12 +93,16 @@ jobs:
           assert "SM_AUTHREQ_SECURE_CONNECTION" in slave
           assert "SM_AUTHREQ_BONDING" in slave
 
-          poll_start = host.index("void BluetoothHostV2::poll()")
-          poll_end = host.index("void BluetoothHostV2::submitPhoneGamepad", poll_start)
-          poll = host[poll_start:poll_end]
-          assert "takeSubscriptionReadySignal()" in poll
-          assert "SM_AUTHREQ_BONDING" in poll
-          assert "resumeDiscovery();" in poll
+          assert "platformSecurityReady_" in host
+          assert "platformSecurityReady_ = true;" in host
+          assert "platformSecurityReady_ = false;" in host
+
+          pairing_start = host.index("case SM_EVENT_PAIRING_COMPLETE")
+          pairing_end = host.index("case SM_EVENT_REENCRYPTION_COMPLETE", pairing_start)
+          pairing = host[pairing_start:pairing_end]
+          assert "platformSecurityReady_ = true;" in pairing
+          assert "SM_AUTHREQ_BONDING" in pairing
+          assert "resumeDiscovery();" in pairing
 
           assert "ERROR_CODE_PIN_OR_KEY_MISSING" in host
           assert "gap_delete_bonding(" in host
@@ -119,7 +125,9 @@ jobs:
           assert "gPhoneReportStorage[2]" in phone
           assert "hids_device_init_with_storage" in phone
           assert "hids_device_send_input_report_for_id" in phone
-          assert "kStepIntervalMs = 1200u" in phone
+          assert "startConnectionSelfTest" not in phone
+          assert "serviceConnectionSelfTest" not in phone
+          assert "kStepIntervalMs = 1200u" not in phone
 
           assert "bluetoothHost_.submitPhoneGamepad(output)" in main
           assert "#define MAX_NR_HCI_CONNECTIONS 5" in cfg
