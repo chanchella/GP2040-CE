@@ -770,6 +770,9 @@ void BlePhoneGamepadOutput::handleHidsPacket(
         hci_event_hids_meta_get_subevent_code(packet)
     ) {
         case HIDS_SUBEVENT_INPUT_REPORT_ENABLE: {
+            // Match Arduino-Pico PicoBluetoothBLEHID exactly: the HIDS
+            // enable event itself establishes the active output connection.
+            // Do not gate readiness on the CCC enable byte here.
             const std::uint16_t handle =
                 hids_subevent_input_report_enable_get_con_handle(packet);
 
@@ -783,28 +786,38 @@ void BlePhoneGamepadOutput::handleHidsPacket(
                 break;
             }
 
-            const bool wasSubscribed = inputSubscribed_;
-            inputSubscribed_ =
-                hids_subevent_input_report_enable_get_enable(packet) != 0;
-
-            if (inputSubscribed_ && !wasSubscribed) {
+            if (!inputSubscribed_) {
+                inputSubscribed_ = true;
                 subscriptionReadySignal_ = true;
                 startConnectionSelfTest();
-            } else if (!inputSubscribed_) {
-                selfTestActive_ = false;
-                report_ = liveReport_;
-                reportDirty_ = true;
             }
             break;
         }
 
         case HIDS_SUBEVENT_BOOT_KEYBOARD_INPUT_REPORT_ENABLE: {
+            // Arduino-Pico also treats this subevent as an opened HIDS link.
+            // Its ATT database always contains boot keyboard/mouse records,
+            // even for joystick-only descriptors. Windows may touch this CCC
+            // first during service enumeration.
             const std::uint16_t handle =
                 hids_subevent_boot_keyboard_input_report_enable_get_con_handle(
                     packet
                 );
-            if (connectionHandle_ == kInvalidHandle) {
-                (void)adoptPeripheralConnection(handle);
+
+            if (
+                connectionHandle_ == kInvalidHandle &&
+                !adoptPeripheralConnection(handle)
+            ) {
+                break;
+            }
+            if (handle != connectionHandle_) {
+                break;
+            }
+
+            if (!inputSubscribed_) {
+                inputSubscribed_ = true;
+                subscriptionReadySignal_ = true;
+                startConnectionSelfTest();
             }
             break;
         }
