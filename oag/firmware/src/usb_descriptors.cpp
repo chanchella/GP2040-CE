@@ -20,7 +20,7 @@ constexpr std::uint16_t kPcReceiverVid = 0xCAFE;
 constexpr std::uint16_t kPcReceiverPid = 0x4016;
 constexpr std::uint8_t kPcMsOsVendorCode = 0x90;
 constexpr std::size_t kPcOutputSlots =
-    oag::firmware::PcXinputDevice::kPcOutputSlots;
+    oag::firmware::PcXinputDevice::kOutputSlots;
 
 const std::uint8_t kPcKeyboardReportDescriptor[] = {
     TUD_HID_REPORT_DESC_KEYBOARD()
@@ -209,7 +209,7 @@ static_assert(sizeof(kPcExtendedCompatIdDescriptor) == 0x70);
 constexpr std::uint16_t kMobileDeviceVid = 0xCAFE;
 constexpr std::uint16_t kMobileDevicePid = 0x4017;
 constexpr std::size_t kMobileOutputSlots =
-    oag::firmware::PcHidOutput::kMobileOutputSlots;
+    oag::firmware::PcHidOutput::kOutputSlots;
 
 constexpr std::uint8_t kMobileGamepadEndpointSize = 16;
 constexpr std::uint8_t kMobileKmEndpointSize = 8;
