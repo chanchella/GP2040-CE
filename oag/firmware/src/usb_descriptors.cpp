@@ -520,35 +520,6 @@ extern "C" std::uint16_t const* tud_descriptor_string_cb(
     return gStringDescriptor;
 }
 
-extern "C" std::uint16_t tud_hid_get_report_cb(
-    std::uint8_t instance,
-    std::uint8_t reportId,
-    hid_report_type_t reportType,
-    std::uint8_t* buffer,
-    std::uint16_t requestedLength
-) {
-    (void)instance;
-    (void)reportId;
-    (void)reportType;
-    (void)buffer;
-    (void)requestedLength;
-    return 0;
-}
-
-extern "C" void tud_hid_set_report_cb(
-    std::uint8_t instance,
-    std::uint8_t reportId,
-    hid_report_type_t reportType,
-    std::uint8_t const* buffer,
-    std::uint16_t bufferSize
-) {
-    (void)instance;
-    (void)reportId;
-    (void)reportType;
-    (void)buffer;
-    (void)bufferSize;
-}
-
 namespace oag::firmware {
 
 bool handleWindowsXusb20CompatIdRequest(
