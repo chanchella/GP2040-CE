@@ -96,6 +96,9 @@ jobs:
           assert "platformSecurityReady_" in host
           assert "platformSecurityReady_ = true;" in host
           assert "platformSecurityReady_ = false;" in host
+          assert "platformConnectedAtUs_" in host
+          assert "3000000ull" in host
+          assert "resumeDiscovery();" in host
 
           pairing_start = host.index("case SM_EVENT_PAIRING_COMPLETE")
           pairing_end = host.index("case SM_EVENT_REENCRYPTION_COMPLETE", pairing_start)
@@ -128,6 +131,7 @@ jobs:
           assert "startConnectionSelfTest" not in phone
           assert "serviceConnectionSelfTest" not in phone
           assert "kStepIntervalMs = 1200u" not in phone
+          assert "selfTestActive_" not in phone
 
           assert "bluetoothHost_.submitPhoneGamepad(output)" in main
           assert "#define MAX_NR_HCI_CONNECTIONS 5" in cfg
