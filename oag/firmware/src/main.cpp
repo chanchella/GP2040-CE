@@ -1803,14 +1803,23 @@ private:
         const bool hasKeyboard = keyboard.connected;
         const bool hasMouse = mouse.connected;
 
+        // The phone mirrors the exact same final Primary logical state sent to
+        // PC Player 1. It never consumes a logical slot and never changes the
+        // Golden Primary-selection rules.
+        const auto submitPrimary =
+            [&](const oag::LogicalGamepadState& output) {
+                platformOutput_.submit(
+                    hostPrimaryOutputSlot_,
+                    output
+                );
+                bluetoothHost_.submitPhoneGamepad(output);
+            };
+
         // In Native mode K/M never create or modify the XInput player.
         // Physical gamepads keep their normal route while K/M are forwarded
         // through the standard HID keyboard/mouse interfaces.
         if (keyboardMouseMode_ == KeyboardMouseOutputMode::Native) {
-            platformOutput_.submit(
-                hostPrimaryOutputSlot_,
-                basePrimaryOutput()
-            );
+            submitPrimary(basePrimaryOutput());
             return;
         }
 
@@ -1835,14 +1844,11 @@ private:
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
-            platformOutput_.submit(
-                hostPrimaryOutputSlot_,
-                oag::LogicalGamepadState {}
-            );
+            submitPrimary(oag::LogicalGamepadState {});
             return;
         }
 
-        platformOutput_.submit(hostPrimaryOutputSlot_, output);
+        submitPrimary(output);
     }
 
     void serviceKeyboardMouseModeToggle() {
