@@ -987,9 +987,39 @@ void BluetoothHostV2::handleSmPacket(
                 sm_event_reencryption_complete_get_status(packet);
 
             if (gPhoneGamepadOutput.ownsConnection(handle)) {
-                if (status != ERROR_CODE_SUCCESS) {
-                    gap_disconnect(handle);
+                if (status == ERROR_CODE_SUCCESS) {
+                    break;
                 }
+
+                if (status == ERROR_CODE_PIN_OR_KEY_MISSING) {
+                    // Restore the hardware-pairable OUT1/OUT3 recovery path.
+                    // Windows/Android may have forgotten the old LTK after
+                    // "Remove device" while the Pico still retains it.
+                    // Delete only this stale BLE bond, then start fresh SMP
+                    // on the same live Peripheral connection.
+                    bd_addr_t identityAddress {};
+                    sm_event_reencryption_complete_get_address(
+                        packet,
+                        identityAddress
+                    );
+
+                    const bd_addr_type_t identityAddressType =
+                        static_cast<bd_addr_type_t>(
+                            sm_event_reencryption_started_get_addr_type(
+                                packet
+                            )
+                        );
+
+                    gap_delete_bonding(
+                        identityAddressType,
+                        identityAddress
+                    );
+
+                    sm_request_pairing(handle);
+                    break;
+                }
+
+                gap_disconnect(handle);
                 break;
             }
 
