@@ -605,10 +605,14 @@ void BlePhoneGamepadOutput::submit(
     }
 
     liveReport_ = next;
+    report_ = liveReport_;
+    reportDirty_ = true;
 
-    if (report_ != liveReport_) {
-        report_ = liveReport_;
-        reportDirty_ = true;
+    // Exact Arduino-Pico/PicoBluetoothBLEHID lifecycle:
+    // do not request ATT CAN_SEND_NOW until Windows has enabled an HIDS
+    // input report CCC. Requesting earlier can leave a stale pending callback
+    // that prevents all later live controller notifications.
+    if (inputSubscribed_) {
         requestCanSend();
     }
 }
@@ -616,6 +620,7 @@ void BlePhoneGamepadOutput::submit(
 void BlePhoneGamepadOutput::poll() {
     if (
         reportDirty_ &&
+        inputSubscribed_ &&
         connectionHandle_ != kInvalidHandle
     ) {
         requestCanSend();
@@ -625,6 +630,7 @@ void BlePhoneGamepadOutput::poll() {
 void BlePhoneGamepadOutput::requestCanSend() {
     if (
         !servicesInstalled_ ||
+        !inputSubscribed_ ||
         canSendPending_ ||
         connectionHandle_ == kInvalidHandle
     ) {
@@ -642,7 +648,8 @@ void BlePhoneGamepadOutput::requestCanSend() {
 
 void BlePhoneGamepadOutput::sendCurrentReport() {
     if (
-        connectionHandle_ == kInvalidHandle
+        connectionHandle_ == kInvalidHandle ||
+        !inputSubscribed_
     ) {
         return;
     }
@@ -700,6 +707,10 @@ void BlePhoneGamepadOutput::handleHidsPacket(
             if (!inputSubscribed_) {
                 inputSubscribed_ = true;
                 subscriptionReadySignal_ = true;
+                canSendPending_ = false;
+                report_ = liveReport_;
+                reportDirty_ = true;
+                requestCanSend();
             }
             break;
         }
@@ -727,6 +738,10 @@ void BlePhoneGamepadOutput::handleHidsPacket(
             if (!inputSubscribed_) {
                 inputSubscribed_ = true;
                 subscriptionReadySignal_ = true;
+                canSendPending_ = false;
+                report_ = liveReport_;
+                reportDirty_ = true;
+                requestCanSend();
             }
             break;
         }
