@@ -542,9 +542,6 @@ bool BlePhoneGamepadOutput::adoptPeripheralConnection(
     inputSubscribed_ = false;
     canSendPending_ = false;
     subscriptionReadySignal_ = false;
-    selfTestActive_ = false;
-    selfTestStartedMs_ = 0;
-    selfTestStep_ = 0;
     protocolMode_ = 1;
     reportDirty_ = true;
     return true;
@@ -569,9 +566,6 @@ void BlePhoneGamepadOutput::handleDisconnection(
     inputSubscribed_ = false;
     canSendPending_ = false;
     subscriptionReadySignal_ = false;
-    selfTestActive_ = false;
-    selfTestStartedMs_ = 0;
-    selfTestStep_ = 0;
     protocolMode_ = 1;
     reportDirty_ = true;
 
@@ -601,9 +595,6 @@ void BlePhoneGamepadOutput::submit(
     }
 
     liveReport_ = next;
-    if (selfTestActive_) {
-        return;
-    }
 
     if (report_ != liveReport_) {
         report_ = liveReport_;
@@ -613,98 +604,10 @@ void BlePhoneGamepadOutput::submit(
 }
 
 void BlePhoneGamepadOutput::poll() {
-    serviceConnectionSelfTest();
-
     if (
         reportDirty_ &&
-        inputSubscribed_ &&
         connectionHandle_ != kInvalidHandle
     ) {
-        requestCanSend();
-    }
-}
-
-void BlePhoneGamepadOutput::startConnectionSelfTest() {
-    if (
-        !inputSubscribed_ ||
-        connectionHandle_ == kInvalidHandle
-    ) {
-        return;
-    }
-
-    selfTestActive_ = true;
-    selfTestStartedMs_ = btstack_run_loop_get_time_ms();
-    selfTestStep_ = 0;
-
-    report_.fill(0);
-    storeLe16(report_, 8, -32767);
-    storeLe16(report_, 10, -32767);
-    storeLe32(report_, 13, 1u); // Button 1 DOWN
-    reportDirty_ = true;
-    requestCanSend();
-}
-
-void BlePhoneGamepadOutput::serviceConnectionSelfTest() {
-    if (
-        !selfTestActive_ ||
-        !inputSubscribed_ ||
-        connectionHandle_ == kInvalidHandle
-    ) {
-        return;
-    }
-
-    constexpr std::uint32_t kStepIntervalMs = 1200u;
-    constexpr std::uint8_t kStepCount = 6u;
-
-    const std::uint32_t elapsedMs =
-        btstack_run_loop_get_time_ms() - selfTestStartedMs_;
-    const std::uint8_t step =
-        static_cast<std::uint8_t>(elapsedMs / kStepIntervalMs);
-
-    if (step >= kStepCount) {
-        selfTestActive_ = false;
-        report_ = liveReport_;
-        reportDirty_ = true;
-        requestCanSend();
-        return;
-    }
-
-    if (step == selfTestStep_ && elapsedMs >= kStepIntervalMs) {
-        return;
-    }
-
-    if (step != selfTestStep_) {
-        selfTestStep_ = step;
-    } else if (elapsedMs != 0) {
-        return;
-    }
-
-    std::array<std::uint8_t, 17> probe {};
-    storeLe16(probe, 8, -32767);
-    storeLe16(probe, 10, -32767);
-
-    switch (step) {
-        case 0:
-            storeLe32(probe, 13, 1u);
-            break;
-        case 1:
-            break;
-        case 2:
-            probe[12] = 5u;
-            break;
-        case 3:
-            break;
-        case 4:
-            storeLe16(probe, 0, 32767);
-            break;
-        case 5:
-        default:
-            break;
-    }
-
-    if (probe != report_) {
-        report_ = probe;
-        reportDirty_ = true;
         requestCanSend();
     }
 }
@@ -712,7 +615,6 @@ void BlePhoneGamepadOutput::serviceConnectionSelfTest() {
 void BlePhoneGamepadOutput::requestCanSend() {
     if (
         !servicesInstalled_ ||
-        !inputSubscribed_ ||
         canSendPending_ ||
         connectionHandle_ == kInvalidHandle
     ) {
@@ -730,8 +632,7 @@ void BlePhoneGamepadOutput::requestCanSend() {
 
 void BlePhoneGamepadOutput::sendCurrentReport() {
     if (
-        connectionHandle_ == kInvalidHandle ||
-        !inputSubscribed_
+        connectionHandle_ == kInvalidHandle
     ) {
         return;
     }
@@ -789,7 +690,6 @@ void BlePhoneGamepadOutput::handleHidsPacket(
             if (!inputSubscribed_) {
                 inputSubscribed_ = true;
                 subscriptionReadySignal_ = true;
-                startConnectionSelfTest();
             }
             break;
         }
@@ -817,7 +717,6 @@ void BlePhoneGamepadOutput::handleHidsPacket(
             if (!inputSubscribed_) {
                 inputSubscribed_ = true;
                 subscriptionReadySignal_ = true;
-                startConnectionSelfTest();
             }
             break;
         }
