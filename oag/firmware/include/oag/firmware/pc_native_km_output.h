@@ -28,9 +28,8 @@ public:
     void releaseAll();
 
 private:
-    static constexpr std::uint8_t kKeyboardInstance = 0;
-    static constexpr std::uint8_t kMouseInstance = 1;
     static constexpr std::uint64_t kModeChordGraceUs = 120000;
+    static constexpr std::uint64_t kProfileChordGraceUs = 120000;
 
     std::array<std::uint8_t, 8> buildKeyboardReport(
         std::uint64_t nowUs
@@ -51,6 +50,8 @@ private:
 
     std::uint64_t f4PressedSinceUs_ = 0;
     std::uint64_t f5PressedSinceUs_ = 0;
+    std::uint64_t f8PressedSinceUs_ = 0;
+    std::uint64_t f9PressedSinceUs_ = 0;
 
     bool keyboardReleasePending_ = false;
     bool mouseReleasePending_ = false;
