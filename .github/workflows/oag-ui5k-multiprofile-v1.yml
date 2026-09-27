@@ -1,0 +1,209 @@
+name: OAG UI5K MultiProfile V1
+
+on:
+  push:
+    branches:
+      - chatgpt/ui5k-multiprofile-v1
+    paths:
+      - 'oag/**'
+      - '.github/workflows/oag-ui5k-multiprofile-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify baselines and multiprofile contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          GOLDEN="01af260742a6a402a851cceef0707ae69bd6a301"
+          MOBILE_V3="2429dff3877204112b520cdc51941c489b2eecbb"
+
+          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-multiprofile-v1"
+          test "$(git merge-base "${GOLDEN}" HEAD)" = "${GOLDEN}"
+
+          echo "=== PROTECTED INPUT-SIDE PARITY ==="
+          git diff --exit-code "${GOLDEN}" HEAD --             oag/firmware/src/bluetooth_host_v2.cpp             oag/firmware/include/oag/firmware/bluetooth_host_v2.h             oag/firmware/src/bluetooth_hid_parser_v2.cpp             oag/firmware/src/usb_pio_host.cpp             oag/firmware/src/usb_pio_probe.c             oag/firmware/src/xinput_host.cpp             oag/src/device             oag/src/protocol             oag/src/mapping             oag/src/feedback
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path("oag/firmware/src/main.cpp").read_text()
+          selector_h = Path("oag/firmware/include/oag/firmware/output_profile_selector.h").read_text()
+          selector = Path("oag/firmware/src/output_profile_selector.cpp").read_text()
+          multi = Path("oag/firmware/src/multi_profile_platform_driver.cpp").read_text()
+          desc = Path("oag/firmware/src/usb_descriptors.cpp").read_text()
+          km = Path("oag/firmware/src/pc_native_km_output.cpp").read_text()
+          hid_h = Path("oag/firmware/include/oag/firmware/pc_hid_output.h").read_text()
+          hid = Path("oag/firmware/src/pc_hid_output.cpp").read_text()
+          tusb = Path("oag/firmware/tusb_config.h").read_text()
+          cmake = Path("oag/firmware/CMakeLists.txt").read_text()
+
+          # PC remains the boot default and has no user hotkey.
+          assert "OutputProfileId::Pc" in selector_h
+          assert "return OutputProfileId::Pc;" in selector
+          assert "candidate - kProfileDigit1Usage + 1u" in main
+          assert "kOutputProfileHoldUs = 1500000ull" in main
+
+          # Fixed F8+F9 system chord and digits 1..6.
+          assert "kProfileF8Usage = 0x41" in main
+          assert "kProfileF9Usage = 0x42" in main
+          assert "kProfileDigit1Usage = 0x1E" in main
+          assert "kProfileDigit6Usage = 0x23" in main
+          assert "consumeOutputProfileChord(keyboard);" in main
+          assert main.count("consumeOutputProfileChord(keyboard);") >= 2
+          assert "kUsageF8 = 0x41" in km
+          assert "kUsageF9 = 0x42" in km
+          assert "kProfileChordGraceUs = 120000" in Path(
+              "oag/firmware/include/oag/firmware/pc_native_km_output.h"
+          ).read_text()
+
+          # Only PC + hardware-verified phone are runtime-enabled at this gate.
+          assert "case OutputProfileId::Pc:" in selector
+          assert "case OutputProfileId::Phone:" in selector
+          assert "case OutputProfileId::XboxOne:" in selector
+          assert "return false;" in selector
+
+          # Runtime driver dispatch is explicit.
+          assert "activeOutputProfile() == OutputProfileId::Phone" in multi
+          assert "phone_.initialize()" in multi
+          assert "pc_.initialize()" in multi
+
+          # Descriptor selection happens before USB enumeration from watchdog
+          # scratch; PC and Mobile descriptors coexist but never enumerate
+          # simultaneously.
+          assert "mobileProfile()" in desc
+          assert "kPcDeviceDescriptor" in desc
+          assert "kMobileDeviceDescriptor" in desc
+          assert "kPcConfigurationDescriptor" in desc
+          assert "kMobileConfigurationDescriptor" in desc
+          assert "mobileUsbProfileActive()" in desc
+
+          # Preserve hardware-verified Mobile V3 semantic contract.
+          assert "sizeof(Report) == 9" in hid_h
+          assert "kButtonWest         = hidButton(3)" in hid
+          assert "kButtonNorth        = hidButton(4)" in hid
+          assert "kButtonLeftBumper   = hidButton(6)" in hid
+          assert "kButtonRightBumper  = hidButton(7)" in hid
+          assert "kButtonLeftTrigger  = hidButton(8)" in hid
+          assert "kButtonRightTrigger = hidButton(9)" in hid
+          assert "kButtonLeftStick    = hidButton(13)" in hid
+          assert "kButtonRightStick   = hidButton(14)" in hid
+
+          # Superset TinyUSB capacity: PC still needs vendor/XUSB, Phone needs
+          # six HID instances.
+          assert "#define CFG_TUD_VENDOR 1" in tusb
+          assert "#define CFG_TUD_HID 6" in tusb
+          assert "#define CFG_TUD_ENDPOINT0_SIZE 64" in tusb
+
+          assert "src/pc_xinput_device.cpp" in cmake
+          assert "src/pc_xinput_platform_driver.cpp" in cmake
+          assert "src/pc_hid_output.cpp" in cmake
+          assert "src/pc_hid_platform_driver.cpp" in cmake
+          assert "src/multi_profile_platform_driver.cpp" in cmake
+          assert "src/output_profile_selector.cpp" in cmake
+
+          print("MULTIPROFILE_ARCHITECTURE_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host             -DCMAKE_BUILD_TYPE=Release             -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build and run host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact UI5K Pico SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned SDK generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          test "$(git -C pico-sdk-ui5k/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
+          test "$(git -C pico-sdk-ui5k/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Configure and build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k"           cmake -S oag/firmware -B build/oag-fw             -DCMAKE_BUILD_TYPE=Release             -DPICO_BOARD=pico2_w             -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+
+          test "${#UF2[@]}" -eq 1
+          test "${#ELF[@]}" -eq 1
+          test "${#MAP[@]}" -eq 1
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+
+          cp "${UF2[0]}"             "artifacts/OAG_UI5K_MULTIPROFILE_V1_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF[0]}"             "artifacts/OAG_UI5K_MULTIPROFILE_V1_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP[0]}"             "artifacts/OAG_UI5K_MULTIPROFILE_V1_${SHORT_SHA}_Pico2W.map"
+
+          arm-none-eabi-size "${ELF[0]}" | tee artifacts/size-report.txt
+          sha256sum artifacts/OAG_UI5K_MULTIPROFILE_V1_*             > artifacts/SHA256SUMS.txt
+
+          printf '%s\n'             "UI5K_GOLDEN=01af260742a6a402a851cceef0707ae69bd6a301"             "MOBILE_V3_HW=2429dff3877204112b520cdc51941c489b2eecbb"             "BOOT_DEFAULT=PC_XINPUT"             "PROFILE_1=PHONE_MOBILE_HID_V3"             "HOTKEY_1=F8+F9+1 HOLD 1.5s"             "PROFILE_2=XBOX_ONE_RESERVED"             "PROFILE_3=XBOX_SERIES_RESERVED"             "PROFILE_4=PS4_RESERVED"             "PROFILE_5=PS5_RESERVED"             "PROFILE_6=NINTENDO_RESERVED"             > artifacts/BUILD-INFO.txt
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-UI5K-MULTIPROFILE-V1-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
