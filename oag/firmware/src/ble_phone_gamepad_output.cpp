@@ -497,14 +497,20 @@ bool BlePhoneGamepadOutput::installDeviceServices() {
 
     hids_device_register_packet_handler(phoneHidsThunk);
     servicesInstalled_ = true;
-
-    // Exact donor order: advertising is configured/enabled before HCI power.
-    startAdvertising();
     return true;
 }
 
+void BlePhoneGamepadOutput::enableAdvertising() {
+    advertisingAllowed_ = true;
+    startAdvertising();
+}
+
 void BlePhoneGamepadOutput::startAdvertising() {
-    if (!servicesInstalled_ || connected()) {
+    if (
+        !servicesInstalled_ ||
+        !advertisingAllowed_ ||
+        connected()
+    ) {
         return;
     }
 
