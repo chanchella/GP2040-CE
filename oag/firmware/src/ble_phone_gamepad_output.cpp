@@ -586,6 +586,10 @@ bool BlePhoneGamepadOutput::subscribed() const {
     return connected() && inputSubscribed_;
 }
 
+bool BlePhoneGamepadOutput::advertisingEnabled() const {
+    return advertisingAllowed_;
+}
+
 bool BlePhoneGamepadOutput::takeSubscriptionReadySignal() {
     const bool ready = subscriptionReadySignal_;
     subscriptionReadySignal_ = false;
