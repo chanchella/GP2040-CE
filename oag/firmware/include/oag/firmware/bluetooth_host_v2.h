@@ -173,6 +173,7 @@ private:
     BluetoothHostV2Observer* observer_ = nullptr;
     bool initialized_ = false;
     bool hciWorking_ = false;
+    bool platformSecurityReady_ = false;
 
     DiscoveryPhase discoveryPhase_ = DiscoveryPhase::Idle;
     PendingKind pendingKind_ = PendingKind::None;
