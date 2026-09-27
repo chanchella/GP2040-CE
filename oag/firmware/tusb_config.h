@@ -18,16 +18,17 @@ extern "C" {
 #define CFG_TUSB_RHPORT0_MODE (OPT_MODE_DEVICE | OPT_MODE_FULL_SPEED)
 
 #define CFG_TUD_ENABLED 1
-// The genuine Xbox 360 Wireless Receiver is full-speed with an 8-byte EP0.
-#define CFG_TUD_ENDPOINT0_SIZE 8
+// Standard USB HID mobile persona uses the conventional 64-byte EP0.
+#define CFG_TUD_ENDPOINT0_SIZE 64
 #define CFG_TUD_CDC 0
 #define CFG_TUD_MSC 0
 #define CFG_TUD_MIDI 0
 
-// TinyUSB 0.17 compile anchor. OAG's custom XInput application driver is
-// registered first and claims the target-facing XInput interfaces.
-#define CFG_TUD_VENDOR 1
-#define CFG_TUD_HID 2
+// Mobile USB persona: four standard HID gamepads plus native keyboard/mouse.
+// No Windows XUSB20 vendor interface is exposed in this isolated candidate.
+#define CFG_TUD_VENDOR 0
+#define CFG_TUD_HID 6
+#define CFG_TUD_HID_EP_BUFSIZE 16
 
 #define CFG_TUH_ENABLED 1
 #define CFG_TUH_RPI_PIO_USB 1
