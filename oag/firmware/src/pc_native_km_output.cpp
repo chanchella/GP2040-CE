@@ -6,10 +6,14 @@
 
 #include "tusb.h"
 
+#include "oag/firmware/output_profile_selector.h"
+
 namespace {
 
 constexpr std::uint8_t kUsageF4 = 0x3D;
 constexpr std::uint8_t kUsageF5 = 0x3E;
+constexpr std::uint8_t kUsageF8 = 0x41;
+constexpr std::uint8_t kUsageF9 = 0x42;
 
 std::int8_t clampMouseAxis(std::int32_t value) {
     return static_cast<std::int8_t>(
@@ -37,6 +41,8 @@ void PcNativeKmOutput::setEnabled(bool enabled) {
         pendingPan_ = 0;
         f4PressedSinceUs_ = 0;
         f5PressedSinceUs_ = 0;
+        f8PressedSinceUs_ = 0;
+        f9PressedSinceUs_ = 0;
     }
 }
 
@@ -85,6 +91,22 @@ PcNativeKmOutput::buildKeyboardReport(std::uint64_t nowUs) {
         f5PressedSinceUs_ = 0;
     }
 
+    const bool f8Down = keyboard_.pressed(kUsageF8);
+    const bool f9Down = keyboard_.pressed(kUsageF9);
+    const bool profileChordDown = f8Down && f9Down;
+
+    if (f8Down && f8PressedSinceUs_ == 0) {
+        f8PressedSinceUs_ = nowUs;
+    } else if (!f8Down) {
+        f8PressedSinceUs_ = 0;
+    }
+
+    if (f9Down && f9PressedSinceUs_ == 0) {
+        f9PressedSinceUs_ = nowUs;
+    } else if (!f9Down) {
+        f9PressedSinceUs_ = 0;
+    }
+
     std::size_t keyIndex = 2;
 
     for (std::uint16_t usage = 1;
@@ -115,6 +137,27 @@ PcNativeKmOutput::buildKeyboardReport(std::uint64_t nowUs) {
             }
         }
 
+        if (
+            usage == kUsageF8 ||
+            usage == kUsageF9
+        ) {
+            if (profileChordDown) {
+                continue;
+            }
+
+            const std::uint64_t since =
+                usage == kUsageF8
+                    ? f8PressedSinceUs_
+                    : f9PressedSinceUs_;
+
+            if (
+                since == 0 ||
+                nowUs - since < kProfileChordGraceUs
+            ) {
+                continue;
+            }
+        }
+
         report[keyIndex++] =
             static_cast<std::uint8_t>(usage);
     }
@@ -126,11 +169,11 @@ void PcNativeKmOutput::task(std::uint64_t nowUs) {
     if (!enabled_) {
         if (
             keyboardReleasePending_ &&
-            tud_hid_n_ready(kKeyboardInstance)
+            tud_hid_n_ready(nativeKeyboardHidInstance())
         ) {
             const std::array<std::uint8_t, 8> empty {};
             if (tud_hid_n_report(
-                    kKeyboardInstance,
+                    nativeKeyboardHidInstance(),
                     0,
                     empty.data(),
                     empty.size()
@@ -142,11 +185,11 @@ void PcNativeKmOutput::task(std::uint64_t nowUs) {
 
         if (
             mouseReleasePending_ &&
-            tud_hid_n_ready(kMouseInstance)
+            tud_hid_n_ready(nativeMouseHidInstance())
         ) {
             hid_mouse_report_t report {};
             if (tud_hid_n_report(
-                    kMouseInstance,
+                    nativeMouseHidInstance(),
                     0,
                     &report,
                     sizeof(report)
@@ -164,10 +207,10 @@ void PcNativeKmOutput::task(std::uint64_t nowUs) {
 
     if (
         keyboardReport != lastKeyboardReport_ &&
-        tud_hid_n_ready(kKeyboardInstance)
+        tud_hid_n_ready(nativeKeyboardHidInstance())
     ) {
         if (tud_hid_n_report(
-                kKeyboardInstance,
+                nativeKeyboardHidInstance(),
                 0,
                 keyboardReport.data(),
                 keyboardReport.size()
@@ -186,7 +229,7 @@ void PcNativeKmOutput::task(std::uint64_t nowUs) {
         pendingWheel_ != 0 ||
         pendingPan_ != 0;
 
-    if (!mouseChanged || !tud_hid_n_ready(kMouseInstance)) {
+    if (!mouseChanged || !tud_hid_n_ready(nativeMouseHidInstance())) {
         return;
     }
 
@@ -204,7 +247,7 @@ void PcNativeKmOutput::task(std::uint64_t nowUs) {
     };
 
     if (!tud_hid_n_report(
-            kMouseInstance,
+            nativeMouseHidInstance(),
             0,
             &report,
             sizeof(report)
