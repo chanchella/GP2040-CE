@@ -37,7 +37,7 @@ public:
 
 private:
     static constexpr std::uint16_t kInvalidHandle = 0xFFFFu;
-    static constexpr std::uint8_t kInputReportId = 1u;
+    static constexpr std::uint8_t kInputReportId = 4u;
 
     void startAdvertising();
     void requestCanSend();
