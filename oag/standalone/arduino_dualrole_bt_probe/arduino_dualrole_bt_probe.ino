@@ -216,7 +216,7 @@ void forwardInputReport(
         &parser,
         descriptor,
         descriptorLength,
-        HID_REPORT_TYPE_INPUT,
+        static_cast<hid_report_type_t_bt>(1),
         report,
         reportLength
     );
