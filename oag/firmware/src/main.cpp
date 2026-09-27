@@ -15,7 +15,8 @@
 #include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
-#include "oag/firmware/pc_xinput_platform_driver.h"
+#include "oag/firmware/multi_profile_platform_driver.h"
+#include "oag/firmware/output_profile_selector.h"
 #include "oag/firmware/pc_native_km_output.h"
 #include "oag/firmware/usb_pio_host.h"
 #include "oag/firmware/xinput_host.h"
@@ -113,6 +114,7 @@ public:
         maintainXinputTransport();
         serviceXgipInit();
         servicePrimaryControllerChords();
+        serviceOutputProfileHotkey();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
@@ -1115,8 +1117,13 @@ private:
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
+    static constexpr std::uint64_t kOutputProfileHoldUs = 1500000ull;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
+    static constexpr std::uint8_t kProfileF8Usage = 0x41;
+    static constexpr std::uint8_t kProfileF9Usage = 0x42;
+    static constexpr std::uint8_t kProfileDigit1Usage = 0x1E;
+    static constexpr std::uint8_t kProfileDigit6Usage = 0x23;
 
     void serviceBluetoothHostV2() {
         const std::uint64_t nowUs =
@@ -1577,7 +1584,7 @@ private:
     void rebuildPcOutputRouting() {
         std::array<
             std::optional<oag::LogicalSlotId>,
-            oag::firmware::PcXinputDevice::kOutputSlots
+            oag::firmware::MultiProfilePlatformDriver::kOutputSlots
         > nextRoutes {};
 
         if (hostPrimaryOutputSlot_ >= nextRoutes.size()) {
@@ -1814,8 +1821,8 @@ private:
             return;
         }
 
-        // F4+F5 is a reserved global system chord. Even in Controller mode,
-        // the chord itself must never leak into any mapping or combo.
+        // F4+F5 and F8+F9+digit are reserved global system chords.
+        // They must never leak into controller mapping or combos.
         if (
             keyboard.pressed(kModeToggleF4Usage) &&
             keyboard.pressed(kModeToggleF5Usage)
@@ -1823,6 +1830,8 @@ private:
             keyboard.setPressed(kModeToggleF4Usage, false);
             keyboard.setPressed(kModeToggleF5Usage, false);
         }
+
+        consumeOutputProfileChord(keyboard);
 
         oag::LogicalGamepadState output =
             keyboardMouse_.apply(
@@ -1843,6 +1852,103 @@ private:
         }
 
         platformOutput_.submit(hostPrimaryOutputSlot_, output);
+    }
+
+    static void consumeOutputProfileChord(
+        oag::KeyboardState& keyboard
+    ) {
+        const bool chordDown =
+            keyboard.pressed(kProfileF8Usage) &&
+            keyboard.pressed(kProfileF9Usage);
+
+        if (!chordDown) {
+            return;
+        }
+
+        keyboard.setPressed(kProfileF8Usage, false);
+        keyboard.setPressed(kProfileF9Usage, false);
+
+        for (
+            std::uint8_t usage = kProfileDigit1Usage;
+            usage <= kProfileDigit6Usage;
+            ++usage
+        ) {
+            keyboard.setPressed(usage, false);
+        }
+    }
+
+    void serviceOutputProfileHotkey() {
+        const oag::KeyboardState keyboard = combinedKeyboard();
+
+        const bool baseChordDown =
+            keyboard.pressed(kProfileF8Usage) &&
+            keyboard.pressed(kProfileF9Usage);
+
+        if (!baseChordDown) {
+            outputProfileChordStartedUs_ = 0;
+            outputProfileChordLatched_ = false;
+            outputProfileCandidate_ = 0;
+            return;
+        }
+
+        std::uint8_t candidate = 0;
+        std::uint8_t pressedDigits = 0;
+
+        for (
+            std::uint8_t usage = kProfileDigit1Usage;
+            usage <= kProfileDigit6Usage;
+            ++usage
+        ) {
+            if (!keyboard.pressed(usage)) {
+                continue;
+            }
+
+            candidate = static_cast<std::uint8_t>(
+                usage - kProfileDigit1Usage + 1u
+            );
+            ++pressedDigits;
+        }
+
+        if (pressedDigits != 1) {
+            outputProfileChordStartedUs_ = 0;
+            outputProfileChordLatched_ = false;
+            outputProfileCandidate_ = 0;
+            return;
+        }
+
+        const std::uint64_t nowUs = time_us_64();
+
+        if (candidate != outputProfileCandidate_) {
+            outputProfileCandidate_ = candidate;
+            outputProfileChordStartedUs_ = nowUs;
+            outputProfileChordLatched_ = false;
+            return;
+        }
+
+        if (
+            outputProfileChordLatched_ ||
+            outputProfileChordStartedUs_ == 0 ||
+            nowUs - outputProfileChordStartedUs_ <
+                kOutputProfileHoldUs
+        ) {
+            return;
+        }
+
+        outputProfileChordLatched_ = true;
+
+        const auto profile =
+            static_cast<oag::firmware::OutputProfileId>(
+                candidate
+            );
+
+        if (!oag::firmware::outputProfileRuntimeAvailable(profile)) {
+            return;
+        }
+
+        // Clear any currently forwarded keyboard state before the controlled
+        // reboot so F8/F9/number never stick on the target.
+        nativeKmOutput_.releaseAll();
+        (void)oag::firmware::requestOutputProfile(profile);
     }
 
     void serviceKeyboardMouseModeToggle() {
@@ -1903,7 +2009,7 @@ private:
         oag::KeyboardState keyboard = combinedKeyboard();
         oag::MouseState mouse = combinedMouse();
 
-        // Never expose the reserved F4+F5 chord to the target host.
+        // Never expose reserved system chords to the target host.
         if (
             keyboard.pressed(kModeToggleF4Usage) &&
             keyboard.pressed(kModeToggleF5Usage)
@@ -1911,6 +2017,8 @@ private:
             keyboard.setPressed(kModeToggleF4Usage, false);
             keyboard.setPressed(kModeToggleF5Usage, false);
         }
+
+        consumeOutputProfileChord(keyboard);
 
         const oag::NativeKmComboFrame frame =
             nativeKmCombos_.apply(keyboard, mouse);
@@ -2153,12 +2261,12 @@ private:
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
     oag::NativeKmComboEngine nativeKmCombos_;
-    oag::firmware::PcXinputPlatformDriver platformOutput_;
+    oag::firmware::MultiProfilePlatformDriver platformOutput_;
     oag::firmware::PcNativeKmOutput nativeKmOutput_;
 
     std::array<
         std::optional<oag::LogicalSlotId>,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::MultiProfilePlatformDriver::kOutputSlots
     > pcOutputRoutes_ {};
 
     oag::DeviceId primaryBluetoothGamepad_ {};
@@ -2168,6 +2276,10 @@ private:
         KeyboardMouseOutputMode::Native;
     std::uint64_t keyboardMouseModeChordStartedUs_ = 0;
     bool keyboardMouseModeChordLatched_ = false;
+
+    std::uint64_t outputProfileChordStartedUs_ = 0;
+    std::uint8_t outputProfileCandidate_ = 0;
+    bool outputProfileChordLatched_ = false;
 
     std::int16_t currentNativeWheel_ = 0;
     std::int16_t currentNativePan_ = 0;
@@ -2290,22 +2402,22 @@ private:
 
     std::array<
         std::uint8_t,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::MultiProfilePlatformDriver::kOutputSlots
     > xgipRumbleSequence_ {1, 1, 1, 1};
 
     std::array<
         oag::RumbleCommand,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::MultiProfilePlatformDriver::kOutputSlots
     > pendingRumble_ {};
 
     std::array<
         bool,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::MultiProfilePlatformDriver::kOutputSlots
     > pendingRumbleValid_ {};
 
     std::array<
         std::uint64_t,
-        oag::firmware::PcXinputDevice::kOutputSlots
+        oag::firmware::MultiProfilePlatformDriver::kOutputSlots
     > bluetoothRumbleRetryNotBeforeUs_ {};
 };
 
