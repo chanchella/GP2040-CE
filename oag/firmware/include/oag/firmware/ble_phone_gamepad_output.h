@@ -33,6 +33,7 @@ public:
 
     bool connected() const;
     bool subscribed() const;
+    bool advertisingEnabled() const;
 
 private:
     static constexpr std::uint16_t kInvalidHandle = 0xFFFFu;
