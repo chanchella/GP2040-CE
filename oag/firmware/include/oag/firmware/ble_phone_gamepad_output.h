@@ -8,7 +8,7 @@
 
 namespace oag::firmware {
 
-class BlePlatformGamepadOutput {
+class BlePhoneGamepadOutput {
 public:
     bool prepareAttDatabase();
     const std::uint8_t* attDatabase() const;
