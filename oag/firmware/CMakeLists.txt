@@ -32,6 +32,7 @@ add_executable(OAG_U10F_PM1_UI5K_WIN_XUSB20_4FUNC_KM_COMPOSITE_2S_Pico2W
     src/pc_native_km_output.cpp
     src/usb_descriptors.cpp
     src/bluetooth_host_v2.cpp
+    src/ble_phone_gamepad_output.cpp
     src/bluetooth_hid_parser_v2.cpp
 
     ../src/device/device_registry.cpp
