@@ -150,8 +150,6 @@ bool PcHidOutput::send(
         static_cast<std::uint8_t>(buttons & 0xFFu);
     report.buttons8To15 =
         static_cast<std::uint8_t>((buttons >> 8) & 0xFFu);
-    report.buttons16To17 =
-        static_cast<std::uint8_t>((buttons >> 16) & 0x03u);
 
     reports_[logicalSlot] = report;
     pending_[logicalSlot] = true;
