@@ -1,13 +1,13 @@
 /*
- * OAG BLE platform gamepad compatibility layer.
+ * OAG BLE phone gamepad compatibility layer.
  *
  * ATT fragments are ported from Arduino-Pico 6.1.1
  * PicoBluetoothBLEHID (LGPL-2.1-or-later), whose JoystickBLE path was
- * hardware-proven on this Pico 2 W + platform. OAG removes its stack ownership:
+ * hardware-proven on this Pico 2 W + phone. OAG removes its stack ownership:
  * BluetoothHostV2 remains the only CYW43/BTstack/HCI owner.
  */
 
-#include "oag/firmware/ble_platform_gamepad_output.h"
+#include "oag/firmware/ble_phone_gamepad_output.h"
 
 #include <algorithm>
 #include <cstring>
@@ -22,16 +22,16 @@
 
 namespace {
 
-oag::firmware::BlePlatformGamepadOutput* gPlatformGamepadOutput = nullptr;
+oag::firmware::BlePhoneGamepadOutput* gPhoneGamepadOutput = nullptr;
 
-void platformHidsThunk(
+void phoneHidsThunk(
     std::uint8_t packetType,
     std::uint16_t channel,
     std::uint8_t* packet,
     std::uint16_t size
 ) {
-    if (gPlatformGamepadOutput != nullptr) {
-        gPlatformGamepadOutput->handleHidsPacket(
+    if (gPhoneGamepadOutput != nullptr) {
+        gPhoneGamepadOutput->handleHidsPacket(
             packetType,
             channel,
             packet,
@@ -54,7 +54,7 @@ constexpr std::uint8_t kHidDescriptor[] = {
     0xC0
 };
 
-constexpr char kPlatformName[] = "OAG UI5K BT BRIDGE";
+constexpr char kPhoneName[] = "OAG UI5K BT BRIDGE";
 
 constexpr std::uint8_t kAdvertisingData[] = {
     0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x06,
@@ -282,7 +282,7 @@ constexpr std::uint8_t kAttTail[] = {
 
 
 
-hids_device_report_t gPlatformReportStorage[2] {};
+hids_device_report_t gPhoneReportStorage[2] {};
 
 std::int16_t encodeSignedAxis(std::int32_t value) {
     if (value <= std::numeric_limits<std::int32_t>::min()) {
@@ -407,7 +407,7 @@ std::array<std::uint8_t, 17> encodeReport(
 
 namespace oag::firmware {
 
-bool BlePlatformGamepadOutput::prepareAttDatabase() {
+bool BlePhoneGamepadOutput::prepareAttDatabase() {
     if (prepared_) {
         return true;
     }
@@ -430,7 +430,7 @@ bool BlePlatformGamepadOutput::prepareAttDatabase() {
         return false;
     }
 
-    constexpr std::size_t kNameLength = sizeof(kPlatformName) - 1;
+    constexpr std::size_t kNameLength = sizeof(kPhoneName) - 1;
     if (cursor + 8 + kNameLength > attDatabase_.size()) {
         return false;
     }
@@ -447,7 +447,7 @@ bool BlePlatformGamepadOutput::prepareAttDatabase() {
 
     std::memcpy(
         attDatabase_.data() + cursor,
-        kPlatformName,
+        kPhoneName,
         kNameLength
     );
     cursor += kNameLength;
@@ -470,11 +470,11 @@ bool BlePlatformGamepadOutput::prepareAttDatabase() {
     return true;
 }
 
-const std::uint8_t* BlePlatformGamepadOutput::attDatabase() const {
+const std::uint8_t* BlePhoneGamepadOutput::attDatabase() const {
     return prepared_ ? attDatabase_.data() : nullptr;
 }
 
-bool BlePlatformGamepadOutput::installDeviceServices() {
+bool BlePhoneGamepadOutput::installDeviceServices() {
     if (servicesInstalled_) {
         return true;
     }
@@ -482,7 +482,7 @@ bool BlePlatformGamepadOutput::installDeviceServices() {
         return false;
     }
 
-    gPlatformGamepadOutput = this;
+    gPhoneGamepadOutput = this;
 
     battery_service_server_init(100);
     device_information_service_server_init();
@@ -492,10 +492,10 @@ bool BlePlatformGamepadOutput::installDeviceServices() {
         kHidDescriptor,
         sizeof(kHidDescriptor),
         2,
-        gPlatformReportStorage
+        gPhoneReportStorage
     );
 
-    hids_device_register_packet_handler(platformHidsThunk);
+    hids_device_register_packet_handler(phoneHidsThunk);
     servicesInstalled_ = true;
 
     // Exact donor order: advertising is configured/enabled before HCI power.
@@ -503,7 +503,7 @@ bool BlePlatformGamepadOutput::installDeviceServices() {
     return true;
 }
 
-void BlePlatformGamepadOutput::startAdvertising() {
+void BlePhoneGamepadOutput::startAdvertising() {
     if (!servicesInstalled_ || connected()) {
         return;
     }
@@ -525,7 +525,7 @@ void BlePlatformGamepadOutput::startAdvertising() {
     (void)gap_advertisements_enable(1);
 }
 
-bool BlePlatformGamepadOutput::adoptPeripheralConnection(
+bool BlePhoneGamepadOutput::adoptPeripheralConnection(
     std::uint16_t connectionHandle
 ) {
     if (
@@ -550,7 +550,7 @@ bool BlePlatformGamepadOutput::adoptPeripheralConnection(
     return true;
 }
 
-bool BlePlatformGamepadOutput::ownsConnection(
+bool BlePhoneGamepadOutput::ownsConnection(
     std::uint16_t connectionHandle
 ) const {
     return
@@ -558,7 +558,7 @@ bool BlePlatformGamepadOutput::ownsConnection(
         connectionHandle_ == connectionHandle;
 }
 
-void BlePlatformGamepadOutput::handleDisconnection(
+void BlePhoneGamepadOutput::handleDisconnection(
     std::uint16_t connectionHandle
 ) {
     if (!ownsConnection(connectionHandle)) {
@@ -578,21 +578,21 @@ void BlePlatformGamepadOutput::handleDisconnection(
     startAdvertising();
 }
 
-bool BlePlatformGamepadOutput::connected() const {
+bool BlePhoneGamepadOutput::connected() const {
     return connectionHandle_ != kInvalidHandle;
 }
 
-bool BlePlatformGamepadOutput::subscribed() const {
+bool BlePhoneGamepadOutput::subscribed() const {
     return connected() && inputSubscribed_;
 }
 
-bool BlePlatformGamepadOutput::takeSubscriptionReadySignal() {
+bool BlePhoneGamepadOutput::takeSubscriptionReadySignal() {
     const bool ready = subscriptionReadySignal_;
     subscriptionReadySignal_ = false;
     return ready;
 }
 
-void BlePlatformGamepadOutput::submit(
+void BlePhoneGamepadOutput::submit(
     const oag::LogicalGamepadState& state
 ) {
     const auto next = encodeReport(state);
@@ -612,7 +612,7 @@ void BlePlatformGamepadOutput::submit(
     }
 }
 
-void BlePlatformGamepadOutput::poll() {
+void BlePhoneGamepadOutput::poll() {
     serviceConnectionSelfTest();
 
     if (
@@ -624,7 +624,7 @@ void BlePlatformGamepadOutput::poll() {
     }
 }
 
-void BlePlatformGamepadOutput::startConnectionSelfTest() {
+void BlePhoneGamepadOutput::startConnectionSelfTest() {
     if (
         !inputSubscribed_ ||
         connectionHandle_ == kInvalidHandle
@@ -644,7 +644,7 @@ void BlePlatformGamepadOutput::startConnectionSelfTest() {
     requestCanSend();
 }
 
-void BlePlatformGamepadOutput::serviceConnectionSelfTest() {
+void BlePhoneGamepadOutput::serviceConnectionSelfTest() {
     if (
         !selfTestActive_ ||
         !inputSubscribed_ ||
@@ -709,7 +709,7 @@ void BlePlatformGamepadOutput::serviceConnectionSelfTest() {
     }
 }
 
-void BlePlatformGamepadOutput::requestCanSend() {
+void BlePhoneGamepadOutput::requestCanSend() {
     if (
         !servicesInstalled_ ||
         !inputSubscribed_ ||
@@ -728,7 +728,7 @@ void BlePlatformGamepadOutput::requestCanSend() {
     }
 }
 
-void BlePlatformGamepadOutput::sendCurrentReport() {
+void BlePhoneGamepadOutput::sendCurrentReport() {
     if (
         connectionHandle_ == kInvalidHandle ||
         !inputSubscribed_
@@ -749,7 +749,7 @@ void BlePlatformGamepadOutput::sendCurrentReport() {
     }
 }
 
-void BlePlatformGamepadOutput::handleHidsPacket(
+void BlePhoneGamepadOutput::handleHidsPacket(
     std::uint8_t packetType,
     std::uint16_t channel,
     std::uint8_t* packet,
