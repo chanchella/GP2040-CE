@@ -174,6 +174,7 @@ private:
     bool initialized_ = false;
     bool hciWorking_ = false;
     bool platformSecurityReady_ = false;
+    std::uint64_t platformConnectedAtUs_ = 0;
 
     DiscoveryPhase discoveryPhase_ = DiscoveryPhase::Idle;
     PendingKind pendingKind_ = PendingKind::None;
