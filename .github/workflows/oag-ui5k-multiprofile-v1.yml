@@ -55,8 +55,11 @@ jobs:
           # Fixed F8+F9 system chord and digits 1..6.
           assert "kProfileF8Usage = 0x41" in main
           assert "kProfileF9Usage = 0x42" in main
+          assert "kProfileDigit0Usage = 0x27" in main
           assert "kProfileDigit1Usage = 0x1E" in main
           assert "kProfileDigit6Usage = 0x23" in main
+          assert "OutputProfileId::Pc" in main
+          assert "kNoOutputProfileCandidate = 0xFF" in main
           assert "consumeOutputProfileChord(keyboard);" in main
           assert main.count("consumeOutputProfileChord(keyboard);") >= 2
           assert "kUsageF8 = 0x41" in km
@@ -102,7 +105,10 @@ jobs:
           # six HID instances.
           assert "#define CFG_TUD_VENDOR 1" in tusb
           assert "#define CFG_TUD_HID 6" in tusb
-          assert "#define CFG_TUD_ENDPOINT0_SIZE 64" in tusb
+          # Preserve the exact Golden XUSB control endpoint size. Mobile HID
+          # deliberately shares the valid 8-byte EP0 in this combined build.
+          assert "#define CFG_TUD_ENDPOINT0_SIZE 8" in tusb
+          assert "0x08,                   // EP0 = 8; shared with UI5K PC persona" in desc
 
           assert "src/pc_xinput_device.cpp" in cmake
           assert "src/pc_xinput_platform_driver.cpp" in cmake
