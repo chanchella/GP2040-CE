@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "oag/device/device_registry.h"
+#include "oag/output/logical_gamepad_state.h"
 
 namespace oag::firmware {
 
@@ -65,6 +66,10 @@ public:
     }
 
     std::size_t connectedPeerCount() const;
+
+    void submitPhoneGamepad(
+        const oag::LogicalGamepadState& state
+    );
 
     BluetoothHidOutputResult sendLeOutputReport(
         std::uint16_t connectionHandle,
