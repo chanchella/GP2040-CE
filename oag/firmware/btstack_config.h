@@ -34,7 +34,8 @@
 // This is a software/resource budget until proven on physical hardware.
 #define MAX_NR_BTSTACK_LINK_KEY_DB_MEMORY_ENTRIES 8
 #define MAX_NR_GATT_CLIENTS 4
-#define MAX_NR_HCI_CONNECTIONS 4
+// Four physical Bluetooth input peers plus one phone/platform BLE link.
+#define MAX_NR_HCI_CONNECTIONS 5
 #define MAX_NR_HID_HOST_CONNECTIONS 4
 #define MAX_NR_HIDS_HOSTS 4
 #define MAX_NR_L2CAP_CHANNELS 16
@@ -55,7 +56,8 @@
 
 #define NVM_NUM_DEVICE_DB_ENTRIES 16
 #define NVM_NUM_LINK_KEYS 16
-#define MAX_ATT_DB_SIZE 512
+// Exact Arduino-Pico HOGP ATT layout is larger than UI5K's GAP-only DB.
+#define MAX_ATT_DB_SIZE 1024
 
 #define HAVE_EMBEDDED_TIME_MS
 #define HAVE_ASSERT
