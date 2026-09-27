@@ -1,0 +1,195 @@
+name: OAG UI5K Bluetooth Controller To PC V1
+
+on:
+  push:
+    branches:
+      - chatgpt/ui5k-bt-controller-to-pc-v1
+    paths:
+      - 'oag/**'
+      - '.github/workflows/oag-ui5k-bt-controller-to-pc-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact UI5K ancestry and candidate scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOLDEN="01af260742a6a402a851cceef0707ae69bd6a301"
+          test "${GITHUB_REF_NAME}" = "chatgpt/ui5k-bt-controller-to-pc-v1"
+          test "$(git merge-base "${GOLDEN}" HEAD)" = "${GOLDEN}"
+
+          ACTUAL="$(git diff --name-only "${GOLDEN}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-ui5k-bt-controller-to-pc-v1.yml' \
+            'oag/firmware/CMakeLists.txt' \
+            'oag/firmware/btstack_config.h' \
+            'oag/firmware/include/oag/firmware/ble_phone_gamepad_output.h' \
+            'oag/firmware/include/oag/firmware/bluetooth_host_v2.h' \
+            'oag/firmware/src/ble_phone_gamepad_output.cpp' \
+            'oag/firmware/src/bluetooth_host_v2.cpp' \
+            'oag/firmware/src/main.cpp' | sort)"
+          printf '%s\n' "${ACTUAL}"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          # Golden USB/PIO/XInput/KM implementation files outside main.cpp
+          # must remain byte-identical to UI5K.
+          git diff --exit-code "${GOLDEN}" HEAD -- \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/usb_pio_probe.c \
+            oag/firmware/src/xinput_host.cpp \
+            oag/firmware/src/pc_xinput_device.cpp \
+            oag/firmware/src/pc_xinput_platform_driver.cpp \
+            oag/firmware/src/pc_native_km_output.cpp \
+            oag/firmware/src/usb_descriptors.cpp \
+            oag/firmware/src/bluetooth_hid_parser_v2.cpp \
+            oag/firmware/tusb_config.h \
+            oag/src/mapping \
+            oag/src/protocol/xusb \
+            oag/src/protocol/xgip \
+            oag/src/protocol/hid \
+            oag/src/feedback
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          host = Path("oag/firmware/src/bluetooth_host_v2.cpp").read_text()
+          phone = Path("oag/firmware/src/ble_phone_gamepad_output.cpp").read_text()
+          main = Path("oag/firmware/src/main.cpp").read_text()
+          cfg = Path("oag/firmware/btstack_config.h").read_text()
+
+          assert host.count("cyw43_arch_init()") == 1
+          assert host.count("hci_power_control(HCI_POWER_ON)") == 1
+          assert "gPhoneGamepadOutput.prepareAttDatabase()" in host
+          assert "role == HCI_ROLE_SLAVE" in host
+          assert "gPhoneGamepadOutput.adoptPeripheralConnection" in host
+          assert "gPhoneGamepadOutput.ownsConnection(handle)" in host
+
+          forbidden = [
+              "cyw43_arch_init(",
+              "l2cap_init(",
+              "sm_init(",
+              "att_server_init(",
+              "hci_power_control(",
+              "hci_add_event_handler(",
+              "sm_add_event_handler(",
+          ]
+          for token in forbidden:
+              assert token not in phone, token
+
+          assert "PicoBluetoothBLEHID" in phone
+          assert "kPhoneName[] = \"OAG UI5K BT BRIDGE\"" in phone
+          assert "gPhoneReportStorage[2]" in phone
+          assert "hids_device_init_with_storage" in phone
+          assert "hids_device_send_input_report_for_id" in phone
+          assert "kStepIntervalMs = 1200u" in phone
+
+          assert "bluetoothHost_.submitPhoneGamepad(output)" in main
+          assert "#define MAX_NR_HCI_CONNECTIONS 5" in cfg
+          assert "#define MAX_ATT_DB_SIZE 1024" in cfg
+
+          print("DUALROLE_ARCHITECTURE_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build and run host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact UI5K Pico SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned Bluetooth generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          test "$(git -C pico-sdk-ui5k/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
+          test "$(git -C pico-sdk-ui5k/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Configure and build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k" \
+          cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+
+          test "${#UF2[@]}" -eq 1
+          test "${#ELF[@]}" -eq 1
+          test "${#MAP[@]}" -eq 1
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+          cp "${UF2[0]}" "artifacts/OAG_UI5K_BT_CONTROLLER_TO_PC_V1_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF[0]}" "artifacts/OAG_UI5K_BT_CONTROLLER_TO_PC_V1_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP[0]}" "artifacts/OAG_UI5K_BT_CONTROLLER_TO_PC_V1_${SHORT_SHA}_Pico2W.map"
+          arm-none-eabi-size "${ELF[0]}" | tee artifacts/size-report.txt
+          sha256sum artifacts/OAG_UI5K_BT_CONTROLLER_TO_PC_V1_* > artifacts/SHA256SUMS.txt
+
+      - name: Upload candidate bundle
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-UI5K-BT-CONTROLLER-TO-PC-V1-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
