@@ -1,6 +1,5 @@
 #include <cassert>
 #include <cstdint>
-#include <limits>
 
 #include "oag/input/gamepad_state.h"
 #include "oag/output/touch/mobile_touch_mapper.h"
@@ -27,73 +26,55 @@ const MobileTouchContact* findContact(
 int main() {
     MobileTouchMapper mapper;
 
-    const MobileTouchFrame neutral =
-        mapper.map(LogicalGamepadState {});
-    assert(neutral.count == 0);
+    // Disconnected and connected-neutral states must produce no contacts.
+    assert(mapper.map(LogicalGamepadState {}).count == 0);
 
-    LogicalGamepadState state {};
-    state.connected = true;
-    state.buttons =
-        ButtonSouth |
-        ButtonNorth |
-        ButtonRightBumper |
-        ButtonStart;
-    state.leftTrigger = 0xFFFFFFFFu;
-    state.lx = std::numeric_limits<std::int32_t>::max();
-    state.ly = 0;
+    LogicalGamepadState neutral {};
+    neutral.connected = true;
+    assert(mapper.map(neutral).count == 0);
 
-    const MobileTouchFrame frame = mapper.map(state);
+    // South held => one persistent diagnostic contact at screen center.
+    LogicalGamepadState press {};
+    press.connected = true;
+    press.buttons = ButtonSouth;
 
-    assert(findContact(frame, 0) != nullptr);
-    assert(findContact(frame, 2) != nullptr);
-    assert(findContact(frame, 5) != nullptr);
-    assert(findContact(frame, 7) != nullptr);
-    assert(findContact(frame, 8) != nullptr);
-    assert(findContact(frame, 10) != nullptr);
+    const MobileTouchFrame pressed = mapper.map(press);
+    assert(pressed.count == 1);
 
-    const MobileTouchContact* move =
-        findContact(frame, 0);
-    assert(move != nullptr);
-    assert(move->x > 6500);
-    assert(move->y == 24500);
+    const MobileTouchContact* center = findContact(pressed, 0);
+    assert(center != nullptr);
+    assert(center->x == 16384);
+    assert(center->y == 16384);
 
-    LogicalGamepadState dpad {};
-    dpad.connected = true;
-    dpad.dpad =
-        static_cast<std::uint8_t>(DpadBits::Up) |
-        static_cast<std::uint8_t>(DpadBits::Left);
+    // Same input on the next frame must keep the same contact id/position,
+    // allowing the firmware to represent a held finger.
+    const MobileTouchFrame held = mapper.map(press);
+    assert(held.count == 1);
 
-    const MobileTouchFrame dpadFrame = mapper.map(dpad);
-    const MobileTouchContact* dpadContact =
-        findContact(dpadFrame, 0);
+    const MobileTouchContact* heldCenter = findContact(held, 0);
+    assert(heldCenter != nullptr);
+    assert(heldCenter->x == 16384);
+    assert(heldCenter->y == 16384);
 
-    assert(dpadContact != nullptr);
-    assert(dpadContact->x < 6500);
-    assert(dpadContact->y < 24500);
+    // Release => empty frame. MobileTouchOutput then sends contactCount=0.
+    LogicalGamepadState release {};
+    release.connected = true;
+    assert(mapper.map(release).count == 0);
 
-    LogicalGamepadState crowded {};
-    crowded.connected = true;
-    crowded.lx = std::numeric_limits<std::int32_t>::max();
-    crowded.rx = std::numeric_limits<std::int32_t>::max();
-    crowded.buttons =
-        ButtonSouth |
+    // All unrelated controls are intentionally ignored in this diagnostic.
+    LogicalGamepadState unrelated {};
+    unrelated.connected = true;
+    unrelated.buttons =
         ButtonEast |
         ButtonWest |
         ButtonNorth |
-        ButtonLeftBumper |
-        ButtonRightBumper |
-        ButtonStart |
-        ButtonBack |
-        ButtonLeftStick |
-        ButtonRightStick |
-        ButtonGuide |
-        ButtonShare;
-    crowded.leftTrigger = 0xFFFFFFFFu;
-    crowded.rightTrigger = 0xFFFFFFFFu;
+        ButtonRightStick;
+    unrelated.leftTrigger = 0xFFFFFFFFu;
+    unrelated.rightTrigger = 0xFFFFFFFFu;
+    unrelated.lx = 0x7FFFFFFF;
+    unrelated.ly = -0x7FFFFFFF;
 
-    const MobileTouchFrame crowdedFrame =
-        mapper.map(crowded);
-    assert(crowdedFrame.count == MobileTouchFrame::kMaxContacts);
+    assert(mapper.map(unrelated).count == 0);
 
     return 0;
 }
