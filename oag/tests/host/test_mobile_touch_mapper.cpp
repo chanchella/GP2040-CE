@@ -108,7 +108,7 @@ int main() {
     LogicalGamepadState triHold {};
     triHold.connected = true;
     triHold.buttons = kPubgTriangleHoldButton;
-    assertPoint(actions.map(triHold), 6, 2427, 29420);
+    assertPoint(actions.map(triHold), 5, 2427, 29420);
 
     LogicalGamepadState r1 {};
     r1.connected = true;
@@ -148,17 +148,17 @@ int main() {
     LogicalGamepadState scrollUp {};
     scrollUp.connected = true;
     scrollUp.buttons = kPubgScrollUpButton;
-    assertPoint(actions.map(scrollUp), 14, 3034, 17907);
+    assertPoint(actions.map(scrollUp), 13, 3034, 17907);
 
     LogicalGamepadState middle {};
     middle.connected = true;
     middle.buttons = kPubgMouseMiddleButton;
-    assertPoint(actions.map(middle), 15, 2488, 21612);
+    assertPoint(actions.map(middle), 14, 2488, 21612);
 
     LogicalGamepadState g {};
     g.connected = true;
     g.buttons = kPubgKeyGButton;
-    assertPoint(actions.map(g), 16, 2731, 10978);
+    assertPoint(actions.map(g), 15, 2731, 10978);
 
     MobileTouchMapper comboMapper;
 
@@ -191,7 +191,7 @@ int main() {
     assertPoint(comboFrame, 10, 26093, 26415);
     assertPoint(comboFrame, 11, 15929, 30600);
     assertPoint(comboFrame, 12, 2336, 25386);
-    assertPoint(comboFrame, 16, 2731, 10978);
+    assertPoint(comboFrame, 15, 2731, 10978);
 
     return 0;
 }
