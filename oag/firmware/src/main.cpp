@@ -1175,7 +1175,16 @@ private:
         quirks.zRzAsRightStick =
             classification.hasQuirk(oag::UsbQuirkZRzAsRightStick);
 
-        if (classification.hasQuirk(oag::UsbQuirkSonyButtonLayout)) {
+        if (
+            classification.hasQuirk(
+                oag::UsbQuirkDragonRiseTwinShockButtons
+            )
+        ) {
+            quirks.buttonLayout =
+                oag::GenericHidButtonLayout::DragonRiseTwinShockFamily;
+        } else if (
+            classification.hasQuirk(oag::UsbQuirkSonyButtonLayout)
+        ) {
             quirks.buttonLayout =
                 oag::GenericHidButtonLayout::SonyPlayStation;
         } else if (
