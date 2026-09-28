@@ -386,7 +386,9 @@ static_assert(sizeof(kMobileConfigurationDescriptor) == kMobileConfigurationLeng
 // A distinct PID prevents host-side descriptor cache collisions with the
 // hardware-verified Phone Gamepad profile (0x4017).
 constexpr std::uint16_t kMobileTouchDeviceVid = 0xCAFE;
-constexpr std::uint16_t kMobileTouchDevicePid = 0x4018;
+// V6 changes the touchscreen report layout (Scan Time + real Contact Count).
+// Use a fresh PID so Android cannot reuse a cached V5 report descriptor.
+constexpr std::uint16_t kMobileTouchDevicePid = 0x4019;
 constexpr std::uint8_t kMobileTouchEndpointSize = 64;
 constexpr std::uint8_t kMobileTouchPollingIntervalMs = 1;
 constexpr std::uint8_t kMobileTouchContactCount = 10;
@@ -436,6 +438,21 @@ const std::uint8_t kMobileTouchReportDescriptor[] = {
     OAG_TOUCH_FINGER_DESCRIPTOR,
     OAG_TOUCH_FINGER_DESCRIPTOR,
     OAG_TOUCH_FINGER_DESCRIPTOR,
+
+    // Scan Time, 16-bit, units of 10^-4 seconds (100 us), matching the
+    // multitouch report shape used by mature HID touchscreen implementations.
+    0x09, 0x56,       // Usage (Scan Time)
+    0x15, 0x00,       // Logical Min 0
+    0x27, 0xFF, 0xFF, 0x00, 0x00, // Logical Max 65535
+    0x55, 0x0C,       // Unit Exponent -4
+    0x66, 0x01, 0x10, // Unit SI Linear, Seconds
+    0x75, 0x10,       // Report Size 16
+    0x95, 0x01,       // Report Count 1
+    0x81, 0x02,       // Input Data,Var,Abs
+
+    0x05, 0x0D,       // Usage Page (Digitizers)
+    0x55, 0x00,       // Unit Exponent 0
+    0x65, 0x00,       // Unit None
 
     0x09, 0x54,       // Usage (Contact Count)
     0x15, 0x00,
