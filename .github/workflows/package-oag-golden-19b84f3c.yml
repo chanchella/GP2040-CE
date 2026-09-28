@@ -97,8 +97,9 @@ jobs:
           ROOT="release/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_19b84f3c"
           SOURCE="${ROOT}/SOURCE"
           BUILD="${ROOT}/BUILD"
+          DEPS="${ROOT}/DEPENDENCIES"
 
-          mkdir -p "${SOURCE}" "${BUILD}"
+          mkdir -p "${SOURCE}" "${BUILD}" "${DEPS}/pico-sdk-ui5k"
 
           # Complete checked-out source tree including recursively populated
           # submodule working trees. Git administration metadata is excluded;
@@ -111,6 +112,20 @@ jobs:
             ./ "${SOURCE}/"
 
           cp /tmp/SUBMODULES.txt "${ROOT}/SUBMODULES.txt"
+
+          # Preserve the exact external Pico SDK source tree used for the
+          # hardware-verified build, including its recursively checked-out
+          # submodule contents, so the Golden archive is self-contained at
+          # the source/dependency level.
+          rsync -a \
+            --exclude='.git' \
+            pico-sdk-ui5k/ "${DEPS}/pico-sdk-ui5k/"
+
+          {
+            echo "PICO_SDK_COMMIT=98a542c1a62fb549ffb5d66a3e5892b06276b670"
+            echo "BTSTACK_COMMIT=075a0780f0fad7ff67d58ac19f46e8953656a752"
+            echo "CYW43_DRIVER_COMMIT=055d64274b014dd7b1c2fc94d26e8a18face7124"
+          } > "${ROOT}/PICO-SDK-REVISION.txt"
 
           UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)"
           ELF="$(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)"
@@ -202,6 +217,7 @@ jobs:
               GOLDEN-MANIFEST.txt \
               README-GOLDEN.txt \
               SUBMODULES.txt \
+              PICO-SDK-REVISION.txt \
               > SHA256SUMS.txt
           )
 
