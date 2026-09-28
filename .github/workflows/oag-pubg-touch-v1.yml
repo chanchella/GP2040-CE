@@ -1,0 +1,275 @@
+name: OAG PUBG Touch V1
+
+on:
+  push:
+    branches:
+      - chatgpt/pubg-touch-v1
+    paths:
+      - 'oag/firmware/src/main.cpp'
+      - 'oag/include/oag/output/touch/mobile_touch_mapper.h'
+      - 'oag/src/output/touch/mobile_touch_mapper.cpp'
+      - 'oag/tests/host/test_mobile_touch_mapper.cpp'
+      - '.github/workflows/oag-pubg-touch-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify isolated PUBG Touch V1 scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          GOLDEN="19b84f3c458384f75a44cc394da8269e49e57340"
+          TOUCH_BASE="5a087b4d062e7a123109d5d8d6abb6d32ec9e154"
+          GAME1_V3_BASE="17eb3105147191e4aa01bc8b630d5c59999d115f"
+          GAME1_V4_BASE="9e399f8ca6410bd0cb88f76c69d5bba8ce1b9d69"
+          GAME1_V5_BASE="85d8ea8bf4e7b040a27b283a38b04df4d79987e5"
+
+          test "$(git merge-base "${TOUCH_BASE}" HEAD)" = "${TOUCH_BASE}"
+          test "$(git rev-parse origin/golden/ui5k-oag-abo-gemi-ultra-gaming-v1)" = "${GOLDEN}"
+
+          ACTUAL="$(git diff --name-only "${GAME1_V5_BASE}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-pubg-touch-v1.yml' \
+            'oag/firmware/src/main.cpp' \
+            'oag/include/oag/output/touch/mobile_touch_mapper.h' \
+            'oag/src/output/touch/mobile_touch_mapper.cpp' \
+            'oag/tests/host/test_mobile_touch_mapper.cpp' | sort)"
+
+          echo "=== PUBG TOUCH V1 CHANGE SCOPE ==="
+          printf '%s\n' "${ACTUAL}"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          # V4/V5 touch transport and unrelated proven paths remain unchanged.
+          git diff --exit-code "${GAME1_V5_BASE}" HEAD -- \
+            oag/firmware/include/oag/firmware/mobile_touch_output.h \
+            oag/firmware/src/mobile_touch_output.cpp \
+            oag/firmware/src/usb_descriptors.cpp \
+            oag/firmware/tusb_config.h \
+            oag/firmware/src/mobile_touch_platform_driver.cpp \
+            oag/firmware/src/multi_profile_platform_driver.cpp \
+            oag/firmware/src/output_profile_selector.cpp \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/xinput_host.cpp \
+            oag/firmware/src/bluetooth_host_v2.cpp \
+            oag/src/protocol/hid/generic_hid_gamepad_driver.cpp
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          m = Path("oag/src/output/touch/mobile_touch_mapper.cpp").read_text()
+          t = Path("oag/tests/host/test_mobile_touch_mapper.cpp").read_text()
+          out_h = Path("oag/firmware/include/oag/firmware/mobile_touch_output.h").read_text()
+          out_cpp = Path("oag/firmware/src/mobile_touch_output.cpp").read_text()
+          mapper_h = Path("oag/include/oag/output/touch/mobile_touch_mapper.h").read_text()
+          main = Path("oag/firmware/src/main.cpp").read_text()
+
+          for token in [
+              "kPubgMouseLeftButton = 1ull << 63",
+              "kPubgTriangleShortButton = 1ull << 62",
+              "kPubgTriangleHoldButton = 1ull << 61",
+              "lookTouchX_ = 11302",
+              "lookTouchY_ = 26072",
+          ]:
+              assert token in mapper_h, token
+
+          for token in [
+              "kMouseLookMinX = 4096",
+              "kMouseLookMaxX = 18508",
+              "kMouseLookMinY = 22504",
+              "kMouseLookMaxY = 29639",
+              "kMouseLookMaxHorizontalStep = 984",
+              "kMouseLookMaxVerticalStep = 2184",
+              "kMouseLeftX = 16869",
+              "kMouseLeftY = 31451",
+              "kJumpX = 10407",
+              "kJumpY = 30600",
+              "kSquareX = 6372",
+              "kSquareY = 28542",
+              "kTriangleShortX = 2124",
+              "kTriangleShortY = 27663",
+              "kTriangleHoldX = 2427",
+              "kTriangleHoldY = 29420",
+              "kR1X = 20935",
+              "kR1Y = 6998",
+              "kL1X = 20935",
+              "kL1Y = 4803",
+              "kShareX = 3034",
+              "kShareY = 2950",
+              "kUpX = 12743",
+              "kDownX = 6372",
+              "kLeftX = 10316",
+              "kRightY = 7684",
+          ]:
+              assert token in m, token
+
+          for token in [
+              "kPubgKeySpaceUsage = 0x2C",
+              "kPubgKeyFUsage = 0x09",
+              "kPubgKeyCUsage = 0x06",
+              "kPubgKeyEUsage = 0x08",
+              "kPubgKeyQUsage = 0x14",
+              "kPubgKeyTabUsage = 0x2B",
+              "kPubgKeyWUsage = 0x1A",
+              "kPubgKeySUsage = 0x16",
+              "kPubgKeyAUsage = 0x04",
+              "kPubgKeyDUsage = 0x07",
+              "Mouse-right/middle/back/forward are deliberately ignored",
+              "kPubgTriangleTapUs = 50000",
+              "kPubgTriangleHoldThresholdUs = 100000",
+              "kPubgTriangleHoldPulseUs = 100000",
+              "servicePubgTriangleTiming",
+          ]:
+              assert token in main, token
+
+          for token in [
+              "assertPoint(mapper.map(mouseLeft), 1, 16869, 31451)",
+              "assertPoint(mapper.map(jump), 2, 10407, 30600)",
+              "assertPoint(mapper.map(square), 3, 6372, 28542)",
+              "assertPoint(mapper.map(triShort), 4, 2124, 27663)",
+              "assertPoint(mapper.map(triHold), 5, 2427, 29420)",
+              "assertPoint(mapper.map(r1), 6, 20935, 6998)",
+              "assertPoint(mapper.map(l1), 7, 20935, 4803)",
+              "assertPoint(mapper.map(share), 8, 3034, 2950)",
+              "assert(comboFrame.count == 5)",
+          ]:
+              assert token in t, token
+
+          # Keep the hardware-verified V4 explicit contact-up fix untouched.
+          for token in ["previousFrame_"]:
+              assert token in out_h, token
+
+          for token in [
+              "findContactById",
+              "explicit UP",
+              "next.contactCount = reportedContacts",
+              "previousFrame_ = frame",
+              "previousFrame_ = {}",
+          ]:
+              assert token in out_cpp, token
+
+          print("PUBG_TOUCH_V1_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Build and run all host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host             -DCMAKE_BUILD_TYPE=Release             -DOAG_BUILD_HOST_TESTS=ON
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact Golden Pico SDK
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Build Pico 2 W candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k"           cmake -S oag/firmware -B build/oag-fw             -DCMAKE_BUILD_TYPE=Release             -DPICO_BOARD=pico2_w             -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+
+          test "${#UF2[@]}" -eq 1
+          test "${#ELF[@]}" -eq 1
+          test "${#MAP[@]}" -eq 1
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+          cp "${UF2[0]}" "artifacts/OAG_PUBG_TOUCH_V1_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF[0]}" "artifacts/OAG_PUBG_TOUCH_V1_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP[0]}" "artifacts/OAG_PUBG_TOUCH_V1_${SHORT_SHA}_Pico2W.map"
+
+          sha256sum artifacts/OAG_PUBG_TOUCH_V1_* > artifacts/SHA256SUMS.txt
+
+          printf '%s\n' \
+            "GOLDEN_BASE=19b84f3c458384f75a44cc394da8269e49e57340" \
+            "TOUCH_BASE=5a087b4d062e7a123109d5d8d6abb6d32ec9e154" \
+            "PROFILE_0=PC_GOLDEN_UNCHANGED" \
+            "PROFILE_1=PHONE_GAMEPAD_GOLDEN_UNCHANGED" \
+            "PROFILE_7=PUBG_DIRECT_KEYBOARD_MOUSE_TOUCH_V1" \
+            "HOTKEY_TOUCH=F8+F9+7_HOLD_1.5_SECONDS" \
+            "TOUCH_VID_PID=CAFE:4018" \
+            "SCREENSHOT=1910x864" \
+            "ANDROID_NATURAL_TOUCH_SPACE=1080x2388" \
+            "CENTER_PROOF_POINTER=540,1194_TO_HID_16384,16384" \
+            "PUBG_KEYMAP=SPACE:X,F:SQUARE,C:TRIANGLE,E:R1,Q:L1,TAB:SHARE,WASD:DIRECTIONS" \
+            "PUBG_MOUSE_LEFT=POINTER_556_2292" \
+            "PUBG_MOUSE_RIGHT=UNMAPPED" \
+            "PUBG_MOUSE_LOOK_BOX_X=135..610" \
+            "PUBG_MOUSE_LOOK_BOX_Y=1640..2160" \
+            "PUBG_MOUSE_LOOK_SPEED=HALF_OF_V5" \
+            "PUBG_JUMP=POINTER_343_2230" \
+            "PUBG_SQUARE=POINTER_210_2080" \
+            "PUBG_TRIANGLE_TAP=POINTER_70_2016_50MS" \
+            "PUBG_TRIANGLE_HOLD=POINTER_80_2144_AFTER_100MS_FOR_100MS" \
+            "PUBG_R1=POINTER_690_510" \
+            "PUBG_L1=POINTER_690_350" \
+            "PUBG_SHARE=POINTER_100_215" \
+            "PUBG_UP=POINTER_420_466" \
+            "PUBG_DOWN=POINTER_210_466" \
+            "PUBG_LEFT=POINTER_340_380" \
+            "PUBG_RIGHT=POINTER_340_560" \
+            "TOUCH_RELEASE=EXPLICIT_SAME_CONTACT_ID_TIP_CLEAR_LAST_XY" \
+            "CONTACT_COUNT=TOTAL_CONTACTS_REPORTED_INCLUDING_RELEASE" \
+            > artifacts/BUILD-INFO.txt
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-PUBG-TOUCH-V1-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
