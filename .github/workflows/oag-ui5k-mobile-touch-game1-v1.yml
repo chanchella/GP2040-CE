@@ -160,7 +160,23 @@ jobs:
 
           sha256sum artifacts/OAG_UI5K_MOBILE_TOUCH_GAME1_V1_* > artifacts/SHA256SUMS.txt
 
-          printf '%s\n'             "GOLDEN_BASE=19b84f3c458384f75a44cc394da8269e49e57340"             "TOUCH_BASE=5a087b4d062e7a123109d5d8d6abb6d32ec9e154"             "PROFILE_7=GAME1_SCREENSHOT_CALIBRATED"             "SCREENSHOT=1910x864"             "PHONE_LANDSCAPE=2388x1080"             "DPAD_LEFT=3139,25903"             "R3=6107,25827"             "DPAD_RIGHT=8681,25941"             "CROSS_ATTACK=28547,26775"             "KEYBOARD_A_D=LEFT_RIGHT_VIA_LEFT_STICK"             "SPACE=CROSS_ATTACK"             "MOUSE_LEFT=ATTACK_VIA_RT"             > artifacts/BUILD-INFO.txt
+          printf '%s\n' \
+            "GOLDEN_BASE=19b84f3c458384f75a44cc394da8269e49e57340" \
+            "TOUCH_BASE=5a087b4d062e7a123109d5d8d6abb6d32ec9e154" \
+            "PROFILE_7=GAME1_SCREENSHOT_CALIBRATED" \
+            "SCREENSHOT=1910x864" \
+            "PHONE_LANDSCAPE=2388x1080" \
+            "DPAD_LEFT=3139,25903" \
+            "R3=6107,25827" \
+            "DPAD_RIGHT=8681,25941" \
+            "R2=28135,18394" \
+            "CROSS_X=30897,21010" \
+            "SQUARE=28272,26965" \
+            "KEYBOARD_A_D=LEFT_RIGHT_VIA_LEFT_STICK" \
+            "SPACE=CROSS_X" \
+            "Q=SQUARE" \
+            "MOUSE_LEFT=R2_VIA_RIGHT_TRIGGER" \
+            > artifacts/BUILD-INFO.txt
 
       - name: Upload candidate
         uses: actions/upload-artifact@v4.3.1
