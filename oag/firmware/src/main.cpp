@@ -1139,8 +1139,8 @@ private:
     static constexpr std::int32_t kEfootballComboRearmRy =
         -0x08000000;
     static constexpr std::uint64_t kEfootballOnePressUs = 90000ull;
-    static constexpr std::uint64_t kEfootballTravelDelayUs = 625000ull;
-    static constexpr std::uint64_t kEfootballTwoPressUs = 210000ull;
+    static constexpr std::uint64_t kEfootballTravelDelayUs = 400000ull;
+    static constexpr std::uint64_t kEfootballTwoPressUs = 150000ull;
 
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
@@ -1558,7 +1558,7 @@ private:
                 break;
 
             case EfootballComboPhase::TwoPress:
-                // "Two": RT + LB + Y for 210 ms.
+                // "Two": RT + LB + Y for 150 ms.
                 output.buttons |=
                     oag::ButtonLeftBumper |
                     oag::ButtonNorth;
