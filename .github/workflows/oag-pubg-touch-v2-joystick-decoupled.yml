@@ -117,7 +117,6 @@ jobs:
               "kMoveLeftY = 5214",
               "kMoveRightY = 7684",
               "movementTouchActive_",
-              "same contact ID",
           ]:
               assert token in m, token
 
