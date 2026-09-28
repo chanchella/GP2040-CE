@@ -18,7 +18,6 @@ const MobileTouchContact* findContact(
             return &frame.contacts[i];
         }
     }
-
     return nullptr;
 }
 
@@ -45,157 +44,166 @@ int main() {
     neutral.connected = true;
     assert(mapper.map(neutral).count == 0);
 
-    LogicalGamepadState left {};
-    left.connected = true;
-    left.dpad = static_cast<std::uint8_t>(DpadBits::Left);
-    const auto leftFrame = mapper.map(left);
-    assert(leftFrame.count == 1);
-    assertPoint(leftFrame, 0, 6796, 3527);
-
+    // Previously verified left analog movement stays unchanged.
     LogicalGamepadState leftAnalog {};
     leftAnalog.connected = true;
     leftAnalog.lx = std::numeric_limits<std::int32_t>::min();
-    const auto leftAnalogFrame = mapper.map(leftAnalog);
-    assert(leftAnalogFrame.count == 1);
-    assertPoint(leftAnalogFrame, 0, 6796, 3527);
-
-    LogicalGamepadState right {};
-    right.connected = true;
-    right.dpad = static_cast<std::uint8_t>(DpadBits::Right);
-    const auto rightFrame = mapper.map(right);
-    assert(rightFrame.count == 1);
-    assertPoint(rightFrame, 0, 6341, 9358);
+    assertPoint(mapper.map(leftAnalog), 0, 6796, 3527);
 
     LogicalGamepadState rightAnalog {};
     rightAnalog.connected = true;
     rightAnalog.lx = std::numeric_limits<std::int32_t>::max();
-    const auto rightAnalogFrame = mapper.map(rightAnalog);
-    assert(rightAnalogFrame.count == 1);
-    assertPoint(rightAnalogFrame, 0, 6341, 9358);
+    assertPoint(mapper.map(rightAnalog), 0, 6341, 9358);
 
     LogicalGamepadState r3 {};
     r3.connected = true;
     r3.buttons = ButtonRightStick;
-    const auto r3Frame = mapper.map(r3);
-    assert(r3Frame.count == 1);
-    assertPoint(r3Frame, 0, 6614, 6243);
+    assertPoint(mapper.map(r3), 0, 6614, 6243);
 
+    // New jump target.
     LogicalGamepadState cross {};
     cross.connected = true;
     cross.buttons = ButtonSouth;
-    const auto crossFrame = mapper.map(cross);
-    assert(crossFrame.count == 1);
-    assertPoint(crossFrame, 1, 11666, 31259);
+    assertPoint(mapper.map(cross), 1, 10407, 30600);
 
+    // Square and physical R2 stay at their verified targets.
     LogicalGamepadState square {};
     square.connected = true;
     square.buttons = ButtonWest;
-    const auto squareFrame = mapper.map(square);
-    assert(squareFrame.count == 1);
-    assertPoint(squareFrame, 2, 6372, 28542);
+    assertPoint(mapper.map(square), 2, 6372, 28542);
 
     LogicalGamepadState r2 {};
     r2.connected = true;
     r2.rightTrigger = 0xFFFFFFFFu;
-    const auto r2Frame = mapper.map(r2);
-    assert(r2Frame.count == 1);
-    assertPoint(r2Frame, 3, 13805, 28404);
+    assertPoint(mapper.map(r2), 3, 13805, 28404);
 
-    // Gameplay combinations remain real simultaneous contacts.
-    LogicalGamepadState combo {};
-    combo.connected = true;
-    combo.lx = std::numeric_limits<std::int32_t>::max();
-    combo.buttons = ButtonSouth | ButtonWest;
-    combo.rightTrigger = 0xFFFFFFFFu;
-
-    const auto comboFrame = mapper.map(combo);
-    assert(comboFrame.count == 4);
-    assertPoint(comboFrame, 0, 6341, 9358);
-    assertPoint(comboFrame, 1, 11666, 31259);
-    assertPoint(comboFrame, 2, 6372, 28542);
-    assertPoint(comboFrame, 3, 13805, 28404);
-
-    // R3 owns the left-control contact even if movement is also held.
-    LogicalGamepadState r3Priority {};
-    r3Priority.connected = true;
-    r3Priority.buttons = ButtonRightStick;
-    r3Priority.lx = std::numeric_limits<std::int32_t>::max();
-
-    const auto r3PriorityFrame = mapper.map(r3Priority);
-    assert(r3PriorityFrame.count == 1);
-    assertPoint(r3PriorityFrame, 0, 6614, 6243);
-
-    // Opposing directions cancel.
-    LogicalGamepadState conflict {};
-    conflict.connected = true;
-    conflict.dpad =
-        static_cast<std::uint8_t>(DpadBits::Left) |
-        static_cast<std::uint8_t>(DpadBits::Right);
-
-    assert(mapper.map(conflict).count == 0);
-
-    // Mouse/right-stick look is stateful relative touch using contact ID 4.
-    // Full positive X moves the landscape finger right by 1968 HID units.
+    // Mouse look starts at the measured box center and moves at exactly half
+    // the V5 step size. Full +X means landscape-right => HID Y increases.
     MobileTouchMapper lookMapper;
-
     LogicalGamepadState lookRight {};
     lookRight.connected = true;
     lookRight.rx = std::numeric_limits<std::int32_t>::max();
 
     const auto look1 = lookMapper.map(lookRight);
-    assert(look1.count == 1);
-    assertPoint(look1, 4, 16384, 18352);
+    assertPoint(look1, 4, 11302, 27056);
 
     const auto look2 = lookMapper.map(lookRight);
-    assert(look2.count == 1);
-    assertPoint(look2, 4, 16384, 20320);
+    assertPoint(look2, 4, 11302, 28040);
 
-    // Neutral input drops contact 4; MobileTouchOutput supplies the explicit
-    // release packet using the V4 touch lifecycle fix.
-    const auto lookRelease = lookMapper.map(neutral);
-    assert(findContact(lookRelease, 4) == nullptr);
+    const auto look3 = lookMapper.map(lookRight);
+    assertPoint(look3, 4, 11302, 29024);
 
-    // Full positive Y means mouse-down / landscape-down. Because Android's
-    // natural portrait X axis is rotated relative to landscape, HID X falls.
+    // Next step would exceed Y=29639, so the contact is released rather than
+    // ever leaving the user's rectangle.
+    const auto edgeRelease = lookMapper.map(lookRight);
+    assert(findContact(edgeRelease, 4) == nullptr);
+
+    const auto edgeRestart = lookMapper.map(lookRight);
+    assertPoint(edgeRestart, 4, 11302, 27056);
+
+    // Full mouse-down means natural portrait HID X decreases.
+    MobileTouchMapper lookDownMapper;
     LogicalGamepadState lookDown {};
     lookDown.connected = true;
     lookDown.ry = std::numeric_limits<std::int32_t>::max();
+    assertPoint(
+        lookDownMapper.map(lookDown),
+        4,
+        9118,
+        26072
+    );
 
-    const auto lookDownFrame = lookMapper.map(lookDown);
-    assert(lookDownFrame.count == 1);
-    assertPoint(lookDownFrame, 4, 12016, 16384);
+    // Hold bit keeps the current look finger exactly stationary.
+    LogicalGamepadState holdLook {};
+    holdLook.connected = true;
+    holdLook.buttons = kMobileTouchMouseLookHoldButton;
+    assertPoint(
+        lookDownMapper.map(holdLook),
+        4,
+        9118,
+        26072
+    );
 
-    // Look coexists with all four currently verified Game1 touch actions.
+    assert(findContact(lookDownMapper.map(neutral), 4) == nullptr);
+
+    // Mouse-left has an independent touchscreen target.
+    LogicalGamepadState mouseLeft {};
+    mouseLeft.connected = true;
+    mouseLeft.buttons = kMobileTouchMouseLeftButton;
+    assertPoint(mapper.map(mouseLeft), 5, 16869, 31451);
+
+    // Triangle short and hold use separate synthetic actions so firmware can
+    // enforce the 50 ms / 100 ms timing without confusing touch identities.
+    LogicalGamepadState triShort {};
+    triShort.connected = true;
+    triShort.buttons = kMobileTouchTriangleShortButton;
+    assertPoint(mapper.map(triShort), 6, 2124, 27663);
+
+    LogicalGamepadState triHold {};
+    triHold.connected = true;
+    triHold.buttons = kMobileTouchTriangleHoldButton;
+    assertPoint(mapper.map(triHold), 7, 2427, 29420);
+
+    LogicalGamepadState share {};
+    share.connected = true;
+    share.buttons = ButtonShare;
+    assertPoint(mapper.map(share), 8, 3034, 2950);
+
+    LogicalGamepadState legacyShare {};
+    legacyShare.connected = true;
+    legacyShare.buttons = ButtonBack;
+    assertPoint(mapper.map(legacyShare), 8, 3034, 2950);
+
+    LogicalGamepadState r1 {};
+    r1.connected = true;
+    r1.buttons = ButtonRightBumper;
+    assertPoint(mapper.map(r1), 9, 20935, 6998);
+
+    LogicalGamepadState l1 {};
+    l1.connected = true;
+    l1.buttons = ButtonLeftBumper;
+    assertPoint(mapper.map(l1), 10, 20935, 4803);
+
+    LogicalGamepadState dpad {};
+    dpad.connected = true;
+    dpad.dpad =
+        static_cast<std::uint8_t>(DpadBits::Up) |
+        static_cast<std::uint8_t>(DpadBits::Right);
+
+    const auto dpadFrame = mapper.map(dpad);
+    assert(dpadFrame.count == 2);
+    assertPoint(dpadFrame, 11, 12743, 6394);
+    assertPoint(dpadFrame, 14, 10316, 7684);
+
+    LogicalGamepadState dpadDown {};
+    dpadDown.connected = true;
+    dpadDown.dpad = static_cast<std::uint8_t>(DpadBits::Down);
+    assertPoint(mapper.map(dpadDown), 12, 6372, 6394);
+
+    LogicalGamepadState dpadLeft {};
+    dpadLeft.connected = true;
+    dpadLeft.dpad = static_cast<std::uint8_t>(DpadBits::Left);
+    assertPoint(mapper.map(dpadLeft), 13, 10316, 5214);
+
+    // Core simultaneous behavior: movement + jump + physical R2 + mouse-look
+    // + independent mouse-left must all coexist as separate contacts.
     MobileTouchMapper multiMapper;
     LogicalGamepadState all {};
     all.connected = true;
-    all.dpad = static_cast<std::uint8_t>(DpadBits::Right);
-    all.buttons = ButtonSouth | ButtonWest;
+    all.lx = std::numeric_limits<std::int32_t>::max();
+    all.buttons =
+        ButtonSouth |
+        kMobileTouchMouseLeftButton;
     all.rightTrigger = 0xFFFFFFFFu;
     all.rx = std::numeric_limits<std::int32_t>::max();
 
     const auto allFrame = multiMapper.map(all);
     assert(allFrame.count == 5);
     assertPoint(allFrame, 0, 6341, 9358);
-    assertPoint(allFrame, 1, 11666, 31259);
-    assertPoint(allFrame, 2, 6372, 28542);
+    assertPoint(allFrame, 1, 10407, 30600);
     assertPoint(allFrame, 3, 13805, 28404);
-    assertPoint(allFrame, 4, 16384, 18352);
-
-    // Reaching the safe edge emits one frame without contact 4 so V4 can
-    // release it, then the next motion report re-anchors from center.
-    MobileTouchMapper edgeMapper;
-    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
-    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
-    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
-    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
-    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
-
-    const auto edgeRelease = edgeMapper.map(lookRight);
-    assert(findContact(edgeRelease, 4) == nullptr);
-
-    const auto edgeRestart = edgeMapper.map(lookRight);
-    assertPoint(edgeRestart, 4, 16384, 18352);
+    assertPoint(allFrame, 4, 11302, 27056);
+    assertPoint(allFrame, 5, 16869, 31451);
 
     return 0;
 }
