@@ -7,7 +7,11 @@ on:
     paths:
       - 'oag/include/oag/protocol/hid/generic_hid_gamepad_driver.h'
       - 'oag/src/protocol/hid/generic_hid_gamepad_driver.cpp'
+      - 'oag/include/oag/device/usb_device_classifier.h'
+      - 'oag/src/device/usb_device_classifier.cpp'
+      - 'oag/firmware/src/main.cpp'
       - 'oag/tests/host/test_generic_hid_gamepad.cpp'
+      - 'oag/tests/host/test_usb_classifier_xgip.cpp'
       - '.github/workflows/oag-ui5k-generic-hid-family-v1.yml'
   workflow_dispatch:
 
@@ -41,9 +45,13 @@ jobs:
           ACTUAL="$(git diff --name-only "${BASE}" HEAD | sort)"
           EXPECTED="$(printf '%s\n' \
             '.github/workflows/oag-ui5k-generic-hid-family-v1.yml' \
+            'oag/firmware/src/main.cpp' \
+            'oag/include/oag/device/usb_device_classifier.h' \
             'oag/include/oag/protocol/hid/generic_hid_gamepad_driver.h' \
+            'oag/src/device/usb_device_classifier.cpp' \
             'oag/src/protocol/hid/generic_hid_gamepad_driver.cpp' \
-            'oag/tests/host/test_generic_hid_gamepad.cpp' | sort)"
+            'oag/tests/host/test_generic_hid_gamepad.cpp' \
+            'oag/tests/host/test_usb_classifier_xgip.cpp' | sort)"
 
           echo "=== GENERIC_HID_FAMILY_SCOPE ==="
           printf '%s\n' "${ACTUAL}"
@@ -51,7 +59,6 @@ jobs:
 
           # Hard lock everything that made PC/Phone/keyboard/mouse/hotkeys pass.
           git diff --exit-code "${BASE}" HEAD -- \
-            oag/firmware/src/main.cpp \
             oag/firmware/src/usb_descriptors.cpp \
             oag/firmware/tusb_config.h \
             oag/firmware/src/output_profile_selector.cpp \
@@ -73,13 +80,30 @@ jobs:
           assert "DragonRiseTwinShockFamily" in h
           assert "dragonRiseTwinShockFamilySignature" in cpp
 
-          # Family detection must be structural, not tied to one VID/PID.
+          # Family detection remains structural for rebadged controllers.
           assert "0x0079" not in cpp
           assert "0x0006" not in cpp
           assert "buttonCount == 12" in cpp
-          assert "eightBitAxisCount == 5" in cpp
-          assert "vendorOneBitFieldCount >= 8" in cpp
+          assert "axisXCount == 1" in cpp
+          assert "axisYCount == 1" in cpp
+          assert "axisZCount == 1" in cpp
+          assert "axisRxCount == 0" in cpp
+          assert "axisRyCount == 2" in cpp
+          assert "axisRzCount == 0" in cpp
           assert "buttonMask == 0x0FFFu" in cpp
+
+          classifier_h = Path("oag/include/oag/device/usb_device_classifier.h").read_text()
+          classifier = Path("oag/src/device/usb_device_classifier.cpp").read_text()
+          main = Path("oag/firmware/src/main.cpp").read_text()
+          classifier_test = Path("oag/tests/host/test_usb_classifier_xgip.cpp").read_text()
+
+          # Known hardware member is explicitly tagged so this exact GigaMax
+          # cannot miss normalization even if its raw descriptor variant differs.
+          assert "UsbQuirkDragonRiseTwinShockButtons = 1u << 6" in classifier_h
+          assert "probe.vid == 0x0079 && probe.pid == 0x0006" in classifier
+          assert "UsbQuirkDragonRiseTwinShockButtons" in classifier
+          assert "GenericHidButtonLayout::DragonRiseTwinShockFamily" in main
+          assert "gigamax.hasQuirk(UsbQuirkDragonRiseTwinShockButtons)" in classifier_test
 
           # Exact face normalization derived from the hardware observation:
           # raw 1=N, 2=E, 3=S, 4=W; 5..12 stay on existing legacy path.
