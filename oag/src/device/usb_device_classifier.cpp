@@ -130,9 +130,14 @@ UsbDeviceClassification UsbDeviceClassifier::classify(
     }
 
     if (probe.vid == 0x0079 && probe.pid == 0x0006) {
-        return match(ProtocolKind::HidGamepad, UsbDriverFamily::Hid,
-                     UsbDeviceProfile::GigaMax00790006,
-                     UsbQuirkForceHidGamepad | UsbQuirkZRzAsRightStick);
+        return match(
+            ProtocolKind::HidGamepad,
+            UsbDriverFamily::Hid,
+            UsbDeviceProfile::GigaMax00790006,
+            UsbQuirkForceHidGamepad |
+            UsbQuirkZRzAsRightStick |
+            UsbQuirkDragonRiseTwinShockButtons
+        );
     }
 
     if (probe.vid == 0x20BC && probe.pid == 0x0055) {
