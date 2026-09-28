@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 #include "pico/stdlib.h"
@@ -70,6 +72,40 @@ static constexpr std::uint8_t kXoneLedOn[] = {
 static constexpr std::uint8_t kXoneAuthDone[] = {
     0x06, 0x20, 0x00, 0x02, 0x01, 0x00
 };
+
+// Profile 7 only: preserve RAW relative mouse speed in the existing rx/ry
+// logical axes without changing the proven PC/Phone keyboard-mouse mapping.
+// +/-48 counts per HID mouse report maps to full scale; smaller deltas remain
+// proportional, so the touch mapper can reproduce a fast, natural-feeling
+// relative finger drag instead of the old "any motion = full stick" behavior.
+static std::int32_t encodeTouchMouseDelta(std::int32_t delta) {
+    static constexpr std::int64_t kMaxCounts = 48;
+
+    const std::int64_t clamped =
+        std::clamp<std::int64_t>(
+            static_cast<std::int64_t>(delta),
+            -kMaxCounts,
+            kMaxCounts
+        );
+
+    if (clamped <= -kMaxCounts) {
+        return std::numeric_limits<std::int32_t>::min();
+    }
+
+    if (clamped >= kMaxCounts) {
+        return std::numeric_limits<std::int32_t>::max();
+    }
+
+    return static_cast<std::int32_t>(
+        (
+            clamped *
+            static_cast<std::int64_t>(
+                std::numeric_limits<std::int32_t>::max()
+            )
+        ) /
+        kMaxCounts
+    );
+}
 
 class FirmwareCore final
     : public oag::firmware::BluetoothHostV2Observer {
@@ -1842,15 +1878,30 @@ private:
 
         consumeOutputProfileChord(keyboard);
 
+        // Keep the historical mouse->right-stick curve byte-for-byte for
+        // PC/Phone controller mode. In Mobile Touch, do not run mouse motion
+        // through that curve because it intentionally saturates tiny deltas.
+        // Instead, encode the raw relative delta linearly below and let the
+        // touch mapper turn it into a real moving finger.
+        const oag::MouseMotion mappedMouseMotion =
+            !touchProfile && mouseAimActive_
+                ? currentMouseMotion_
+                : oag::MouseMotion {};
+
         oag::LogicalGamepadState output =
             keyboardMouse_.apply(
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
-                mouseAimActive_
-                    ? currentMouseMotion_
-                    : oag::MouseMotion {},
+                mappedMouseMotion,
                 basePrimaryOutput()
             );
+
+        if (touchProfile && mouseAimActive_) {
+            output.rx =
+                encodeTouchMouseDelta(currentMouseMotion_.dx);
+            output.ry =
+                encodeTouchMouseDelta(currentMouseMotion_.dy);
+        }
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
             platformOutput_.submit(
