@@ -23,6 +23,32 @@ void writeLe16(
 int main() {
     UsbDeviceClassifier classifier;
 
+    // Protocol-aware USB routing contract:
+    // Standard HID / DirectInput must route to the HID gamepad driver.
+    const UsbDeviceClassification directInput = classifier.classify({
+        0x1234, 0x5678, 0x03, 0x00, 0x00, 1
+    });
+    assert(directInput.recognized);
+    assert(directInput.protocol == ProtocolKind::HidGamepad);
+    assert(directInput.driver == UsbDriverFamily::Hid);
+
+    // Xbox 360/XInput-style vendor interface must bypass generic HID and
+    // route to the XInput driver.
+    const UsbDeviceClassification xinputProtocol01 = classifier.classify({
+        0x9999, 0x1111, 0xFF, 0x5D, 0x01, 2
+    });
+    assert(xinputProtocol01.recognized);
+    assert(xinputProtocol01.protocol == ProtocolKind::XusbXbox360);
+    assert(xinputProtocol01.driver == UsbDriverFamily::Xinput);
+
+    // Wireless-receiver companion protocol is part of the same XUSB family.
+    const UsbDeviceClassification xinputProtocol81 = classifier.classify({
+        0x9999, 0x1112, 0xFF, 0x5D, 0x81, 2
+    });
+    assert(xinputProtocol81.recognized);
+    assert(xinputProtocol81.protocol == ProtocolKind::XusbXbox360);
+    assert(xinputProtocol81.driver == UsbDriverFamily::Xinput);
+
     const UsbDeviceClassification g808 = classifier.classify({
         0x2563, 0x0575, 0x03, 0x00, 0x00, 2
     });
