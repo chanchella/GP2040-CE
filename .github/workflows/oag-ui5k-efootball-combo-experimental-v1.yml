@@ -1,0 +1,183 @@
+name: OAG UI5K eFootball Combo Experimental V1
+
+on:
+  push:
+    branches:
+      - chatgpt/ui5k-efootball-combo-experimental-v1
+    paths:
+      - 'oag/firmware/src/main.cpp'
+      - '.github/workflows/oag-ui5k-efootball-combo-experimental-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact Golden baseline and experimental scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="19b84f3c458384f75a44cc394da8269e49e57340"
+
+          test "$(git merge-base "${BASE}" HEAD)" = "${BASE}"
+
+          ACTUAL="$(git diff --name-only "${BASE}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-ui5k-efootball-combo-experimental-v1.yml' \
+            'oag/firmware/src/main.cpp' | sort)"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          base = "19b84f3c458384f75a44cc394da8269e49e57340"
+          p = Path("oag/firmware/src/main.cpp")
+          text = p.read_text()
+
+          required = [
+              "EfootballComboPhase",
+              "kEfootballOnePressUs = 90000ull",
+              "kEfootballTravelDelayUs = 625000ull",
+              "kEfootballTwoPressUs = 210000ull",
+              "oag::ButtonLeftBumper |",
+              "oag::ButtonSouth",
+              "oag::ButtonNorth",
+              "std::numeric_limits<std::uint32_t>::max()",
+              "serviceEfootballComboTimer();",
+              "applyEfootballCombo(physicalPrimary)",
+          ]
+          for token in required:
+              assert token in text, token
+
+          diff = subprocess.check_output(
+              ["git", "diff", base, "HEAD", "--", str(p)],
+              text=True,
+          )
+
+          added = [
+              line[1:]
+              for line in diff.splitlines()
+              if line.startswith("+") and not line.startswith("+++")
+          ]
+
+          assert not any("delay(" in line for line in added), "blocking delay() added"
+          assert "updateEfootballComboTrigger(" in text
+          assert "physicalPrimary.ry <= kEfootballComboTriggerRy" in text
+          assert "if (output.ry < 0)" in text
+          assert "output.ry = 0;" in text
+
+          print("EFOOTBALL_COMBO_STATIC_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build and run host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact UI5K Pico SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned SDK generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Configure and build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k" \
+          cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package experimental candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+
+          test "${#UF2[@]}" -eq 1
+          test "${#ELF[@]}" -eq 1
+          test "${#MAP[@]}" -eq 1
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+          cp "${UF2[0]}" "artifacts/OAG_UI5K_EFOOTBALL_COMBO_EXP_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF[0]}" "artifacts/OAG_UI5K_EFOOTBALL_COMBO_EXP_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP[0]}" "artifacts/OAG_UI5K_EFOOTBALL_COMBO_EXP_${SHORT_SHA}_Pico2W.map"
+
+          sha256sum artifacts/OAG_UI5K_EFOOTBALL_COMBO_EXP_* > artifacts/SHA256SUMS.txt
+
+          printf '%s\n' \
+            "BASELINE=19b84f3c458384f75a44cc394da8269e49e57340" \
+            "BRANCH=chatgpt/ui5k-efootball-combo-experimental-v1" \
+            "TRIGGER=RIGHT_STICK_UP_IMMEDIATE_NO_HOLD" \
+            "RIGHT_STICK_UP=SUPPRESSED_FROM_TRIGGER_FRAME_UNTIL_REARM" \
+            "ONE=LB+A_90MS" \
+            "TRAVEL_WAIT=625MS" \
+            "TWO=RT+LB+Y_210MS" \
+            "LEFT_STICK=UNMODIFIED" \
+            "BLOCKING_DELAY=NONE" \
+            > artifacts/BUILD-INFO.txt
+
+      - name: Upload experimental candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-UI5K-EFOOTBALL-COMBO-EXP-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
