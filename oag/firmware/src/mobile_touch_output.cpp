@@ -9,19 +9,6 @@
 namespace oag::firmware {
 namespace {
 
-const oag::MobileTouchContact* findContactById(
-    const oag::MobileTouchFrame& frame,
-    std::uint8_t id
-) {
-    for (std::uint8_t i = 0; i < frame.count; ++i) {
-        if (frame.contacts[i].id == id) {
-            return &frame.contacts[i];
-        }
-    }
-
-    return nullptr;
-}
-
 void appendFrameContact(
     oag::MobileTouchFrame& frame,
     const oag::MobileTouchContact& contact
@@ -56,6 +43,72 @@ bool MobileTouchOutput::framesEqual(
     return true;
 }
 
+const oag::MobileTouchContact*
+MobileTouchOutput::findContactById(
+    const oag::MobileTouchFrame& frame,
+    std::uint8_t id
+) {
+    for (std::uint8_t i = 0; i < frame.count; ++i) {
+        if (frame.contacts[i].id == id) {
+            return &frame.contacts[i];
+        }
+    }
+
+    return nullptr;
+}
+
+bool MobileTouchOutput::releaseFenceActive(
+    std::uint8_t id
+) const {
+    return
+        id < releaseFences_.size() &&
+        releaseFences_[id].active;
+}
+
+bool MobileTouchOutput::anyReleaseFenceActive() const {
+    for (const ReleaseFence& fence : releaseFences_) {
+        if (fence.active) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::uint8_t MobileTouchOutput::releaseFenceCount() const {
+    std::uint8_t count = 0;
+
+    for (const ReleaseFence& fence : releaseFences_) {
+        if (fence.active) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+void MobileTouchOutput::startReleaseFence(
+    const oag::MobileTouchContact& contact
+) {
+    if (contact.id >= releaseFences_.size()) {
+        return;
+    }
+
+    ReleaseFence& fence = releaseFences_[contact.id];
+
+    if (fence.active) {
+        return;
+    }
+
+    fence.active = true;
+    fence.contact = contact;
+    fence.remainingReports = kReleaseRepeatReports;
+
+    // If this release eventually leaves the entire surface empty, follow it
+    // with explicit all-zero sync reports.
+    zeroSyncArmed_ = true;
+}
+
 void MobileTouchOutput::task() {
     pump();
 }
@@ -76,33 +129,44 @@ bool MobileTouchOutput::send(
 
 bool MobileTouchOutput::sendNeutral() {
     // Run the mapper through a disconnected state too, so its stateful camera
-    // and movement gesture machines are reset together with the USB contacts.
+    // and movement gesture machines reset with the USB touch lifecycle.
     desiredFrame_ = mapper_.map(LogicalGamepadState {});
     pump();
     return true;
 }
 
+void MobileTouchOutput::prepareZeroSyncReport() {
+    report_ = {};
+    pendingTargetFrame_ = {};
+    pendingReleaseMask_ = 0;
+    pendingIsZeroSync_ = true;
+    pending_ = true;
+}
+
 void MobileTouchOutput::preparePendingTransition() {
     report_ = {};
     pendingTargetFrame_ = {};
+    pendingReleaseMask_ = 0;
+    pendingIsZeroSync_ = false;
 
-    std::uint8_t releaseCount = 0;
-
+    // First detect every active contact that disappeared from the desired
+    // frame and convert it into a durable release fence.
     for (std::uint8_t i = 0; i < committedFrame_.count; ++i) {
+        const oag::MobileTouchContact& previous =
+            committedFrame_.contacts[i];
+
         if (
             findContactById(
                 desiredFrame_,
-                committedFrame_.contacts[i].id
+                previous.id
             ) == nullptr
         ) {
-            ++releaseCount;
+            startReleaseFence(previous);
         }
     }
 
-    const bool needsBridge =
-        static_cast<std::size_t>(desiredFrame_.count) +
-            static_cast<std::size_t>(releaseCount) >
-        kMaxContacts;
+    const std::uint8_t fenceCount =
+        releaseFenceCount();
 
     std::uint8_t reportedContacts = 0;
 
@@ -112,7 +176,7 @@ void MobileTouchOutput::preparePendingTransition() {
             const oag::MobileTouchContact& contact
         ) {
             if (reportedContacts >= report_.contacts.size()) {
-                return;
+                return false;
             }
 
             ContactReport& out =
@@ -122,109 +186,163 @@ void MobileTouchOutput::preparePendingTransition() {
             out.id = contact.id;
             out.x = contact.x;
             out.y = contact.y;
+            return true;
         };
 
-    if (!needsBridge) {
-        // Normal single-packet transition: all desired active contacts first,
-        // then explicit UP entries for contacts that disappeared.
-        for (
-            std::uint8_t i = 0;
-            i < desiredFrame_.count;
-            ++i
-        ) {
-            appendReportContact(
-                0x03u, // Tip Switch + In Range.
-                desiredFrame_.contacts[i]
-            );
+    // Release fences have absolute priority. A newly requested contact can be
+    // delayed for a few milliseconds, but an UP must never be dropped.
+    //
+    // Continuing contacts from committedFrame_ are also protected: fences
+    // plus continuing contacts can never exceed the previous <=10-contact
+    // frame. New contacts are admitted only into the remaining capacity.
+    for (std::uint8_t i = 0; i < desiredFrame_.count; ++i) {
+        const oag::MobileTouchContact& current =
+            desiredFrame_.contacts[i];
+
+        if (releaseFenceActive(current.id)) {
+            continue;
         }
 
-        for (
-            std::uint8_t i = 0;
-            i < committedFrame_.count;
-            ++i
+        if (
+            findContactById(
+                committedFrame_,
+                current.id
+            ) == nullptr
         ) {
-            const oag::MobileTouchContact& previous =
-                committedFrame_.contacts[i];
-
-            if (
-                findContactById(
-                    desiredFrame_,
-                    previous.id
-                ) != nullptr
-            ) {
-                continue;
-            }
-
-            appendReportContact(
-                0x00u, // Explicit UP for the same Contact ID.
-                previous
-            );
+            continue;
         }
 
-        pendingTargetFrame_ = desiredFrame_;
-    } else {
-        // At most ten finger collections exist in one HID report. If a frame
-        // change would need >10 active+release entries, never drop an UP.
-        //
-        // Bridge packet:
-        //   1) keep only contacts that exist in BOTH old and new states,
-        //   2) explicitly release every old contact that disappeared,
-        //   3) delay brand-new contacts until the following packet.
-        //
-        // common + released == committedFrame_.count <= 10, so every release
-        // is guaranteed to fit and Android can never be left with a lost UP.
-        for (
-            std::uint8_t i = 0;
-            i < desiredFrame_.count;
-            ++i
-        ) {
-            const oag::MobileTouchContact& current =
-                desiredFrame_.contacts[i];
-
-            if (
-                findContactById(
-                    committedFrame_,
-                    current.id
-                ) == nullptr
-            ) {
-                continue;
-            }
-
-            appendReportContact(0x03u, current);
+        if (appendReportContact(0x03u, current)) {
             appendFrameContact(
                 pendingTargetFrame_,
                 current
             );
         }
+    }
 
-        for (
-            std::uint8_t i = 0;
-            i < committedFrame_.count;
-            ++i
+    for (std::uint8_t id = 0; id < releaseFences_.size(); ++id) {
+        const ReleaseFence& fence =
+            releaseFences_[id];
+
+        if (!fence.active) {
+            continue;
+        }
+
+        if (
+            appendReportContact(
+                0x00u,
+                fence.contact
+            )
         ) {
-            const oag::MobileTouchContact& previous =
-                committedFrame_.contacts[i];
-
-            if (
-                findContactById(
-                    desiredFrame_,
-                    previous.id
-                ) != nullptr
-            ) {
-                continue;
-            }
-
-            appendReportContact(0x00u, previous);
+            pendingReleaseMask_ |=
+                static_cast<std::uint16_t>(
+                    1u << id
+                );
         }
     }
+
+    // Remaining slots can take brand-new contacts whose IDs are not in a
+    // release fence. This is what prevents immediate Contact ID reuse from
+    // resurrecting a stale Android finger.
+    for (std::uint8_t i = 0; i < desiredFrame_.count; ++i) {
+        const oag::MobileTouchContact& current =
+            desiredFrame_.contacts[i];
+
+        if (releaseFenceActive(current.id)) {
+            continue;
+        }
+
+        if (
+            findContactById(
+                committedFrame_,
+                current.id
+            ) != nullptr
+        ) {
+            continue;
+        }
+
+        if (reportedContacts >= kMaxContacts) {
+            break;
+        }
+
+        if (appendReportContact(0x03u, current)) {
+            appendFrameContact(
+                pendingTargetFrame_,
+                current
+            );
+        }
+    }
+
+    // Defensive invariant: all active release fences should fit because the
+    // number of fences can never exceed the last committed <=10 contacts.
+    // If this is ever violated, preserve already-added UP entries and delay
+    // everything else rather than fabricate state.
+    (void)fenceCount;
 
     report_.contactCount = reportedContacts;
     pending_ = true;
 }
 
+void MobileTouchOutput::commitAcceptedReport() {
+    committedFrame_ = pendingTargetFrame_;
+
+    if (pendingIsZeroSync_) {
+        if (zeroSyncRemaining_ > 0) {
+            --zeroSyncRemaining_;
+        }
+
+        pendingIsZeroSync_ = false;
+    }
+
+    const std::uint16_t releaseMask =
+        pendingReleaseMask_;
+
+    pendingReleaseMask_ = 0;
+
+    for (std::uint8_t id = 0; id < releaseFences_.size(); ++id) {
+        if (
+            (releaseMask & static_cast<std::uint16_t>(1u << id)) == 0
+        ) {
+            continue;
+        }
+
+        ReleaseFence& fence =
+            releaseFences_[id];
+
+        if (!fence.active) {
+            continue;
+        }
+
+        if (fence.remainingReports > 0) {
+            --fence.remainingReports;
+        }
+
+        if (fence.remainingReports == 0) {
+            fence = {};
+        }
+    }
+
+    // Only when the entire logical surface is truly empty do we emit the
+    // post-release zero synchronization fence. Do not interrupt other active
+    // fingers merely because one button was released.
+    if (
+        zeroSyncArmed_ &&
+        !anyReleaseFenceActive() &&
+        committedFrame_.count == 0 &&
+        desiredFrame_.count == 0 &&
+        zeroSyncRemaining_ == 0
+    ) {
+        zeroSyncRemaining_ = kZeroSyncReports;
+        zeroSyncArmed_ = false;
+    }
+
+    lastAcceptedReportUs_ = time_us_64();
+}
+
 bool MobileTouchOutput::pump() {
-    // First preserve any already-built transition. It must never be
-    // overwritten by a newer input state while endpoint 0x81 is busy.
+    // Never overwrite an unsent report. A newer logical state can update
+    // desiredFrame_, but the exact pending DOWN/UP packet must reach TinyUSB
+    // before another transition is constructed.
     if (pending_) {
         if (!tud_hid_n_ready(0)) {
             return false;
@@ -239,21 +357,32 @@ bool MobileTouchOutput::pump() {
             return false;
         }
 
-        committedFrame_ = pendingTargetFrame_;
         pending_ = false;
-        lastAcceptedReportUs_ = time_us_64();
+        commitAcceptedReport();
     }
 
-    if (framesEqual(committedFrame_, desiredFrame_)) {
-        if (desiredFrame_.count == 0) {
-            return true;
+    // Repeated release fences outrank everything else. Each accepted packet
+    // repeats Tip=0 for the same Contact ID and last X/Y, while unrelated
+    // active contacts continue normally.
+    if (anyReleaseFenceActive()) {
+        preparePendingTransition();
+    } else if (zeroSyncRemaining_ > 0) {
+        // All fingers are already released. Send explicit empty reports before
+        // any future ID reuse only while the desired surface remains empty.
+        if (
+            desiredFrame_.count == 0 &&
+            committedFrame_.count == 0
+        ) {
+            prepareZeroSyncReport();
+        } else {
+            zeroSyncRemaining_ = 0;
         }
-
+    } else if (!framesEqual(committedFrame_, desiredFrame_)) {
+        preparePendingTransition();
+    } else if (desiredFrame_.count > 0) {
         const std::uint64_t nowUs = time_us_64();
 
-        // Android/Linux multitouch expects active contacts to be refreshed
-        // continuously. Keep every active touch alive at 125 Hz so a held
-        // WASD/button contact cannot be aged out by the host as "sticky".
+        // Keep active contacts alive at 125 Hz.
         if (
             lastAcceptedReportUs_ != 0 &&
             nowUs - lastAcceptedReportUs_ < kActiveHeartbeatUs
@@ -263,7 +392,11 @@ bool MobileTouchOutput::pump() {
 
         preparePendingTransition();
     } else {
-        preparePendingTransition();
+        return true;
+    }
+
+    if (!pending_) {
+        return true;
     }
 
     if (!tud_hid_n_ready(0)) {
@@ -279,13 +412,8 @@ bool MobileTouchOutput::pump() {
         return false;
     }
 
-    committedFrame_ = pendingTargetFrame_;
     pending_ = false;
-    lastAcceptedReportUs_ = time_us_64();
-
-    // If a bridge packet was required, desiredFrame_ still differs from the
-    // newly committed intermediary frame. The next poll will enqueue the new
-    // contacts after all releases are safely committed.
+    commitAcceptedReport();
     return true;
 }
 
