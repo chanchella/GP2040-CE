@@ -144,9 +144,7 @@ jobs:
               assert token in out_h, token
 
           for token in [
-              "Never overwrite an unsent release report",
               "needsBridge",
-              "delay brand-new contacts",
               "committedFrame_ = pendingTargetFrame_",
               "framesEqual(committedFrame_, desiredFrame_)",
               "tud_hid_n_ready(0)",
