@@ -231,6 +231,150 @@ int main() {
     assert(recoveredVendor.fieldCount >= 12);
 
 
+    // DragonRise / PC-Twin-Shock family signature.
+    //
+    // This is intentionally identified by report structure rather than by
+    // VID/PID: 5 unsigned 8-bit axes, 4-bit hat, 12 one-bit buttons and an
+    // 8-bit vendor-defined input bitmap in the same joystick collection.
+    // That lets equivalent rebadged/generic controllers receive the same
+    // normalization without changing unrelated DirectInput devices.
+    const std::uint8_t twinShockFamilyDescriptor[] = {
+        0x05, 0x01,       // Generic Desktop
+        0x09, 0x04,       // Joystick
+        0xA1, 0x01,       // Application
+        0xA1, 0x02,       // Logical
+
+        0x75, 0x08,
+        0x95, 0x05,
+        0x15, 0x00,
+        0x26, 0xFF, 0x00,
+        0x09, 0x30,       // X
+        0x09, 0x33,       // Rx
+        0x09, 0x32,       // Z
+        0x09, 0x31,       // Y
+        0x09, 0x34,       // Ry
+        0x81, 0x02,
+
+        0x75, 0x04,
+        0x95, 0x01,
+        0x15, 0x00,
+        0x25, 0x07,
+        0x09, 0x39,       // Hat
+        0x81, 0x42,
+
+        0x75, 0x01,
+        0x95, 0x0C,
+        0x15, 0x00,
+        0x25, 0x01,
+        0x05, 0x09,
+        0x19, 0x01,
+        0x29, 0x0C,
+        0x81, 0x02,
+
+        0x06, 0x00, 0xFF,
+        0x75, 0x01,
+        0x95, 0x08,
+        0x15, 0x00,
+        0x25, 0x01,
+        0x09, 0x01,
+        0x81, 0x02,
+
+        0xC0,
+        0xC0
+    };
+
+    GenericHidGamepadDescriptor twinShockParsed {};
+    assert(driver.parseDescriptor(
+        twinShockFamilyDescriptor,
+        sizeof(twinShockFamilyDescriptor),
+        quirks,
+        twinShockParsed
+    ));
+
+    // Raw usage 3 is the physical South/Cross button on this family.
+    const std::uint8_t twinShockSouth[] = {
+        0x80, 0x80, 0x80, 0x80, 0x80,
+        0x4F, // neutral hat (0xF) + usage 3
+        0x00,
+        0x00
+    };
+
+    UniversalGamepadState twinShockState {};
+    assert(driver.parseReport(
+        DeviceId {6, 1},
+        twinShockParsed,
+        quirks,
+        twinShockSouth,
+        sizeof(twinShockSouth),
+        320000,
+        twinShockState
+    ));
+    assert((twinShockState.buttons & ButtonSouth) != 0);
+    assert((twinShockState.buttons & ButtonWest) == 0);
+
+    // Raw usage 1 is physical North/Triangle.
+    const std::uint8_t twinShockNorth[] = {
+        0x80, 0x80, 0x80, 0x80, 0x80,
+        0x1F,
+        0x00,
+        0x00
+    };
+
+    assert(driver.parseReport(
+        DeviceId {6, 1},
+        twinShockParsed,
+        quirks,
+        twinShockNorth,
+        sizeof(twinShockNorth),
+        320100,
+        twinShockState
+    ));
+    assert((twinShockState.buttons & ButtonNorth) != 0);
+    assert((twinShockState.buttons & ButtonSouth) == 0);
+
+    // Raw usage 4 is physical West/Square.
+    const std::uint8_t twinShockWest[] = {
+        0x80, 0x80, 0x80, 0x80, 0x80,
+        0x8F,
+        0x00,
+        0x00
+    };
+
+    assert(driver.parseReport(
+        DeviceId {6, 1},
+        twinShockParsed,
+        quirks,
+        twinShockWest,
+        sizeof(twinShockWest),
+        320200,
+        twinShockState
+    ));
+    assert((twinShockState.buttons & ButtonWest) != 0);
+    assert((twinShockState.buttons & ButtonNorth) == 0);
+
+    // Raw usage 2 remains physical East/Circle.
+    const std::uint8_t twinShockEast[] = {
+        0x80, 0x80, 0x80, 0x80, 0x80,
+        0x2F,
+        0x00,
+        0x00
+    };
+
+    assert(driver.parseReport(
+        DeviceId {6, 1},
+        twinShockParsed,
+        quirks,
+        twinShockEast,
+        sizeof(twinShockEast),
+        320300,
+        twinShockState
+    ));
+    assert((twinShockState.buttons & ButtonEast) != 0);
+    assert((twinShockState.buttons & ButtonWest) == 0);
+
+    // Existing generic descriptors must NOT accidentally inherit this family
+    // mapping. The original generic test above still maps usage 1 to South.
+
     GenericHidGamepadQuirks sonyQuirks {};
     sonyQuirks.buttonLayout =
         GenericHidButtonLayout::SonyPlayStation;
