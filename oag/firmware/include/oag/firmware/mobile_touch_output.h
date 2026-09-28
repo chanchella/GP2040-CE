@@ -24,18 +24,25 @@ public:
     bool sendNeutral();
 
 private:
-    // USB polls at 1 ms. A 4 ms authoritative snapshot cadence is fast enough
-    // for controls while leaving margin for the rest of the firmware.
+    // 250 Hz keeps active contacts refreshed well above common display/input
+    // refresh rates while leaving headroom for the rest of the firmware.
     static constexpr std::uint64_t kSnapshotPeriodUs = 4000;
 
-    // A physical Contact ID is not allowed to become DOWN again until this
-    // many successfully accepted full snapshots have explicitly carried it as
-    // Tip=0/InRange=0. This is acceptance-count based, not time based, so USB
-    // backpressure can never silently consume the release barrier.
-    static constexpr std::uint8_t kReleaseSnapshots = 8;
+    // U2HTS-style release semantics: a released Contact ID remains present
+    // briefly with Tip=0/InRange=0, then disappears from subsequent reports.
+    // Multiple accepted reports add resilience without creating a long
+    // re-press delay.
+    static constexpr std::uint8_t kReleaseSnapshots = 3;
+
+    // Linux hid-multitouch has a 100 ms "sticky fingers" recovery concept.
+    // Here the same threshold is used only for a device-side USB transport
+    // stall: if active contacts cannot be delivered for this long, force an
+    // all-UP recovery before allowing touches to become active again.
+    static constexpr std::uint64_t kTransportStallUs = 100000;
+    static constexpr std::uint8_t kRecoveryReleaseSnapshots = 4;
 
     // IDs 0,1,2 are permanently reserved for camera, movement and fire.
-    // Remaining mapper actions are leased onto IDs 3..9.
+    // Remaining mapper actions are leased onto stable USB Contact IDs 3..9.
     static constexpr std::uint8_t kPinnedContactCount = 3;
 
     struct __attribute__((packed)) ContactReport {
@@ -47,12 +54,11 @@ private:
 
     struct __attribute__((packed)) Report {
         std::array<ContactReport, kMaxContacts> contacts {};
+        std::uint16_t scanTime = 0;
         std::uint8_t contactCount = 0;
     };
 
     struct PhysicalSlot {
-        // Mapper/logical Contact ID currently owned by this physical ID.
-        // Pinned physical IDs 0..2 always own the same logical ID.
         std::int16_t logicalId = -1;
         bool active = false;
         std::uint16_t x = 0;
@@ -61,7 +67,7 @@ private:
     };
 
     static_assert(sizeof(ContactReport) == 6);
-    static_assert(sizeof(Report) == 61);
+    static_assert(sizeof(Report) == 63);
     static_assert(kMaxContacts == 10);
 
     static const oag::MobileTouchContact* findDesiredByLogicalId(
@@ -70,22 +76,26 @@ private:
     );
 
     bool logicalIdOwned(std::uint8_t logicalId) const;
+    bool hasActiveContacts() const;
+    bool hasPendingRelease() const;
+
+    void initializeSlots();
     void reconcileDesiredState();
-    void buildAuthoritativeReport();
-    void commitAcceptedSnapshot();
+    void enterTransportRecovery();
+    void buildReport(std::uint64_t nowUs);
+    void commitAcceptedSnapshot(std::uint64_t nowUs);
     bool pump(bool forceImmediate);
 
     oag::MobileTouchMapper mapper_ {};
     oag::MobileTouchFrame desiredFrame_ {};
 
-    // report slot index == USB Contact Identifier, permanently. This prevents
-    // a logical finger from jumping between HID Finger collections when other
-    // fingers appear/disappear.
     std::array<PhysicalSlot, kMaxContacts> slots_ {};
 
     Report report_ {};
     std::uint64_t nextSnapshotUs_ = 0;
+    std::uint64_t lastAcceptedReportUs_ = 0;
     bool initialized_ = false;
+    bool transportRecoveryActive_ = false;
 };
 
 } // namespace oag::firmware
