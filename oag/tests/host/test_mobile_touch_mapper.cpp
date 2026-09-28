@@ -22,78 +22,117 @@ const MobileTouchContact* findContact(
     return nullptr;
 }
 
+void assertPoint(
+    const MobileTouchFrame& frame,
+    std::uint8_t id,
+    std::uint16_t x,
+    std::uint16_t y
+) {
+    const MobileTouchContact* c = findContact(frame, id);
+    assert(c != nullptr);
+    assert(c->x == x);
+    assert(c->y == y);
+}
+
 } // namespace
 
 int main() {
     MobileTouchMapper mapper;
 
-    const MobileTouchFrame neutral =
-        mapper.map(LogicalGamepadState {});
-    assert(neutral.count == 0);
+    assert(mapper.map(LogicalGamepadState {}).count == 0);
 
-    LogicalGamepadState state {};
-    state.connected = true;
-    state.buttons =
-        ButtonSouth |
-        ButtonNorth |
-        ButtonRightBumper |
-        ButtonStart;
-    state.leftTrigger = 0xFFFFFFFFu;
-    state.lx = std::numeric_limits<std::int32_t>::max();
-    state.ly = 0;
+    LogicalGamepadState neutral {};
+    neutral.connected = true;
+    assert(mapper.map(neutral).count == 0);
 
-    const MobileTouchFrame frame = mapper.map(state);
+    LogicalGamepadState left {};
+    left.connected = true;
+    left.dpad = static_cast<std::uint8_t>(DpadBits::Left);
+    const auto leftFrame = mapper.map(left);
+    assert(leftFrame.count == 1);
+    assertPoint(leftFrame, 0, 6796, 3527);
 
-    assert(findContact(frame, 0) != nullptr);
-    assert(findContact(frame, 2) != nullptr);
-    assert(findContact(frame, 5) != nullptr);
-    assert(findContact(frame, 7) != nullptr);
-    assert(findContact(frame, 8) != nullptr);
-    assert(findContact(frame, 10) != nullptr);
+    LogicalGamepadState leftAnalog {};
+    leftAnalog.connected = true;
+    leftAnalog.lx = std::numeric_limits<std::int32_t>::min();
+    const auto leftAnalogFrame = mapper.map(leftAnalog);
+    assert(leftAnalogFrame.count == 1);
+    assertPoint(leftAnalogFrame, 0, 6796, 3527);
 
-    const MobileTouchContact* move =
-        findContact(frame, 0);
-    assert(move != nullptr);
-    assert(move->x > 6500);
-    assert(move->y == 24500);
+    LogicalGamepadState right {};
+    right.connected = true;
+    right.dpad = static_cast<std::uint8_t>(DpadBits::Right);
+    const auto rightFrame = mapper.map(right);
+    assert(rightFrame.count == 1);
+    assertPoint(rightFrame, 0, 6341, 9358);
 
-    LogicalGamepadState dpad {};
-    dpad.connected = true;
-    dpad.dpad =
-        static_cast<std::uint8_t>(DpadBits::Up) |
-        static_cast<std::uint8_t>(DpadBits::Left);
+    LogicalGamepadState rightAnalog {};
+    rightAnalog.connected = true;
+    rightAnalog.lx = std::numeric_limits<std::int32_t>::max();
+    const auto rightAnalogFrame = mapper.map(rightAnalog);
+    assert(rightAnalogFrame.count == 1);
+    assertPoint(rightAnalogFrame, 0, 6341, 9358);
 
-    const MobileTouchFrame dpadFrame = mapper.map(dpad);
-    const MobileTouchContact* dpadContact =
-        findContact(dpadFrame, 0);
+    LogicalGamepadState r3 {};
+    r3.connected = true;
+    r3.buttons = ButtonRightStick;
+    const auto r3Frame = mapper.map(r3);
+    assert(r3Frame.count == 1);
+    assertPoint(r3Frame, 0, 6614, 6243);
 
-    assert(dpadContact != nullptr);
-    assert(dpadContact->x < 6500);
-    assert(dpadContact->y < 24500);
+    LogicalGamepadState cross {};
+    cross.connected = true;
+    cross.buttons = ButtonSouth;
+    const auto crossFrame = mapper.map(cross);
+    assert(crossFrame.count == 1);
+    assertPoint(crossFrame, 1, 11666, 31259);
 
-    LogicalGamepadState crowded {};
-    crowded.connected = true;
-    crowded.lx = std::numeric_limits<std::int32_t>::max();
-    crowded.rx = std::numeric_limits<std::int32_t>::max();
-    crowded.buttons =
-        ButtonSouth |
-        ButtonEast |
-        ButtonWest |
-        ButtonNorth |
-        ButtonLeftBumper |
-        ButtonRightBumper |
-        ButtonStart |
-        ButtonBack |
-        ButtonLeftStick |
-        ButtonRightStick |
-        ButtonGuide |
-        ButtonShare;
-    crowded.leftTrigger = 0xFFFFFFFFu;
-    crowded.rightTrigger = 0xFFFFFFFFu;
+    LogicalGamepadState square {};
+    square.connected = true;
+    square.buttons = ButtonWest;
+    const auto squareFrame = mapper.map(square);
+    assert(squareFrame.count == 1);
+    assertPoint(squareFrame, 2, 6372, 28542);
 
-    const MobileTouchFrame crowdedFrame =
-        mapper.map(crowded);
-    assert(crowdedFrame.count == MobileTouchFrame::kMaxContacts);
+    LogicalGamepadState r2 {};
+    r2.connected = true;
+    r2.rightTrigger = 0xFFFFFFFFu;
+    const auto r2Frame = mapper.map(r2);
+    assert(r2Frame.count == 1);
+    assertPoint(r2Frame, 3, 13805, 28404);
+
+    // Gameplay combinations must remain real simultaneous contacts.
+    LogicalGamepadState combo {};
+    combo.connected = true;
+    combo.lx = std::numeric_limits<std::int32_t>::max();
+    combo.buttons = ButtonSouth | ButtonWest;
+    combo.rightTrigger = 0xFFFFFFFFu;
+
+    const auto comboFrame = mapper.map(combo);
+    assert(comboFrame.count == 4);
+    assertPoint(comboFrame, 0, 6341, 9358);
+    assertPoint(comboFrame, 1, 11666, 31259);
+    assertPoint(comboFrame, 2, 6372, 28542);
+    assertPoint(comboFrame, 3, 13805, 28404);
+
+    // R3 owns the left-control contact even if movement is also held.
+    LogicalGamepadState r3Priority {};
+    r3Priority.connected = true;
+    r3Priority.buttons = ButtonRightStick;
+    r3Priority.lx = std::numeric_limits<std::int32_t>::max();
+
+    const auto r3PriorityFrame = mapper.map(r3Priority);
+    assert(r3PriorityFrame.count == 1);
+    assertPoint(r3PriorityFrame, 0, 6614, 6243);
+
+    // Opposing directions cancel.
+    LogicalGamepadState conflict {};
+    conflict.connected = true;
+    conflict.dpad =
+        static_cast<std::uint8_t>(DpadBits::Left) |
+        static_cast<std::uint8_t>(DpadBits::Right);
+
+    assert(mapper.map(conflict).count == 0);
 
     return 0;
 }
