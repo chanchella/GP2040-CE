@@ -24,6 +24,8 @@ public:
     bool sendNeutral();
 
 private:
+    static constexpr std::uint64_t kActiveHeartbeatUs = 8000;
+
     struct __attribute__((packed)) ContactReport {
         std::uint8_t flags = 0;
         std::uint8_t id = 0;
@@ -61,6 +63,7 @@ private:
 
     Report report_ {};
     bool pending_ = false;
+    std::uint64_t lastAcceptedReportUs_ = 0;
 };
 
 } // namespace oag::firmware
