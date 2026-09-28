@@ -101,7 +101,7 @@ int main() {
     assert(r2Frame.count == 1);
     assertPoint(r2Frame, 3, 13805, 28404);
 
-    // Gameplay combinations must remain real simultaneous contacts.
+    // Gameplay combinations remain real simultaneous contacts.
     LogicalGamepadState combo {};
     combo.connected = true;
     combo.lx = std::numeric_limits<std::int32_t>::max();
@@ -133,6 +133,69 @@ int main() {
         static_cast<std::uint8_t>(DpadBits::Right);
 
     assert(mapper.map(conflict).count == 0);
+
+    // Mouse/right-stick look is stateful relative touch using contact ID 4.
+    // Full positive X moves the landscape finger right by 1968 HID units.
+    MobileTouchMapper lookMapper;
+
+    LogicalGamepadState lookRight {};
+    lookRight.connected = true;
+    lookRight.rx = std::numeric_limits<std::int32_t>::max();
+
+    const auto look1 = lookMapper.map(lookRight);
+    assert(look1.count == 1);
+    assertPoint(look1, 4, 16384, 18352);
+
+    const auto look2 = lookMapper.map(lookRight);
+    assert(look2.count == 1);
+    assertPoint(look2, 4, 16384, 20320);
+
+    // Neutral input drops contact 4; MobileTouchOutput supplies the explicit
+    // release packet using the V4 touch lifecycle fix.
+    const auto lookRelease = lookMapper.map(neutral);
+    assert(findContact(lookRelease, 4) == nullptr);
+
+    // Full positive Y means mouse-down / landscape-down. Because Android's
+    // natural portrait X axis is rotated relative to landscape, HID X falls.
+    LogicalGamepadState lookDown {};
+    lookDown.connected = true;
+    lookDown.ry = std::numeric_limits<std::int32_t>::max();
+
+    const auto lookDownFrame = lookMapper.map(lookDown);
+    assert(lookDownFrame.count == 1);
+    assertPoint(lookDownFrame, 4, 12016, 16384);
+
+    // Look coexists with all four currently verified Game1 touch actions.
+    MobileTouchMapper multiMapper;
+    LogicalGamepadState all {};
+    all.connected = true;
+    all.dpad = static_cast<std::uint8_t>(DpadBits::Right);
+    all.buttons = ButtonSouth | ButtonWest;
+    all.rightTrigger = 0xFFFFFFFFu;
+    all.rx = std::numeric_limits<std::int32_t>::max();
+
+    const auto allFrame = multiMapper.map(all);
+    assert(allFrame.count == 5);
+    assertPoint(allFrame, 0, 6341, 9358);
+    assertPoint(allFrame, 1, 11666, 31259);
+    assertPoint(allFrame, 2, 6372, 28542);
+    assertPoint(allFrame, 3, 13805, 28404);
+    assertPoint(allFrame, 4, 16384, 18352);
+
+    // Reaching the safe edge emits one frame without contact 4 so V4 can
+    // release it, then the next motion report re-anchors from center.
+    MobileTouchMapper edgeMapper;
+    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
+    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
+    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
+    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
+    assert(findContact(edgeMapper.map(lookRight), 4) != nullptr);
+
+    const auto edgeRelease = edgeMapper.map(lookRight);
+    assert(findContact(edgeRelease, 4) == nullptr);
+
+    const auto edgeRestart = edgeMapper.map(lookRight);
+    assertPoint(edgeRestart, 4, 16384, 18352);
 
     return 0;
 }
