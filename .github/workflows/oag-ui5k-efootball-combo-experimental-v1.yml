@@ -44,8 +44,8 @@ jobs:
           required = [
               "EfootballComboPhase",
               "kEfootballOnePressUs = 90000ull",
-              "kEfootballTravelDelayUs = 625000ull",
-              "kEfootballTwoPressUs = 210000ull",
+              "kEfootballTravelDelayUs = 400000ull",
+              "kEfootballTwoPressUs = 150000ull",
               "oag::ButtonLeftBumper |",
               "oag::ButtonSouth",
               "oag::ButtonNorth",
@@ -169,8 +169,8 @@ jobs:
             "TRIGGER=RIGHT_STICK_UP_IMMEDIATE_NO_HOLD" \
             "RIGHT_STICK_UP=SUPPRESSED_FROM_TRIGGER_FRAME_UNTIL_REARM" \
             "ONE=LB+A_90MS" \
-            "TRAVEL_WAIT=625MS" \
-            "TWO=RT+LB+Y_210MS" \
+            "TRAVEL_WAIT=400MS" \
+            "TWO=RT+LB+Y_150MS" \
             "LEFT_STICK=UNMODIFIED" \
             "BLOCKING_DELAY=NONE" \
             > artifacts/BUILD-INFO.txt
