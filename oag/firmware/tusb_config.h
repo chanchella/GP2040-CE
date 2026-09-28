@@ -28,7 +28,9 @@ extern "C" {
 // registered first and claims the target-facing XInput interfaces.
 #define CFG_TUD_VENDOR 1
 #define CFG_TUD_HID 6
-#define CFG_TUD_HID_EP_BUFSIZE 16
+// Profile 7 emits a 61-byte multitouch report; 64 bytes also safely covers
+// the existing PC/Phone HID reports without changing their descriptors.
+#define CFG_TUD_HID_EP_BUFSIZE 64
 
 #define CFG_TUH_ENABLED 1
 #define CFG_TUH_RPI_PIO_USB 1
