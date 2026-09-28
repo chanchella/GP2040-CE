@@ -29,6 +29,7 @@
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/native_km_combo_engine.h"
 #include "oag/mapping/pass_through_mapping.h"
+#include "oag/output/touch/mobile_touch_mapper.h"
 #include "oag/protocol/hid/boot_keyboard_input_driver.h"
 #include "oag/protocol/hid/boot_mouse_input_driver.h"
 #include "oag/protocol/hid/generic_hid_gamepad_driver.h"
@@ -153,6 +154,7 @@ public:
         serviceOutputProfileHotkey();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
+        serviceTouchTriangleTiming();
         serviceMouseAimRelease();
         servicePlatformFeedback();
     }
@@ -652,14 +654,7 @@ public:
                 currentNativeWheel_ = mouseState.wheel;
                 currentNativePan_ = mouseState.pan;
 
-                mouseAimActive_ =
-                    currentMouseMotion_.dx != 0 ||
-                    currentMouseMotion_.dy != 0;
-
-                if (mouseAimActive_) {
-                    mouseAimExpiresUs_ =
-                        nowUs + kMouseAimHoldUs;
-                }
+                updateMouseAimFromCurrentMotion(nowUs);
 
                 composedChanged = true;
             }
@@ -713,14 +708,7 @@ public:
                 currentNativeWheel_ = mouseState.wheel;
                 currentNativePan_ = mouseState.pan;
 
-                mouseAimActive_ =
-                    currentMouseMotion_.dx != 0 ||
-                    currentMouseMotion_.dy != 0;
-
-                if (mouseAimActive_) {
-                    mouseAimExpiresUs_ =
-                        time_us_64() + kMouseAimHoldUs;
-                }
+                updateMouseAimFromCurrentMotion(time_us_64());
 
                 sendComposedOutput();
             }
@@ -1070,14 +1058,7 @@ public:
                 mouseState.dy,
             };
 
-            mouseAimActive_ =
-                currentMouseMotion_.dx != 0 ||
-                currentMouseMotion_.dy != 0;
-
-            if (mouseAimActive_) {
-                mouseAimExpiresUs_ =
-                    nowUs + kMouseAimHoldUs;
-            }
+            updateMouseAimFromCurrentMotion(nowUs);
 
             composedChanged = true;
         }
@@ -1150,6 +1131,10 @@ public:
 private:
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 10000;
+    static constexpr std::uint64_t kTouchTriangleShortPulseUs = 50000;
+    static constexpr std::uint64_t kTouchTriangleHoldThresholdUs = 100000;
+    static constexpr std::uint64_t kTouchTriangleHoldPulseUs = 100000;
+    static constexpr std::uint64_t kTouchTriangleRefreshUs = 5000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -1852,9 +1837,8 @@ private:
             oag::firmware::mobileTouchUsbProfileActive();
 
         // Profile 7 intentionally consumes keyboard/mouse through the
-        // existing K/M->logical-gamepad mapper and then turns that unified
-        // logical state into touchscreen contacts. Profiles 0/1 keep their
-        // hardware-verified Native K/M behavior unchanged.
+        // existing K/M->logical-gamepad path and turns that state into touch.
+        // Profiles 0/1 remain on their hardware-verified behavior.
         if (
             !touchProfile &&
             keyboardMouseMode_ == KeyboardMouseOutputMode::Native
@@ -1866,8 +1850,6 @@ private:
             return;
         }
 
-        // F4+F5 and F8+F9+digit are reserved global system chords.
-        // They must never leak into controller mapping or combos.
         if (
             keyboard.pressed(kModeToggleF4Usage) &&
             keyboard.pressed(kModeToggleF5Usage)
@@ -1878,11 +1860,24 @@ private:
 
         consumeOutputProfileChord(keyboard);
 
-        // Keep the historical mouse->right-stick curve byte-for-byte for
-        // PC/Phone controller mode. In Mobile Touch, do not run mouse motion
-        // through that curve because it intentionally saturates tiny deltas.
-        // Instead, encode the raw relative delta linearly below and let the
-        // touch mapper turn it into a real moving finger.
+        // In Profile 7 mouse-left is a dedicated touchscreen action, not R2.
+        // Strip only that one button before the historical K/M mapper runs;
+        // physical/controller R2 therefore remains independently available.
+        oag::MouseState mouseForMapping = mouse;
+        const bool touchMouseLeftDown =
+            touchProfile &&
+            hasMouse &&
+            (mouse.buttons & oag::MouseButtonLeft) != 0;
+
+        if (touchProfile) {
+            mouseForMapping.buttons &=
+                static_cast<std::uint16_t>(
+                    ~static_cast<std::uint16_t>(
+                        oag::MouseButtonLeft
+                    )
+                );
+        }
+
         const oag::MouseMotion mappedMouseMotion =
             !touchProfile && mouseAimActive_
                 ? currentMouseMotion_
@@ -1891,16 +1886,45 @@ private:
         oag::LogicalGamepadState output =
             keyboardMouse_.apply(
                 hasKeyboard ? &keyboard : nullptr,
-                hasMouse ? &mouse : nullptr,
+                hasMouse ? &mouseForMapping : nullptr,
                 mappedMouseMotion,
                 basePrimaryOutput()
             );
 
-        if (touchProfile && mouseAimActive_) {
-            output.rx =
-                encodeTouchMouseDelta(currentMouseMotion_.dx);
-            output.ry =
-                encodeTouchMouseDelta(currentMouseMotion_.dy);
+        if (touchProfile) {
+            const std::uint64_t nowUs = time_us_64();
+
+            if (touchMouseLeftDown) {
+                output.buttons |=
+                    oag::kMobileTouchMouseLeftButton;
+            }
+
+            if (mouseAimActive_) {
+                if (
+                    currentMouseMotion_.dx != 0 ||
+                    currentMouseMotion_.dy != 0
+                ) {
+                    output.rx =
+                        encodeTouchMouseDelta(
+                            currentMouseMotion_.dx
+                        );
+                    output.ry =
+                        encodeTouchMouseDelta(
+                            currentMouseMotion_.dy
+                        );
+                } else {
+                    // Another input report arrived while the 10 ms mouse-look
+                    // window is still alive. Keep the existing touch finger
+                    // down without replaying the previous delta.
+                    output.buttons |=
+                        oag::kMobileTouchMouseLookHoldButton;
+                    output.rx = 0;
+                    output.ry = 0;
+                }
+            }
+
+            applyTouchTriangleGesture(output, nowUs);
+            output.timestampUs = nowUs;
         }
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
@@ -1912,6 +1936,91 @@ private:
         }
 
         platformOutput_.submit(hostPrimaryOutputSlot_, output);
+
+        // Each relative mouse delta must be consumed exactly once. The look
+        // finger itself remains held through kMobileTouchMouseLookHoldButton
+        // until serviceMouseAimRelease() expires it.
+        if (
+            touchProfile &&
+            (
+                currentMouseMotion_.dx != 0 ||
+                currentMouseMotion_.dy != 0
+            )
+        ) {
+            currentMouseMotion_ = {};
+        }
+    }
+
+    void applyTouchTriangleGesture(
+        oag::LogicalGamepadState& output,
+        std::uint64_t nowUs
+    ) {
+        const bool triangleDown =
+            (output.buttons & oag::ButtonNorth) != 0;
+
+        // ButtonNorth is converted into two explicit timed touch actions.
+        output.buttons &= ~static_cast<std::uint64_t>(
+            oag::ButtonNorth
+        );
+
+        if (triangleDown && !triangleInputDown_) {
+            triangleInputDown_ = true;
+            triangleSequenceActive_ = true;
+            triangleLongLatched_ = false;
+            triangleStartedUs_ = nowUs;
+            triangleRefreshNotBeforeUs_ =
+                nowUs + kTouchTriangleRefreshUs;
+        } else if (!triangleDown && triangleInputDown_) {
+            triangleInputDown_ = false;
+        }
+
+        if (!triangleSequenceActive_) {
+            return;
+        }
+
+        const std::uint64_t elapsed =
+            nowUs - triangleStartedUs_;
+
+        // Every Triangle press produces a fixed 50 ms short touch.
+        if (elapsed < kTouchTriangleShortPulseUs) {
+            output.buttons |=
+                oag::kMobileTouchTriangleShortButton;
+            return;
+        }
+
+        // If the physical/logical Triangle is still down at 100 ms, latch a
+        // second fixed 100 ms hold action at the user's hold coordinate.
+        if (
+            elapsed >= kTouchTriangleHoldThresholdUs &&
+            !triangleLongLatched_ &&
+            triangleInputDown_
+        ) {
+            triangleLongLatched_ = true;
+        }
+
+        if (
+            triangleLongLatched_ &&
+            elapsed <
+                kTouchTriangleHoldThresholdUs +
+                kTouchTriangleHoldPulseUs
+        ) {
+            output.buttons |=
+                oag::kMobileTouchTriangleHoldButton;
+            return;
+        }
+
+        if (
+            (
+                !triangleInputDown_ &&
+                !triangleLongLatched_
+            ) ||
+            elapsed >=
+                kTouchTriangleHoldThresholdUs +
+                kTouchTriangleHoldPulseUs
+        ) {
+            triangleSequenceActive_ = false;
+            triangleRefreshNotBeforeUs_ = 0;
+        }
     }
 
     static void consumeOutputProfileChord(
@@ -2130,6 +2239,59 @@ private:
         }
 
         nativeKmOutput_.task(nowUs);
+    }
+
+    void updateMouseAimFromCurrentMotion(
+        std::uint64_t nowUs
+    ) {
+        const bool moving =
+            currentMouseMotion_.dx != 0 ||
+            currentMouseMotion_.dy != 0;
+
+        if (moving) {
+            mouseAimActive_ = true;
+            mouseAimExpiresUs_ =
+                nowUs + kMouseAimHoldUs;
+            return;
+        }
+
+        // In Mobile Touch, zero-motion button reports must not tear down the
+        // camera finger immediately. The normal 10 ms expiry does that.
+        if (!oag::firmware::mobileTouchUsbProfileActive()) {
+            mouseAimActive_ = false;
+            mouseAimExpiresUs_ = 0;
+        }
+    }
+
+    void serviceTouchTriangleTiming() {
+        if (!oag::firmware::mobileTouchUsbProfileActive()) {
+            triangleSequenceActive_ = false;
+            triangleInputDown_ = false;
+            triangleLongLatched_ = false;
+            triangleStartedUs_ = 0;
+            triangleRefreshNotBeforeUs_ = 0;
+            return;
+        }
+
+        if (!triangleSequenceActive_) {
+            return;
+        }
+
+        const std::uint64_t nowUs = time_us_64();
+
+        if (
+            triangleRefreshNotBeforeUs_ != 0 &&
+            nowUs < triangleRefreshNotBeforeUs_
+        ) {
+            return;
+        }
+
+        triangleRefreshNotBeforeUs_ =
+            nowUs + kTouchTriangleRefreshUs;
+
+        // Re-evaluate the timed gesture even when the keyboard/gamepad sends
+        // no new report while its Triangle control is being held.
+        sendComposedOutput();
     }
 
     void serviceMouseAimRelease() {
@@ -2467,6 +2629,12 @@ private:
     oag::MouseMotion currentMouseMotion_ {};
     std::uint64_t mouseAimExpiresUs_ = 0;
     bool mouseAimActive_ = false;
+
+    bool triangleInputDown_ = false;
+    bool triangleSequenceActive_ = false;
+    bool triangleLongLatched_ = false;
+    std::uint64_t triangleStartedUs_ = 0;
+    std::uint64_t triangleRefreshNotBeforeUs_ = 0;
 
     std::array<
         XgipInitPhase,
