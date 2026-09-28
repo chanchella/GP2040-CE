@@ -105,18 +105,29 @@ jobs:
           assert "GenericHidButtonLayout::DragonRiseTwinShockFamily" in main
           assert "gigamax.hasQuirk(UsbQuirkDragonRiseTwinShockButtons)" in classifier_test
 
-          # Exact face normalization derived from the hardware observation:
-          # raw 1=N, 2=E, 3=S, 4=W; 5..12 stay on existing legacy path.
-          assert "case 1: state.buttons |= ButtonNorth; return;" in cpp
-          assert "case 2: state.buttons |= ButtonEast; return;" in cpp
-          assert "case 3: state.buttons |= ButtonSouth; return;" in cpp
-          assert "case 4: state.buttons |= ButtonWest; return;" in cpp
+          # Exact face normalization is applied to the FINAL universal state,
+          # not guessed from raw usage numbers.
+          assert "normalizeDragonRiseTwinShockFaceButtons" in cpp
+          assert "oldFace & ButtonWest" in cpp
+          assert "state.buttons |= ButtonSouth" in cpp
+          assert "oldFace & ButtonEast" in cpp
+          assert "state.buttons |= ButtonEast" in cpp
+          assert "oldFace & ButtonNorth" in cpp
+          assert "state.buttons |= ButtonWest" in cpp
+          assert "oldFace & ButtonSouth" in cpp
+          assert "state.buttons |= ButtonNorth" in cpp
+          assert "buttonLayout ==" in cpp
+          assert "GenericHidButtonLayout::DragonRiseTwinShockFamily" in cpp
+
+          # The old raw-usage special-case must not return.
+          assert "case 1: state.buttons |= ButtonNorth; return;" not in cpp
+          assert "case 3: state.buttons |= ButtonSouth; return;" not in cpp
 
           assert "twinShockFamilyDescriptor" in test
-          assert "twinShockSouth" in test
-          assert "twinShockNorth" in test
-          assert "twinShockWest" in test
-          assert "twinShockEast" in test
+          assert "forcedTwinShockSouth" in test
+          assert "forcedTwinShockNorth" in test
+          assert "forcedTwinShockWest" in test
+          assert "forcedTwinShockEast" in test
 
           print("GENERIC_HID_FAMILY_GUARD=PASS")
           PY
