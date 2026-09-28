@@ -129,6 +129,96 @@ bool gamepadUsage(
         );
 }
 
+bool looksLikeTwinShockDirectInputFamily(
+    const GenericHidGamepadDescriptor& descriptor,
+    std::size_t payloadLength
+) {
+    if (
+        !descriptor.valid ||
+        descriptor.usesReportIds ||
+        payloadLength != 8 ||
+        descriptor.topUsagePage != kUsagePageGenericDesktop ||
+        (
+            descriptor.topUsage != kUsageJoystick &&
+            descriptor.topUsage != kUsageGamepad
+        )
+    ) {
+        return false;
+    }
+
+    std::uint8_t axisCount = 0;
+    std::uint8_t hatCount = 0;
+    std::uint8_t buttonCount = 0;
+    std::uint16_t buttonMask = 0;
+
+    for (std::uint8_t i = 0; i < descriptor.fieldCount; ++i) {
+        const HidGamepadField& field = descriptor.fields[i];
+
+        if (!field.used) {
+            continue;
+        }
+
+        if (
+            field.usagePage == kUsagePageGenericDesktop &&
+            (
+                field.usage == kUsageX ||
+                field.usage == kUsageY ||
+                field.usage == kUsageZ ||
+                field.usage == kUsageRx ||
+                field.usage == kUsageRy ||
+                field.usage == kUsageRz
+            ) &&
+            field.bitSize == 8 &&
+            field.logicalMin == 0 &&
+            field.logicalMax == 255
+        ) {
+            ++axisCount;
+            continue;
+        }
+
+        if (
+            field.usagePage == kUsagePageGenericDesktop &&
+            field.usage == kUsageHat &&
+            field.bitSize == 4 &&
+            field.logicalMin == 0 &&
+            field.logicalMax >= 7
+        ) {
+            ++hatCount;
+            continue;
+        }
+
+        if (
+            field.usagePage == kUsagePageButton &&
+            field.usage >= 1 &&
+            field.usage <= 12 &&
+            field.bitSize == 1 &&
+            field.logicalMin == 0 &&
+            field.logicalMax == 1
+        ) {
+            const std::uint16_t bit =
+                static_cast<std::uint16_t>(
+                    1u << static_cast<std::uint16_t>(field.usage - 1u)
+                );
+
+            if ((buttonMask & bit) == 0) {
+                buttonMask |= bit;
+                ++buttonCount;
+            }
+        }
+    }
+
+    // Common PC-Twin-Shock / DragonRise-style DirectInput shape:
+    // one 8-byte input report, 4..6 unsigned axes, one hat and 12 buttons.
+    // This avoids branding/VID assumptions while staying narrower than
+    // "all generic HID gamepads".
+    return
+        axisCount >= 4 &&
+        axisCount <= 6 &&
+        hatCount == 1 &&
+        buttonCount == 12 &&
+        buttonMask == 0x0FFFu;
+}
+
 GenericHidButtonLayout resolveButtonLayout(
     const GenericHidGamepadDescriptor& descriptor,
     const GenericHidGamepadQuirks& quirks
@@ -585,8 +675,19 @@ bool GenericHidGamepadDriver::parseReport(
     bool hasAccelerator = false;
     bool hasBrake = false;
 
-    const GenericHidButtonLayout buttonLayout =
+    GenericHidButtonLayout buttonLayout =
         resolveButtonLayout(descriptor, quirks);
+
+    if (
+        quirks.buttonLayout == GenericHidButtonLayout::Auto &&
+        looksLikeTwinShockDirectInputFamily(
+            descriptor,
+            payloadLength
+        )
+    ) {
+        buttonLayout =
+            GenericHidButtonLayout::TwinShockDirectInput;
+    }
 
     std::int32_t acceleratorValue = 0;
     std::int32_t acceleratorMin = 0;
@@ -999,6 +1100,18 @@ void GenericHidGamepadDriver::applyButton(
     bool pressed
 ) {
     if (!pressed) return;
+
+    if (layout == GenericHidButtonLayout::TwinShockDirectInput) {
+        // SDL/evdev convention for the common 12-button PC-Twin-Shock family:
+        // b0 = North/Y, b1 = East/B, b2 = South/A, b3 = West/X.
+        switch (usage) {
+            case 1: state.buttons |= ButtonNorth; return;
+            case 2: state.buttons |= ButtonEast; return;
+            case 3: state.buttons |= ButtonSouth; return;
+            case 4: state.buttons |= ButtonWest; return;
+            default: break;
+        }
+    }
 
     if (layout == GenericHidButtonLayout::SonyPlayStation) {
         switch (usage) {
