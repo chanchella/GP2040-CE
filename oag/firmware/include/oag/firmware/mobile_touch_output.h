@@ -39,10 +39,26 @@ private:
     static_assert(sizeof(ContactReport) == 6);
     static_assert(sizeof(Report) == 61);
 
-    bool flush();
+    static bool framesEqual(
+        const oag::MobileTouchFrame& a,
+        const oag::MobileTouchFrame& b
+    );
+
+    bool pump();
+    void preparePendingTransition();
 
     oag::MobileTouchMapper mapper_ {};
-    oag::MobileTouchFrame previousFrame_ {};
+
+    // committedFrame_ is the last frame actually accepted by TinyUSB.
+    // desiredFrame_ is the newest logical touch state.
+    //
+    // This separation is critical: input can change faster than endpoint 0x81
+    // becomes ready. Never overwrite an unsent release report or advance the
+    // committed contact lifecycle before USB has accepted that report.
+    oag::MobileTouchFrame committedFrame_ {};
+    oag::MobileTouchFrame desiredFrame_ {};
+    oag::MobileTouchFrame pendingTargetFrame_ {};
+
     Report report_ {};
     bool pending_ = false;
 };
