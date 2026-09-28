@@ -230,6 +230,46 @@ bool dragonRiseTwinShockFamilySignature(
         buttonMask == 0x0FFFu;
 }
 
+void normalizeDragonRiseTwinShockFaceButtons(
+    UniversalGamepadState& state
+) {
+    constexpr std::uint32_t kFaceMask =
+        ButtonSouth |
+        ButtonEast |
+        ButtonWest |
+        ButtonNorth;
+
+    const std::uint32_t oldFace =
+        state.buttons & kFaceMask;
+
+    state.buttons &= ~kFaceMask;
+
+    // Hardware-observed current universal-state cycle for this family:
+    // physical Cross/South    -> old West
+    // physical Circle/East    -> old East
+    // physical Square/West    -> old North
+    // physical Triangle/North -> old South
+    //
+    // Normalize the FINAL universal state rather than assuming raw HID usage
+    // numbers. This is robust across the multiple 0079:0006/TwinShock report
+    // variants that share an identity but differ in descriptor/mapping.
+    if ((oldFace & ButtonWest) != 0) {
+        state.buttons |= ButtonSouth;
+    }
+
+    if ((oldFace & ButtonEast) != 0) {
+        state.buttons |= ButtonEast;
+    }
+
+    if ((oldFace & ButtonNorth) != 0) {
+        state.buttons |= ButtonWest;
+    }
+
+    if ((oldFace & ButtonSouth) != 0) {
+        state.buttons |= ButtonNorth;
+    }
+}
+
 GenericHidButtonLayout resolveButtonLayout(
     const GenericHidGamepadDescriptor& descriptor,
     const GenericHidGamepadQuirks& quirks
@@ -893,6 +933,13 @@ bool GenericHidGamepadDriver::parseReport(
         );
     }
 
+    if (
+        buttonLayout ==
+        GenericHidButtonLayout::DragonRiseTwinShockFamily
+    ) {
+        normalizeDragonRiseTwinShockFaceButtons(next);
+    }
+
     const bool hasUsefulField =
         hasX ||
         hasY ||
@@ -1104,30 +1151,6 @@ void GenericHidGamepadDriver::applyButton(
     bool pressed
 ) {
     if (!pressed) return;
-
-    if (
-        layout ==
-        GenericHidButtonLayout::DragonRiseTwinShockFamily
-    ) {
-        // Normalise the PC-Twin-Shock / DragonRise-family physical face
-        // order into OAG's universal South/East/West/North semantics.
-        //
-        // Raw family order observed by HID usage:
-        //   1 = physical North
-        //   2 = physical East
-        //   3 = physical South
-        //   4 = physical West
-        //
-        // Buttons 5..12 already match the legacy DirectInput semantics and
-        // are intentionally preserved.
-        switch (usage) {
-            case 1: state.buttons |= ButtonNorth; return;
-            case 2: state.buttons |= ButtonEast; return;
-            case 3: state.buttons |= ButtonSouth; return;
-            case 4: state.buttons |= ButtonWest; return;
-            default: break;
-        }
-    }
 
     if (layout == GenericHidButtonLayout::SonyPlayStation) {
         switch (usage) {
