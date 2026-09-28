@@ -42,6 +42,7 @@ private:
     bool flush();
 
     oag::MobileTouchMapper mapper_ {};
+    oag::MobileTouchFrame previousFrame_ {};
     Report report_ {};
     bool pending_ = false;
 };
