@@ -2,7 +2,7 @@
 
 #include <array>
 #include <cstddef>
-#includ <cstdint>
+#include <cstdint>
 
 #include "oag/output/logical_gamepad_state.h"
 #include "oag/output/touch/mobile_touch_mapper.h"
