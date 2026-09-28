@@ -15,58 +15,33 @@ constexpr std::int32_t kLookAxisDeadzone = 0x01000000;
 // Conversion:
 //   HID_X = round(pointer_x * 32768 / 1080)
 //   HID_Y = round(pointer_y * 32768 / 2388)
-
-// Camera / mouse-look rectangle supplied by the user:
-//   Pointer X = 135..610
-//   Pointer Y = 1640..2160
+//
+// V3 moves mouse-look to the geometric middle of the phone while preserving
+// approximately the same rectangle dimensions as V2:
+//   Pointer X ~= 303..778
+//   Pointer Y = 934..1454
 constexpr std::uint8_t kMouseLookContactId = 0;
-constexpr std::uint16_t kMouseLookCenterX = 11302;
-constexpr std::uint16_t kMouseLookCenterY = 26072;
-constexpr std::uint16_t kMouseLookMinX = 4096;
-constexpr std::uint16_t kMouseLookMaxX = 18508;
-constexpr std::uint16_t kMouseLookMinY = 22504;
-constexpr std::uint16_t kMouseLookMaxY = 29639;
+constexpr std::uint16_t kMouseLookCenterX = 16384; // Pointer (540,1194)
+constexpr std::uint16_t kMouseLookCenterY = 16384;
+constexpr std::uint16_t kMouseLookMinX = 9193;     // Pointer X=303
+constexpr std::uint16_t kMouseLookMaxX = 23605;    // Pointer X=778
+constexpr std::uint16_t kMouseLookMinY = 12816;    // Pointer Y=934
+constexpr std::uint16_t kMouseLookMaxY = 19952;    // Pointer Y=1454
 
 // Half V5 camera sensitivity.
 constexpr std::int32_t kMouseLookMaxHorizontalStep = 984;
 constexpr std::int32_t kMouseLookMaxVerticalStep = 2184;
 
 // PUBG movement joystick.
-//
-// The four measured direction points share an exact orthogonal crossing:
-//   Up    (420,466)
-//   Down  (210,466)
-//   Left  (340,380)
-//   Right (340,560)
-//
-// Therefore the joystick center is the intersection (340,466). WASD is a
-// single persistent finger: touch center first, then drag the SAME contact ID
-// to the requested endpoint and hold it there until all movement keys release.
 constexpr std::uint8_t kMovementContactId = 1;
 constexpr std::uint16_t kMovementCenterX = 10316; // Pointer (340,466)
 constexpr std::uint16_t kMovementCenterY = 6394;
 
 constexpr std::uint16_t kMoveUpX = 12743;    // Pointer (420,466)
-constexpr std::uint16_t kMoveUpY = 6394;
 constexpr std::uint16_t kMoveDownX = 6372;   // Pointer (210,466)
-constexpr std::uint16_t kMoveDownY = 6394;
-constexpr std::uint16_t kMoveLeftX = 10316;  // Pointer (340,380)
-constexpr std::uint16_t kMoveLeftY = 5214;
-constexpr std::uint16_t kMoveRightX = 10316; // Pointer (340,560)
-constexpr std::uint16_t kMoveRightY = 7684;
+constexpr std::uint16_t kMoveLeftY = 5214;   // Pointer (340,380)
+constexpr std::uint16_t kMoveRightY = 7684;  // Pointer (340,560)
 
-// Diagonal targets combine the measured horizontal/vertical endpoints around
-// that same center.
-constexpr std::uint16_t kMoveUpLeftX = 12743;
-constexpr std::uint16_t kMoveUpLeftY = 5214;
-constexpr std::uint16_t kMoveUpRightX = 12743;
-constexpr std::uint16_t kMoveUpRightY = 7684;
-constexpr std::uint16_t kMoveDownLeftX = 6372;
-constexpr std::uint16_t kMoveDownLeftY = 5214;
-constexpr std::uint16_t kMoveDownRightX = 6372;
-constexpr std::uint16_t kMoveDownRightY = 7684;
-
-// Independent actions. Camera and fire never share a contact.
 constexpr std::uint8_t kFireContactId = 2;
 constexpr std::uint16_t kFireX = 16869; // Pointer (556,2292)
 constexpr std::uint16_t kFireY = 31451;
@@ -75,9 +50,10 @@ constexpr std::uint8_t kJumpContactId = 3;
 constexpr std::uint16_t kJumpX = 10407; // Pointer (343,2230)
 constexpr std::uint16_t kJumpY = 30600;
 
-constexpr std::uint8_t kSquareContactId = 4;
-constexpr std::uint16_t kSquareX = 6372; // Pointer (210,2080)
-constexpr std::uint16_t kSquareY = 28542;
+// F updated by the user.
+constexpr std::uint8_t kFContactId = 4;
+constexpr std::uint16_t kFX = 20632; // Pointer (680,1630)
+constexpr std::uint16_t kFY = 22367;
 
 constexpr std::uint8_t kTriangleShortContactId = 5;
 constexpr std::uint16_t kTriangleShortX = 2124; // Pointer (70,2016)
@@ -99,9 +75,36 @@ constexpr std::uint8_t kShareContactId = 9;
 constexpr std::uint16_t kShareX = 3034; // Pointer (100,215)
 constexpr std::uint16_t kShareY = 2950;
 
+constexpr std::uint8_t kShiftContactId = 10;
+constexpr std::uint16_t kShiftX = 26093; // Pointer (860,1925)
+constexpr std::uint16_t kShiftY = 26415;
+
+constexpr std::uint8_t kMouseRightContactId = 11;
+constexpr std::uint16_t kMouseRightX = 15929; // Pointer (525,2230)
+constexpr std::uint16_t kMouseRightY = 30600;
+
+constexpr std::uint8_t kRContactId = 12;
+constexpr std::uint16_t kRX = 2336; // Pointer (77,1850)
+constexpr std::uint16_t kRY = 25386;
+
+constexpr std::uint8_t kScrollDownContactId = 13;
+constexpr std::uint16_t kScrollDownX = 3034; // Pointer (100,1050)
+constexpr std::uint16_t kScrollDownY = 14408;
+
+constexpr std::uint8_t kScrollUpContactId = 14;
+constexpr std::uint16_t kScrollUpX = 3034; // Pointer (100,1305)
+constexpr std::uint16_t kScrollUpY = 17907;
+
+constexpr std::uint8_t kMouseMiddleContactId = 15;
+constexpr std::uint16_t kMouseMiddleX = 2488; // Pointer (82,1575)
+constexpr std::uint16_t kMouseMiddleY = 21612;
+
+constexpr std::uint8_t kGContactId = 16;
+constexpr std::uint16_t kGX = 2731; // Pointer (90,800)
+constexpr std::uint16_t kGY = 10978;
+
 bool hasDpad(std::uint8_t dpad, DpadBits bit) {
-    return
-        (dpad & static_cast<std::uint8_t>(bit)) != 0;
+    return (dpad & static_cast<std::uint8_t>(bit)) != 0;
 }
 
 std::int64_t abs64(std::int32_t value) {
@@ -192,9 +195,8 @@ MobileTouchFrame MobileTouchMapper::map(
         return frame;
     }
 
-    // CAMERA: relative mouse drag. A zero-delta report can explicitly request
-    // "hold current camera finger" so firing or keyboard events do not release
-    // or move the camera contact.
+    // CAMERA: mouse motion owns this contact exclusively. Mouse buttons use
+    // different Contact IDs and can never create or move the camera finger.
     if (axisActive(state.rx, state.ry)) {
         if (!lookTouchActive_) {
             lookTouchActive_ = true;
@@ -254,9 +256,7 @@ MobileTouchFrame MobileTouchMapper::map(
         resetLookTouch();
     }
 
-    // MOVEMENT: one joystick finger. On the first WASD frame, press the
-    // joystick center. The next frame (forced by firmware maintenance if no
-    // other input arrives) drags the SAME contact ID to the endpoint.
+    // MOVEMENT: one persistent joystick finger.
     const bool up =
         hasDpad(state.dpad, DpadBits::Up) &&
         !hasDpad(state.dpad, DpadBits::Down);
@@ -302,40 +302,19 @@ MobileTouchFrame MobileTouchMapper::map(
             y = kMoveRightY;
         }
 
-        append(
-            frame,
-            kMovementContactId,
-            x,
-            y
-        );
+        append(frame, kMovementContactId, x, y);
     }
 
-    // FIRE is completely independent from camera movement.
     if (state.buttons & kPubgMouseLeftButton) {
-        append(
-            frame,
-            kFireContactId,
-            kFireX,
-            kFireY
-        );
+        append(frame, kFireContactId, kFireX, kFireY);
     }
 
     if (state.buttons & ButtonSouth) {
-        append(
-            frame,
-            kJumpContactId,
-            kJumpX,
-            kJumpY
-        );
+        append(frame, kJumpContactId, kJumpX, kJumpY);
     }
 
     if (state.buttons & ButtonWest) {
-        append(
-            frame,
-            kSquareContactId,
-            kSquareX,
-            kSquareY
-        );
+        append(frame, kFContactId, kFX, kFY);
     }
 
     if (state.buttons & kPubgTriangleShortButton) {
@@ -365,12 +344,55 @@ MobileTouchFrame MobileTouchMapper::map(
     }
 
     if (state.buttons & ButtonShare) {
+        append(frame, kShareContactId, kShareX, kShareY);
+    }
+
+    if (state.buttons & kPubgShiftButton) {
+        append(frame, kShiftContactId, kShiftX, kShiftY);
+    }
+
+    if (state.buttons & kPubgMouseRightButton) {
         append(
             frame,
-            kShareContactId,
-            kShareX,
-            kShareY
+            kMouseRightContactId,
+            kMouseRightX,
+            kMouseRightY
         );
+    }
+
+    if (state.buttons & kPubgKeyRButton) {
+        append(frame, kRContactId, kRX, kRY);
+    }
+
+    if (state.buttons & kPubgScrollDownButton) {
+        append(
+            frame,
+            kScrollDownContactId,
+            kScrollDownX,
+            kScrollDownY
+        );
+    }
+
+    if (state.buttons & kPubgScrollUpButton) {
+        append(
+            frame,
+            kScrollUpContactId,
+            kScrollUpX,
+            kScrollUpY
+        );
+    }
+
+    if (state.buttons & kPubgMouseMiddleButton) {
+        append(
+            frame,
+            kMouseMiddleContactId,
+            kMouseMiddleX,
+            kMouseMiddleY
+        );
+    }
+
+    if (state.buttons & kPubgKeyGButton) {
+        append(frame, kGContactId, kGX, kGY);
     }
 
     return frame;
