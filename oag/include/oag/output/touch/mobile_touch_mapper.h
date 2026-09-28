@@ -8,11 +8,12 @@
 
 namespace oag {
 
-// PUBG Profile-7 synthetic actions. These bits are injected only by the
-// dedicated PUBG keyboard/mouse path in firmware.
+// PUBG Profile-7 synthetic actions. These bits exist only inside the
+// dedicated raw keyboard/mouse -> touch path.
 inline constexpr std::uint64_t kPubgMouseLeftButton = 1ull << 63;
 inline constexpr std::uint64_t kPubgTriangleShortButton = 1ull << 62;
 inline constexpr std::uint64_t kPubgTriangleHoldButton = 1ull << 61;
+inline constexpr std::uint64_t kPubgMouseLookHoldButton = 1ull << 60;
 
 struct MobileTouchContact {
     std::uint8_t id = 0;
@@ -51,10 +52,13 @@ private:
     );
 
     void resetLookTouch();
+    void resetMovementTouch();
 
     bool lookTouchActive_ = false;
     std::uint16_t lookTouchX_ = 11302;
     std::uint16_t lookTouchY_ = 26072;
+
+    bool movementTouchActive_ = false;
 };
 
 } // namespace oag
