@@ -399,9 +399,10 @@ const char* stringValue(std::uint8_t index) {
             return oag::product::kManufacturer;
 
         case 2:
-            return mobileProfile()
-                ? "OAG Mobile USB Gamepad"
-                : "AOG Abo Gemi ultra gaming";
+            // Branding only. Keep the PC XUSB child-controller identity,
+            // VID/PID, interfaces, endpoints and compatibility descriptors
+            // untouched; this changes only the USB device Product String.
+            return "OAG ABO GEMI ULTRA GAMING";
 
         case 3: {
             pico_unique_board_id_t id {};
