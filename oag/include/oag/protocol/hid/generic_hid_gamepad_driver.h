@@ -37,6 +37,7 @@ enum class GenericHidButtonLayout : std::uint8_t {
     LegacyDirectInput,
     ModernCanonical,
     SonyPlayStation,
+    DragonRiseTwinShockFamily,
 };
 
 struct GenericHidGamepadQuirks {
