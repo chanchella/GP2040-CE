@@ -31,6 +31,8 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     src/pc_xinput_platform_driver.cpp
     src/pc_hid_output.cpp
     src/pc_hid_platform_driver.cpp
+    src/mobile_touch_output.cpp
+    src/mobile_touch_platform_driver.cpp
     src/multi_profile_platform_driver.cpp
     src/output_profile_selector.cpp
     src/pc_native_km_output.cpp
@@ -53,6 +55,7 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     ../src/mapping/native_km_combo_engine.cpp
     ../src/output/xinput/xinput_report_encoder.cpp
     ../src/output/xinput/xinput_feedback_decoder.cpp
+    ../src/output/touch/mobile_touch_mapper.cpp
     ../src/feedback/keyboard_led_state.cpp
 )
 
