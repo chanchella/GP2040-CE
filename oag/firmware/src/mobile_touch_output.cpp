@@ -1,5 +1,6 @@
 #include "oag/firmware/mobile_touch_output.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -34,20 +35,47 @@ bool MobileTouchOutput::logicalIdOwned(
     return false;
 }
 
-void MobileTouchOutput::reconcileDesiredState() {
-    if (!initialized_) {
-        for (std::size_t i = 0; i < slots_.size(); ++i) {
-            PhysicalSlot& slot = slots_[i];
-            slot = {};
-            slot.logicalId =
-                i < kPinnedContactCount
-                    ? static_cast<std::int16_t>(i)
-                    : static_cast<std::int16_t>(-1);
+bool MobileTouchOutput::hasActiveContacts() const {
+    for (const PhysicalSlot& slot : slots_) {
+        if (slot.active) {
+            return true;
         }
-        initialized_ = true;
     }
 
-    // 1) Pinned camera/movement/fire IDs. They can never trade identities.
+    return false;
+}
+
+bool MobileTouchOutput::hasPendingRelease() const {
+    for (const PhysicalSlot& slot : slots_) {
+        if (slot.releaseSnapshotsRemaining != 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void MobileTouchOutput::initializeSlots() {
+    if (initialized_) {
+        return;
+    }
+
+    for (std::size_t i = 0; i < slots_.size(); ++i) {
+        PhysicalSlot& slot = slots_[i];
+        slot = {};
+        slot.logicalId =
+            i < kPinnedContactCount
+                ? static_cast<std::int16_t>(i)
+                : static_cast<std::int16_t>(-1);
+    }
+
+    initialized_ = true;
+}
+
+void MobileTouchOutput::reconcileDesiredState() {
+    initializeSlots();
+
+    // Pinned camera/movement/fire IDs never exchange identities.
     for (std::uint8_t physicalId = 0;
          physicalId < kPinnedContactCount;
          ++physicalId) {
@@ -61,7 +89,11 @@ void MobileTouchOutput::reconcileDesiredState() {
         if (desired == nullptr) {
             if (slot.active) {
                 slot.active = false;
-                slot.releaseSnapshotsRemaining = kReleaseSnapshots;
+                slot.releaseSnapshotsRemaining =
+                    std::max(
+                        slot.releaseSnapshotsRemaining,
+                        kReleaseSnapshots
+                    );
             }
             continue;
         }
@@ -69,10 +101,11 @@ void MobileTouchOutput::reconcileDesiredState() {
         slot.x = desired->x;
         slot.y = desired->y;
 
-        // A quick UP -> DOWN is held behind the accepted-snapshot barrier.
-        // This guarantees the host actually observes the UP before the same
-        // Contact ID is allowed to become active again.
+        // Never reactivate a Contact ID until its accepted UP records have
+        // completed. During a transport recovery, every contact must remain
+        // UP until the recovery barrier is fully delivered.
         if (
+            !transportRecoveryActive_ &&
             !slot.active &&
             slot.releaseSnapshotsRemaining == 0
         ) {
@@ -80,8 +113,7 @@ void MobileTouchOutput::reconcileDesiredState() {
         }
     }
 
-    // 2) Release dynamic leases whose mapper action disappeared, and update
-    // coordinates for continuing actions.
+    // Update or release dynamically leased IDs.
     for (std::size_t physicalId = kPinnedContactCount;
          physicalId < slots_.size();
          ++physicalId) {
@@ -102,10 +134,15 @@ void MobileTouchOutput::reconcileDesiredState() {
         if (desired == nullptr) {
             if (slot.active) {
                 slot.active = false;
-                slot.releaseSnapshotsRemaining = kReleaseSnapshots;
-            } else if (slot.releaseSnapshotsRemaining == 0) {
-                // The release barrier has been observed by the host. The
-                // physical ID may now be leased to a different action.
+                slot.releaseSnapshotsRemaining =
+                    std::max(
+                        slot.releaseSnapshotsRemaining,
+                        kReleaseSnapshots
+                    );
+            } else if (
+                slot.releaseSnapshotsRemaining == 0 &&
+                !transportRecoveryActive_
+            ) {
                 slot.logicalId = -1;
             }
             continue;
@@ -115,17 +152,19 @@ void MobileTouchOutput::reconcileDesiredState() {
         slot.y = desired->y;
 
         if (
+            !transportRecoveryActive_ &&
             !slot.active &&
             slot.releaseSnapshotsRemaining == 0
         ) {
-            // Same logical action re-pressed after its release fence: reuse
-            // the same physical ID instead of creating a second finger.
             slot.active = true;
         }
     }
 
-    // 3) Lease mapper actions 3..15 onto stable physical IDs 3..9. Mapper
-    // order is already the gameplay priority order, so allocation follows it.
+    if (transportRecoveryActive_) {
+        return;
+    }
+
+    // Lease logical actions 3..15 onto stable USB Contact IDs 3..9.
     for (std::uint8_t i = 0; i < desiredFrame_.count; ++i) {
         const oag::MobileTouchContact& desired =
             desiredFrame_.contacts[i];
@@ -159,38 +198,130 @@ void MobileTouchOutput::reconcileDesiredState() {
     }
 }
 
-void MobileTouchOutput::buildAuthoritativeReport() {
+void MobileTouchOutput::enterTransportRecovery() {
+    initializeSlots();
+
+    transportRecoveryActive_ = true;
+
+    // Convert every owned/active contact into an explicit UP record. Keep its
+    // last coordinates and Contact ID, exactly like real multitouch devices
+    // that append released contacts to the next report.
+    for (std::size_t physicalId = 0;
+         physicalId < slots_.size();
+         ++physicalId) {
+        PhysicalSlot& slot = slots_[physicalId];
+
+        if (
+            slot.active ||
+            slot.releaseSnapshotsRemaining != 0 ||
+            slot.logicalId >= 0
+        ) {
+            slot.active = false;
+            slot.releaseSnapshotsRemaining =
+                std::max(
+                    slot.releaseSnapshotsRemaining,
+                    kRecoveryReleaseSnapshots
+                );
+        }
+    }
+}
+
+void MobileTouchOutput::buildReport(std::uint64_t nowUs) {
     report_ = {};
 
-    // Always transmit all 10 HID Finger collections, in a permanent mapping:
-    // report collection index == Contact Identifier. Inactive contacts are
-    // explicit Tip=0/InRange=0 records instead of being omitted.
+    std::size_t recordIndex = 0;
+
+    // U2HTS-style hybrid report:
+    //   1) active contacts first,
+    //   2) explicit released contacts (Tip=0/InRange=0),
+    //   3) remaining fixed HID collections left zero and ignored because
+    //      Contact Count only covers records 0..contactCount-1.
     for (std::size_t physicalId = 0;
-        physicalId < slots_.size();
-        ++physicalId) {
+         physicalId < slots_.size() && recordIndex < kMaxContacts;
+         ++physicalId) {
         const PhysicalSlot& slot = slots_[physicalId];
-        ContactReport& out = report_.contacts[physicalId];
-        out.flags = slot.active ? 0x03u : 0x00u;
+
+        if (!slot.active) {
+            continue;
+        }
+
+        ContactReport& out = report_.contacts[recordIndex++];
+        out.flags = 0x03u;
         out.id = static_cast<std::uint8_t>(physicalId);
         out.x = slot.x;
         out.y = slot.y;
     }
 
-    // Contact Count is the number of contact RECORDS in this hybrid report.
-    // Tip Switch/In Range determine which of those records are active.
+    for (std::size_t physicalId = 0;
+         physicalId < slots_.size() && recordIndex < kMaxContacts;
+         ++physicalId) {
+        const PhysicalSlot& slot = slots_[physicalId];
+
+        if (
+            slot.active ||
+            slot.releaseSnapshotsRemaining == 0
+        ) {
+            continue;
+        }
+
+        ContactReport& out = report_.contacts[recordIndex++];
+        out.flags = 0x00u;
+        out.id = static_cast<std::uint8_t>(physicalId);
+        out.x = slot.x;
+        out.y = slot.y;
+    }
+
+    // HID Scan Time units are 100 microseconds (10^-4 seconds).
+    report_.scanTime =
+        static_cast<std::uint16_t>(
+            (nowUs / 100u) & 0xFFFFu
+        );
+
+    // This is intentionally the number of records that carry actual active or
+    // release information, not the descriptor's maximum contact capacity.
     report_.contactCount =
-        static_cast<std::uint8_t>(slots_.size());
+        static_cast<std::uint8_t>(recordIndex);
 }
 
-void MobileTouchOutput::commitAcceptedSnapshot() {
-    // Only accepted USB snapshots advance a release barrier. If TinyUSB is
-    // backpressured, the barrier cannot expire behind the host's back.
+void MobileTouchOutput::commitAcceptedSnapshot(
+    std::uint64_t nowUs
+) {
     for (PhysicalSlot& slot : slots_) {
         if (
             !slot.active &&
             slot.releaseSnapshotsRemaining > 0
         ) {
             --slot.releaseSnapshotsRemaining;
+        }
+    }
+
+    lastAcceptedReportUs_ = nowUs;
+
+    if (
+        transportRecoveryActive_ &&
+        !hasPendingRelease()
+    ) {
+        transportRecoveryActive_ = false;
+
+        // Dynamic leases may now be returned or reactivated from the current
+        // desired frame. Pinned 0/1/2 remain permanently reserved.
+        for (std::size_t physicalId = kPinnedContactCount;
+             physicalId < slots_.size();
+             ++physicalId) {
+            PhysicalSlot& slot = slots_[physicalId];
+
+            if (!slot.active && slot.releaseSnapshotsRemaining == 0) {
+                const bool stillDesired =
+                    slot.logicalId >= 0 &&
+                    findDesiredByLogicalId(
+                        desiredFrame_,
+                        static_cast<std::uint8_t>(slot.logicalId)
+                    ) != nullptr;
+
+                if (!stillDesired) {
+                    slot.logicalId = -1;
+                }
+            }
         }
     }
 }
@@ -216,9 +347,6 @@ bool MobileTouchOutput::send(
 }
 
 bool MobileTouchOutput::sendNeutral() {
-    // Disconnected state also resets the mapper's internal camera/movement
-    // gesture state, then the authoritative snapshot engine explicitly clears
-    // every physical Contact ID.
     desiredFrame_ = mapper_.map(LogicalGamepadState {});
     reconcileDesiredState();
     pump(true);
@@ -227,6 +355,18 @@ bool MobileTouchOutput::sendNeutral() {
 
 bool MobileTouchOutput::pump(bool forceImmediate) {
     const std::uint64_t nowUs = time_us_64();
+
+    // Device-side equivalent of the Linux sticky-finger safety net. This only
+    // fires if USB transport delivery itself has stalled while contacts are
+    // active; it does NOT impose a maximum duration on a legitimate hold.
+    if (
+        !transportRecoveryActive_ &&
+        hasActiveContacts() &&
+        lastAcceptedReportUs_ != 0 &&
+        nowUs - lastAcceptedReportUs_ >= kTransportStallUs
+    ) {
+        enterTransportRecovery();
+    }
 
     if (
         !forceImmediate &&
@@ -240,7 +380,7 @@ bool MobileTouchOutput::pump(bool forceImmediate) {
         return false;
     }
 
-    buildAuthoritativeReport();
+    buildReport(nowUs);
 
     if (!tud_hid_n_report(
             0,
@@ -251,12 +391,10 @@ bool MobileTouchOutput::pump(bool forceImmediate) {
         return false;
     }
 
-    commitAcceptedSnapshot();
+    commitAcceptedSnapshot(nowUs);
     nextSnapshotUs_ = nowUs + kSnapshotPeriodUs;
 
-    // A successfully accepted release snapshot may have completed a barrier.
-    // Reconcile immediately so the next report can safely reactivate/release
-    // leases without waiting for unrelated input.
+    // Accepted UP records may have completed a release/recovery barrier.
     reconcileDesiredState();
     return true;
 }
