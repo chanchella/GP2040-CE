@@ -1,0 +1,202 @@
+name: OAG UI5K Protocol Routing DInput V1
+
+on:
+  push:
+    branches:
+      - chatgpt/ui5k-protocol-routing-dinput-v1
+    paths:
+      - 'oag/src/protocol/hid/generic_hid_gamepad_driver.cpp'
+      - 'oag/tests/host/test_generic_hid_gamepad.cpp'
+      - 'oag/tests/host/test_usb_classifier_xgip.cpp'
+      - '.github/workflows/oag-ui5k-protocol-routing-dinput-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify protected baselines and isolated scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="5a1cee019bcad6b6329bf52ed0e24a743c372a7b"
+          UI5K="01af260742a6a402a851cceef0707ae69bd6a301"
+          PHONE_V3="2429dff3877204112b520cdc51941c489b2eecbb"
+
+          test "$(git merge-base "${BASE}" HEAD)" = "${BASE}"
+          test "$(git rev-parse origin/golden/ui5k-multiprofile-pc-phone-hw)" = "${BASE}"
+          test "$(git rev-parse "${UI5K}")" = "${UI5K}"
+          test "$(git rev-parse origin/golden/ui5k-mobile-otg-v3-hw)" = "${PHONE_V3}"
+
+          ACTUAL="$(git diff --name-only "${BASE}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-ui5k-protocol-routing-dinput-v1.yml' \
+            'oag/src/protocol/hid/generic_hid_gamepad_driver.cpp' \
+            'oag/tests/host/test_generic_hid_gamepad.cpp' \
+            'oag/tests/host/test_usb_classifier_xgip.cpp' | sort)"
+
+          echo "=== CHANGE SCOPE ==="
+          printf '%s\n' "${ACTUAL}"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          # Hard-lock all runtime pieces that already passed hardware.
+          git diff --exit-code "${BASE}" HEAD -- \
+            oag/firmware/src/main.cpp \
+            oag/firmware/src/usb_descriptors.cpp \
+            oag/firmware/tusb_config.h \
+            oag/firmware/src/output_profile_selector.cpp \
+            oag/firmware/src/multi_profile_platform_driver.cpp \
+            oag/firmware/src/pc_hid_output.cpp \
+            oag/firmware/src/pc_xinput_device.cpp \
+            oag/firmware/src/pc_native_km_output.cpp \
+            oag/firmware/src/bluetooth_host_v2.cpp \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/xinput_host.cpp \
+            oag/src/device/usb_device_classifier.cpp \
+            oag/include/oag/device/usb_device_classifier.h
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          cpp = Path("oag/src/protocol/hid/generic_hid_gamepad_driver.cpp").read_text()
+          hid_test = Path("oag/tests/host/test_generic_hid_gamepad.cpp").read_text()
+          route_test = Path("oag/tests/host/test_usb_classifier_xgip.cpp").read_text()
+
+          # Legacy DirectInput face order.
+          assert "layout == GenericHidButtonLayout::ModernCanonical" in cpp
+          assert "case 1: state.buttons |= ButtonNorth;" in cpp
+          assert "case 2: state.buttons |= ButtonEast;" in cpp
+          assert "case 3: state.buttons |= ButtonSouth;" in cpp
+          assert "case 4: state.buttons |= ButtonWest;" in cpp
+
+          # Modern HID must keep the canonical order.
+          assert "case 1: state.buttons |= ButtonSouth;" in cpp
+          assert "case 3: state.buttons |= ButtonWest;" in cpp
+
+          # Host tests explicitly verify all four legacy face buttons.
+          assert "legacyFaceCases" in hid_test
+          assert "{0x01, ButtonNorth" in hid_test
+          assert "{0x02, ButtonEast" in hid_test
+          assert "{0x04, ButtonSouth" in hid_test
+          assert "{0x08, ButtonWest" in hid_test
+          assert "modernState.buttons & ButtonSouth" in hid_test
+
+          # Protocol routing contract requested by the hardware architecture:
+          # 0x03 -> HID, 0xFF/0x5D/0x01 or 0x81 -> XInput.
+          assert "0x03, 0x00, 0x00" in route_test
+          assert "ProtocolKind::HidGamepad" in route_test
+          assert "0xFF, 0x5D, 0x01" in route_test
+          assert "0xFF, 0x5D, 0x81" in route_test
+          assert "ProtocolKind::XusbXbox360" in route_test
+
+          print("PROTOCOL_ROUTING_DINPUT_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build and run host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact UI5K Pico SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned SDK generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Configure and build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k" \
+          cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+
+          test "${#UF2[@]}" -eq 1
+          test "${#ELF[@]}" -eq 1
+          test "${#MAP[@]}" -eq 1
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+          cp "${UF2[0]}" "artifacts/OAG_UI5K_PROTOCOL_ROUTING_DINPUT_V1_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF[0]}" "artifacts/OAG_UI5K_PROTOCOL_ROUTING_DINPUT_V1_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP[0]}" "artifacts/OAG_UI5K_PROTOCOL_ROUTING_DINPUT_V1_${SHORT_SHA}_Pico2W.map"
+
+          sha256sum artifacts/OAG_UI5K_PROTOCOL_ROUTING_DINPUT_V1_* > artifacts/SHA256SUMS.txt
+
+          printf '%s\n' \
+            "BASE=5a1cee019bcad6b6329bf52ed0e24a743c372a7b" \
+            "ROUTING=HID_0x03_TO_HID__XUSB_0xFF_0x5D_TO_XINPUT" \
+            "LEGACY_DINPUT_FACE=1:NORTH,2:EAST,3:SOUTH,4:WEST" \
+            "MODERN_HID_UNCHANGED=YES" \
+            "SONY_UNCHANGED=YES" \
+            "XINPUT_UNCHANGED=YES" \
+            > artifacts/BUILD-INFO.txt
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-UI5K-PROTOCOL-ROUTING-DINPUT-V1-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
