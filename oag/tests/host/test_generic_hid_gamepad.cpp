@@ -375,6 +375,103 @@ int main() {
     // Existing generic descriptors must NOT accidentally inherit this family
     // mapping. The original generic test above still maps usage 1 to South.
 
+    // Known TwinShock-family classification must normalize the FINAL
+    // universal face state even when the descriptor itself is a different
+    // generic layout variant. This covers 0079:0006 clones that share an ID
+    // but not one exact descriptor.
+    GenericHidGamepadQuirks forcedTwinShock {};
+    forcedTwinShock.buttonLayout =
+        GenericHidButtonLayout::DragonRiseTwinShockFamily;
+
+    GenericHidGamepadDescriptor forcedTwinShockParsed {};
+    assert(driver.parseDescriptor(
+        descriptor,
+        sizeof(descriptor),
+        forcedTwinShock,
+        forcedTwinShockParsed
+    ));
+
+    // Generic raw usage 3 normally becomes ButtonWest. For this family the
+    // hardware-observed physical button is Cross/South, so post-normalization
+    // must rotate old West -> South.
+    const std::uint8_t forcedTwinShockSouth[] = {
+        0x80, 0x80, 0x80, 0x80,
+        0x0F,
+        0x04, 0x00
+    };
+
+    UniversalGamepadState forcedTwinShockState {};
+    assert(driver.parseReport(
+        DeviceId {7, 1},
+        forcedTwinShockParsed,
+        forcedTwinShock,
+        forcedTwinShockSouth,
+        sizeof(forcedTwinShockSouth),
+        330000,
+        forcedTwinShockState
+    ));
+    assert((forcedTwinShockState.buttons & ButtonSouth) != 0);
+    assert((forcedTwinShockState.buttons & ButtonWest) == 0);
+
+    // Generic raw usage 1 normally becomes South. On this family that is the
+    // physical Triangle/North button, so old South -> North.
+    const std::uint8_t forcedTwinShockNorth[] = {
+        0x80, 0x80, 0x80, 0x80,
+        0x0F,
+        0x01, 0x00
+    };
+
+    assert(driver.parseReport(
+        DeviceId {7, 1},
+        forcedTwinShockParsed,
+        forcedTwinShock,
+        forcedTwinShockNorth,
+        sizeof(forcedTwinShockNorth),
+        330100,
+        forcedTwinShockState
+    ));
+    assert((forcedTwinShockState.buttons & ButtonNorth) != 0);
+    assert((forcedTwinShockState.buttons & ButtonSouth) == 0);
+
+    // Generic raw usage 4 normally becomes North. On this family that is the
+    // physical Square/West button, so old North -> West.
+    const std::uint8_t forcedTwinShockWest[] = {
+        0x80, 0x80, 0x80, 0x80,
+        0x0F,
+        0x08, 0x00
+    };
+
+    assert(driver.parseReport(
+        DeviceId {7, 1},
+        forcedTwinShockParsed,
+        forcedTwinShock,
+        forcedTwinShockWest,
+        sizeof(forcedTwinShockWest),
+        330200,
+        forcedTwinShockState
+    ));
+    assert((forcedTwinShockState.buttons & ButtonWest) != 0);
+    assert((forcedTwinShockState.buttons & ButtonNorth) == 0);
+
+    // East/Circle remains East.
+    const std::uint8_t forcedTwinShockEast[] = {
+        0x80, 0x80, 0x80, 0x80,
+        0x0F,
+        0x02, 0x00
+    };
+
+    assert(driver.parseReport(
+        DeviceId {7, 1},
+        forcedTwinShockParsed,
+        forcedTwinShock,
+        forcedTwinShockEast,
+        sizeof(forcedTwinShockEast),
+        330300,
+        forcedTwinShockState
+    ));
+    assert((forcedTwinShockState.buttons & ButtonEast) != 0);
+    assert((forcedTwinShockState.buttons & ButtonWest) == 0);
+
     GenericHidGamepadQuirks sonyQuirks {};
     sonyQuirks.buttonLayout =
         GenericHidButtonLayout::SonyPlayStation;
