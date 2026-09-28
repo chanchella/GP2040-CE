@@ -40,6 +40,8 @@ int main() {
     assert(gigamax.recognized);
     assert(gigamax.protocol == ProtocolKind::HidGamepad);
     assert(gigamax.hasQuirk(UsbQuirkForceHidGamepad));
+    assert(gigamax.hasQuirk(UsbQuirkZRzAsRightStick));
+    assert(gigamax.hasQuirk(UsbQuirkDragonRiseTwinShockButtons));
 
     const UsbDeviceClassification xusb = classifier.classify({
         0x9999, 0x1111, 0xFF, 0x5D, 0x01, 2
