@@ -115,7 +115,9 @@ static constexpr std::uint8_t kPubgKeyCUsage = 0x06;
 static constexpr std::uint8_t kPubgKeyDUsage = 0x07;
 static constexpr std::uint8_t kPubgKeyEUsage = 0x08;
 static constexpr std::uint8_t kPubgKeyFUsage = 0x09;
+static constexpr std::uint8_t kPubgKeyGUsage = 0x0A;
 static constexpr std::uint8_t kPubgKeyQUsage = 0x14;
+static constexpr std::uint8_t kPubgKeyRUsage = 0x15;
 static constexpr std::uint8_t kPubgKeySUsage = 0x16;
 static constexpr std::uint8_t kPubgKeyWUsage = 0x1A;
 static constexpr std::uint8_t kPubgKeyTabUsage = 0x2B;
@@ -1070,6 +1072,8 @@ public:
                 mouseState.dx,
                 mouseState.dy,
             };
+            currentNativeWheel_ = mouseState.wheel;
+            currentNativePan_ = mouseState.pan;
 
             updateMouseAimFromCurrentMotion(nowUs);
 
@@ -1149,6 +1153,10 @@ private:
     static constexpr std::uint64_t kPubgTriangleHoldPulseUs = 100000;
     static constexpr std::uint64_t kPubgTriangleRefreshUs = 2000;
     static constexpr std::uint64_t kPubgMovementPrimeDelayUs = 5000;
+    static constexpr std::uint64_t kPubgScrollPulseUs = 40000;
+    static constexpr std::uint8_t kPubgScrollNone = 0;
+    static constexpr std::uint8_t kPubgScrollDown = 1;
+    static constexpr std::uint8_t kPubgScrollUp = 2;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -1886,6 +1894,18 @@ private:
                 output.buttons |= oag::ButtonShare;
             }
 
+            if ((keyboard.modifiers & 0x22u) != 0) {
+                output.buttons |= oag::kPubgShiftButton;
+            }
+
+            if (keyboard.pressed(kPubgKeyRUsage)) {
+                output.buttons |= oag::kPubgKeyRButton;
+            }
+
+            if (keyboard.pressed(kPubgKeyGUsage)) {
+                output.buttons |= oag::kPubgKeyGButton;
+            }
+
             std::uint8_t movementMask = 0;
 
             if (keyboard.pressed(kPubgKeyWUsage)) {
@@ -1936,13 +1956,45 @@ private:
 
             pubgMovementMask_ = movementMask;
 
-            // FIRE is mouse-left only. It has its own touch Contact ID and
-            // never writes camera rx/ry.
-            if (
-                hasMouse &&
-                (mouse.buttons & oag::MouseButtonLeft) != 0
-            ) {
-                output.buttons |= oag::kPubgMouseLeftButton;
+            // Mouse buttons are independent touch actions. None of them
+            // writes rx/ry, so FIRE / ADS / middle-click can never steer the
+            // camera finger.
+            if (hasMouse) {
+                if ((mouse.buttons & oag::MouseButtonLeft) != 0) {
+                    output.buttons |= oag::kPubgMouseLeftButton;
+                }
+
+                if ((mouse.buttons & oag::MouseButtonRight) != 0) {
+                    output.buttons |= oag::kPubgMouseRightButton;
+                }
+
+                if ((mouse.buttons & oag::MouseButtonMiddle) != 0) {
+                    output.buttons |= oag::kPubgMouseMiddleButton;
+                }
+            }
+
+            // Wheel input is an event, so convert one report into a bounded
+            // touch pulse and consume the wheel delta immediately.
+            if (currentNativeWheel_ < 0) {
+                pubgScrollPulse_ = kPubgScrollDown;
+                pubgScrollPulseExpiresUs_ =
+                    nowUs + kPubgScrollPulseUs;
+            } else if (currentNativeWheel_ > 0) {
+                pubgScrollPulse_ = kPubgScrollUp;
+                pubgScrollPulseExpiresUs_ =
+                    nowUs + kPubgScrollPulseUs;
+            }
+
+            if (currentNativeWheel_ != 0) {
+                currentNativeWheel_ = 0;
+            }
+
+            currentNativePan_ = 0;
+
+            if (pubgScrollPulse_ == kPubgScrollDown) {
+                output.buttons |= oag::kPubgScrollDownButton;
+            } else if (pubgScrollPulse_ == kPubgScrollUp) {
+                output.buttons |= oag::kPubgScrollUpButton;
             }
 
             // CAMERA is mouse motion only. A zero-delta mouse/button/keyboard
@@ -2357,6 +2409,9 @@ private:
             pubgMovementMask_ = 0;
             pubgMovementPrimePending_ = false;
             pubgMovementPrimeNotBeforeUs_ = 0;
+
+            pubgScrollPulse_ = kPubgScrollNone;
+            pubgScrollPulseExpiresUs_ = 0;
             return;
         }
 
@@ -2385,6 +2440,16 @@ private:
         ) {
             pubgTriangleRefreshNotBeforeUs_ =
                 nowUs + kPubgTriangleRefreshUs;
+            sendRefresh = true;
+        }
+
+        if (
+            pubgScrollPulse_ != kPubgScrollNone &&
+            pubgScrollPulseExpiresUs_ != 0 &&
+            nowUs >= pubgScrollPulseExpiresUs_
+        ) {
+            pubgScrollPulse_ = kPubgScrollNone;
+            pubgScrollPulseExpiresUs_ = 0;
             sendRefresh = true;
         }
 
@@ -2738,6 +2803,9 @@ private:
     std::uint8_t pubgMovementMask_ = 0;
     bool pubgMovementPrimePending_ = false;
     std::uint64_t pubgMovementPrimeNotBeforeUs_ = 0;
+
+    std::uint8_t pubgScrollPulse_ = kPubgScrollNone;
+    std::uint64_t pubgScrollPulseExpiresUs_ = 0;
 
     std::array<
         XgipInitPhase,
