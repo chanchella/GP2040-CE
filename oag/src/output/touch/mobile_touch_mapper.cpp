@@ -91,7 +91,7 @@ constexpr std::uint8_t kScrollDownContactId = 13;
 constexpr std::uint16_t kScrollDownX = 3034; // Pointer (100,1050)
 constexpr std::uint16_t kScrollDownY = 14408;
 
-constexpr std::uint8_t kScrollUpContactId = 13;
+constexpr std::uint8_t kScrollUpContactId = 6;
 constexpr std::uint16_t kScrollUpX = 3034; // Pointer (100,1305)
 constexpr std::uint16_t kScrollUpY = 17907;
 
