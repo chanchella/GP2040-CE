@@ -1,0 +1,165 @@
+name: Publish OAG Golden Release 19b84f3c
+
+on:
+  push:
+    branches:
+      - chatgpt/package-oag-golden-19b84f3c
+    paths:
+      - '.github/workflows/publish-oag-golden-release-19b84f3c.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout exact Golden source
+        uses: actions/checkout@v4.1.1
+        with:
+          ref: 19b84f3c458384f75a44cc394da8269e49e57340
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout pinned Pico SDK
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify exact revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "19b84f3c458384f75a44cc394da8269e49e57340"
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          test "$(git -C pico-sdk-ui5k/lib/btstack rev-parse HEAD)" = "075a0780f0fad7ff67d58ac19f46e8953656a752"
+          test "$(git -C pico-sdk-ui5k/lib/cyw43-driver rev-parse HEAD)" = "055d64274b014dd7b1c2fc94d26e8a18face7124"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Regression gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+          cmake -S oag -B build/oag-host             -DCMAKE_BUILD_TYPE=Release             -DOAG_BUILD_HOST_TESTS=ON
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+      - name: Build Golden firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k"           cmake -S oag/firmware -B build/oag-fw             -DCMAKE_BUILD_TYPE=Release             -DPICO_BOARD=pico2_w             -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+          UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)"
+          test -n "${UF2}"
+          test "$(sha256sum "${UF2}" | awk '{print $1}')" = "5e15df0db8339129466ea337f353b68fae7a76c584884d598ffd7c9b90e4d448"
+
+      - name: Assemble release files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OUT="release-assets"
+          ROOT="OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_19b84f3c"
+          mkdir -p "${OUT}/${ROOT}/SOURCE" "${OUT}/${ROOT}/BUILD" "${OUT}/${ROOT}/DEPENDENCIES/pico-sdk-ui5k"
+
+          rsync -a             --exclude='.git'             --exclude='/build'             --exclude='/release-assets'             --exclude='/pico-sdk-ui5k'             ./ "${OUT}/${ROOT}/SOURCE/"
+
+          rsync -a             --exclude='.git'             pico-sdk-ui5k/ "${OUT}/${ROOT}/DEPENDENCIES/pico-sdk-ui5k/"
+
+          git submodule status --recursive > "${OUT}/${ROOT}/SUBMODULES.txt"
+
+          UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)"
+          ELF="$(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)"
+          MAP="$(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)"
+
+          cp "${UF2}" "${OUT}/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_Pico2W.uf2"
+          cp "${UF2}" "${OUT}/${ROOT}/BUILD/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_Pico2W.uf2"
+          cp "${ELF}" "${OUT}/${ROOT}/BUILD/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_Pico2W.elf"
+          cp "${MAP}" "${OUT}/${ROOT}/BUILD/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_Pico2W.map"
+
+          cat > "${OUT}/${ROOT}/GOLDEN-MANIFEST.txt" <<'EOF'
+          OAG ABO GEMI ULTRA GAMING — GOLDEN HARDWARE BASELINE
+          ====================================================
+
+          GOLDEN_BRANCH=golden/ui5k-oag-abo-gemi-ultra-gaming-v1
+          GOLDEN_COMMIT=19b84f3c458384f75a44cc394da8269e49e57340
+
+          PARENT_HARDWARE_BASELINE=5d41992109d16570b6b2ed70e0c5dd3e284d7b01
+          MULTIPROFILE_PC_PHONE_HW_BASELINE=5a1cee019bcad6b6329bf52ed0e24a743c372a7b
+          UI5K_ORIGINAL_GOLDEN=01af260742a6a402a851cceef0707ae69bd6a301
+          PHONE_V3_HW_GOLDEN=2429dff3877204112b520cdc51941c489b2eecbb
+
+          USB_PRODUCT_STRING=OAG ABO GEMI ULTRA GAMING
+          WINDOWS_XINPUT_CHILD_NAMES=UNCHANGED
+          PC_VID_PID=CAFE:4016
+          PHONE_VID_PID=CAFE:4017
+
+          HARDWARE_VERIFIED_BY_USER=YES
+
+          VERIFIED:
+          - PC and Phone profiles
+          - F8+F9+0 / F8+F9+1 runtime switching
+          - Bluetooth controllers
+          - Wired USB controllers
+          - PIO USB Host / hubs
+          - Keyboard and mouse
+          - Independent gamepad slots
+          - Windows XInput output
+          - Rumble
+          - Primary-controller architecture
+          - Legacy DirectInput normalization
+          - GigaMax correct on Windows and Phone
+          - OAG ABO GEMI ULTRA GAMING branding
+
+          This Golden baseline is read-only.
+          EOF
+
+          cat > "${OUT}/${ROOT}/PICO-SDK-REVISION.txt" <<'EOF'
+          PICO_SDK_COMMIT=98a542c1a62fb549ffb5d66a3e5892b06276b670
+          BTSTACK_COMMIT=075a0780f0fad7ff67d58ac19f46e8953656a752
+          CYW43_DRIVER_COMMIT=055d64274b014dd7b1c2fc94d26e8a18face7124
+          EOF
+
+          (
+            cd "${OUT}/${ROOT}"
+            sha256sum               BUILD/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_Pico2W.uf2               BUILD/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_Pico2W.elf               BUILD/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_Pico2W.map               GOLDEN-MANIFEST.txt               PICO-SDK-REVISION.txt               SUBMODULES.txt               > SHA256SUMS.txt
+          )
+
+          cp "${OUT}/${ROOT}/GOLDEN-MANIFEST.txt" "${OUT}/GOLDEN-MANIFEST.txt"
+          cp "${OUT}/${ROOT}/SHA256SUMS.txt" "${OUT}/SHA256SUMS.txt"
+
+          cd "${OUT}"
+          zip -r -9 "OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_COMPLETE_19b84f3c.zip" "${ROOT}"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="oag-golden-19b84f3c"
+          TITLE="OAG ABO GEMI ULTRA GAMING — Golden 19b84f3c"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release delete "${TAG}" --yes --cleanup-tag
+          fi
+
+          gh release create "${TAG}"             --target "19b84f3c458384f75a44cc394da8269e49e57340"             --title "${TITLE}"             --notes "Hardware-verified Golden baseline for OAG ABO GEMI ULTRA GAMING. Includes firmware-only UF2 plus the complete preserved source/dependency/build package."             release-assets/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_Pico2W.uf2             release-assets/OAG_ABO_GEMI_ULTRA_GAMING_GOLDEN_COMPLETE_19b84f3c.zip             release-assets/GOLDEN-MANIFEST.txt             release-assets/SHA256SUMS.txt
