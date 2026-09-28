@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
 
 #include "oag/input/gamepad_state.h"
 
@@ -13,22 +12,38 @@ constexpr std::int32_t kStickDeadzone = 0x28000000;
 constexpr std::uint32_t kTriggerThreshold = 0x10000000u;
 
 // Game 1 calibration source:
-// screenshot 1910x864, target phone landscape 2388x1080.
-// HID touchscreen coordinates are normalized to 0..32767.
+// supplied screenshot = 1910x864
+// target phone landscape = 2388x1080
+// HID touchscreen logical coordinates = 0..32767.
 //
-// Screenshot -> physical target -> HID normalized:
-// Left arrow  : (183,683) -> (229,854)  -> (3139,25903)
-// Center / R3 : (356,681) -> (445,851)  -> (6107,25827)
-// Right arrow : (506,684) -> (633,855)  -> (8681,25941)
-// Cross attack: (1664,706)-> (2080,882) -> (28547,26775)
+// Final user-confirmed labels:
+//   left arrow  -> movement Left
+//   center      -> R3 click
+//   right arrow -> movement Right
+//   upper R2    -> physical/logical R2
+//   upper-right X mark -> PlayStation Cross / X
+//   large lower-right blue square -> PlayStation Square
+//
+// Screenshot centers -> HID normalized:
+//   Left   (183,683)  -> (3139,25903)
+//   R3     (356,681)  -> (6107,25827)
+//   Right  (506,684)  -> (8681,25941)
+//   R2     (1640,485) -> (28135,18394)
+//   Cross  (1801,554) -> (30897,21010)
+//   Square (1648,711) -> (28272,26965)
 constexpr std::uint16_t kMoveLeftX = 3139;
 constexpr std::uint16_t kMoveLeftY = 25903;
-constexpr std::uint16_t kMoveCenterX = 6107;
-constexpr std::uint16_t kMoveCenterY = 25827;
+constexpr std::uint16_t kR3X = 6107;
+constexpr std::uint16_t kR3Y = 25827;
 constexpr std::uint16_t kMoveRightX = 8681;
 constexpr std::uint16_t kMoveRightY = 25941;
-constexpr std::uint16_t kCrossAttackX = 28547;
-constexpr std::uint16_t kCrossAttackY = 26775;
+
+constexpr std::uint16_t kR2X = 28135;
+constexpr std::uint16_t kR2Y = 18394;
+constexpr std::uint16_t kCrossX = 30897;
+constexpr std::uint16_t kCrossY = 21010;
+constexpr std::uint16_t kSquareX = 28272;
+constexpr std::uint16_t kSquareY = 26965;
 
 bool hasDpad(std::uint8_t dpad, DpadBits bit) {
     return
@@ -85,9 +100,9 @@ void MobileTouchMapper::appendStick(
     std::uint16_t centerY,
     std::uint16_t radius
 ) {
-    // Kept for the generic mapper interface. Game 1 intentionally uses
-    // digital left/right touch points because the on-screen control is a
-    // side-scroller rocker rather than a free analog joystick.
+    // Game 1 has a fixed side-scroller rocker, not a free analog joystick.
+    // Keep the generic class contract intact while this profile maps only
+    // explicit left/right touch targets.
     (void)frame;
     (void)id;
     (void)x;
@@ -106,15 +121,10 @@ MobileTouchFrame MobileTouchMapper::map(
         return frame;
     }
 
-    // One contact only on the left rocker:
-    // - R3 click -> center
-    // - D-pad/left-stick left -> left arrow
-    // - D-pad/left-stick right -> right arrow
-    //
-    // R3 has priority so the touchscreen never receives two simultaneous
-    // fingers on the same virtual rocker.
+    // Contact 0 owns the left rocker. R3 has priority over movement so we
+    // never place two fingers on the same three-part control.
     if (state.buttons & ButtonRightStick) {
-        append(frame, 0, kMoveCenterX, kMoveCenterY);
+        append(frame, 0, kR3X, kR3Y);
     } else {
         const bool left =
             hasDpad(state.dpad, DpadBits::Left) ||
@@ -133,14 +143,21 @@ MobileTouchFrame MobileTouchMapper::map(
         }
     }
 
-    // PlayStation Cross / logical South hits the large attack button marked
-    // by the user. RT shares the same touch target so a physical R2 or the
-    // existing mouse-left -> RT binding can attack without a separate profile.
-    if (
-        (state.buttons & ButtonSouth) ||
-        state.rightTrigger > kTriggerThreshold
-    ) {
-        append(frame, 1, kCrossAttackX, kCrossAttackY);
+    // PlayStation Cross / logical South -> the user-marked X button.
+    if (state.buttons & ButtonSouth) {
+        append(frame, 1, kCrossX, kCrossY);
+    }
+
+    // PlayStation Square / logical West -> the user-marked blue-square button.
+    if (state.buttons & ButtonWest) {
+        append(frame, 2, kSquareX, kSquareY);
+    }
+
+    // Physical/logical R2 -> the user-marked R2 button.
+    // The existing keyboard/mouse profile maps mouse-left to Right Trigger,
+    // so mouse-left reaches this exact touch target as well.
+    if (state.rightTrigger > kTriggerThreshold) {
+        append(frame, 3, kR2X, kR2Y);
     }
 
     return frame;
