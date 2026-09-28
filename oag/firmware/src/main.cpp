@@ -167,7 +167,7 @@ public:
         serviceOutputProfileHotkey();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
-        servicePubgTriangleTiming();
+        servicePubgTouchMaintenance();
         serviceMouseAimRelease();
         servicePlatformFeedback();
     }
@@ -667,14 +667,7 @@ public:
                 currentNativeWheel_ = mouseState.wheel;
                 currentNativePan_ = mouseState.pan;
 
-                mouseAimActive_ =
-                    currentMouseMotion_.dx != 0 ||
-                    currentMouseMotion_.dy != 0;
-
-                if (mouseAimActive_) {
-                    mouseAimExpiresUs_ =
-                        nowUs + kMouseAimHoldUs;
-                }
+                updateMouseAimFromCurrentMotion(nowUs);
 
                 composedChanged = true;
             }
@@ -728,14 +721,7 @@ public:
                 currentNativeWheel_ = mouseState.wheel;
                 currentNativePan_ = mouseState.pan;
 
-                mouseAimActive_ =
-                    currentMouseMotion_.dx != 0 ||
-                    currentMouseMotion_.dy != 0;
-
-                if (mouseAimActive_) {
-                    mouseAimExpiresUs_ =
-                        time_us_64() + kMouseAimHoldUs;
-                }
+                updateMouseAimFromCurrentMotion(time_us_64());
 
                 sendComposedOutput();
             }
@@ -1085,14 +1071,7 @@ public:
                 mouseState.dy,
             };
 
-            mouseAimActive_ =
-                currentMouseMotion_.dx != 0 ||
-                currentMouseMotion_.dy != 0;
-
-            if (mouseAimActive_) {
-                mouseAimExpiresUs_ =
-                    nowUs + kMouseAimHoldUs;
-            }
+            updateMouseAimFromCurrentMotion(nowUs);
 
             composedChanged = true;
         }
@@ -1169,6 +1148,7 @@ private:
     static constexpr std::uint64_t kPubgTriangleHoldThresholdUs = 100000;
     static constexpr std::uint64_t kPubgTriangleHoldPulseUs = 100000;
     static constexpr std::uint64_t kPubgTriangleRefreshUs = 2000;
+    static constexpr std::uint64_t kPubgMovementPrimeDelayUs = 5000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -1870,8 +1850,8 @@ private:
         const bool touchProfile =
             oag::firmware::mobileTouchUsbProfileActive();
 
-        // F4+F5 and F8+F9+digit are reserved global system chords.
-        // Consume them before either normal mapping or PUBG direct mapping.
+        // F4+F5 and F8+F9+digit remain global system chords and never leak
+        // into either PUBG touch actions or the normal profiles.
         if (
             keyboard.pressed(kModeToggleF4Usage) &&
             keyboard.pressed(kModeToggleF5Usage)
@@ -1882,12 +1862,6 @@ private:
 
         consumeOutputProfileChord(keyboard);
 
-        // Dedicated PUBG Profile 7 path.
-        //
-        // IMPORTANT: keyboard/mouse do NOT pass through the old
-        // KeyboardMouseGamepadMapper here. Raw keys become touch actions
-        // directly, so there is no controller semantic overlap, no mouse-right
-        // trigger mapping, and no accidental hold from the legacy overlay.
         if (touchProfile) {
             oag::LogicalGamepadState output {};
             output.connected = hasKeyboard || hasMouse;
@@ -1912,32 +1886,58 @@ private:
                 output.buttons |= oag::ButtonShare;
             }
 
+            std::uint8_t movementMask = 0;
+
             if (keyboard.pressed(kPubgKeyWUsage)) {
                 output.dpad |= static_cast<std::uint8_t>(
                     oag::DpadBits::Up
                 );
+                movementMask |= 0x01u;
             }
 
             if (keyboard.pressed(kPubgKeySUsage)) {
                 output.dpad |= static_cast<std::uint8_t>(
                     oag::DpadBits::Down
                 );
+                movementMask |= 0x02u;
             }
 
             if (keyboard.pressed(kPubgKeyAUsage)) {
                 output.dpad |= static_cast<std::uint8_t>(
                     oag::DpadBits::Left
                 );
+                movementMask |= 0x04u;
             }
 
             if (keyboard.pressed(kPubgKeyDUsage)) {
                 output.dpad |= static_cast<std::uint8_t>(
                     oag::DpadBits::Right
                 );
+                movementMask |= 0x08u;
             }
 
-            // Only mouse-left is assigned in PUBG V1.
-            // Mouse-right/middle/back/forward are deliberately ignored.
+            const std::uint64_t nowUs = time_us_64();
+
+            // A new WASD gesture must first TOUCH joystick center, then DRAG
+            // the same Contact ID. Schedule one guaranteed follow-up frame.
+            if (
+                movementMask != 0 &&
+                pubgMovementMask_ == 0
+            ) {
+                pubgMovementPrimePending_ = true;
+                pubgMovementPrimeNotBeforeUs_ =
+                    nowUs + kPubgMovementPrimeDelayUs;
+            }
+
+            if (movementMask == 0) {
+                pubgMovementPrimePending_ = false;
+                pubgMovementPrimeNotBeforeUs_ = 0;
+            }
+
+            pubgMovementMask_ = movementMask;
+
+            // FIRE is mouse-left only. It has its own touch Contact ID and
+            // never writes camera rx/ry.
             if (
                 hasMouse &&
                 (mouse.buttons & oag::MouseButtonLeft) != 0
@@ -1945,20 +1945,29 @@ private:
                 output.buttons |= oag::kPubgMouseLeftButton;
             }
 
-            // Preserve the hardware-verified V5 raw relative mouse path.
-            // The PUBG touch mapper applies the new bounds and 0.5x speed.
+            // CAMERA is mouse motion only. A zero-delta mouse/button/keyboard
+            // report while the short camera window is alive holds the current
+            // camera finger in place rather than releasing or moving it.
+            const bool hasFreshMouseDelta =
+                currentMouseMotion_.dx != 0 ||
+                currentMouseMotion_.dy != 0;
+
             if (mouseAimActive_) {
-                output.rx =
-                    encodeTouchMouseDelta(
-                        currentMouseMotion_.dx
-                    );
-                output.ry =
-                    encodeTouchMouseDelta(
-                        currentMouseMotion_.dy
-                    );
+                if (hasFreshMouseDelta) {
+                    output.rx =
+                        encodeTouchMouseDelta(
+                            currentMouseMotion_.dx
+                        );
+                    output.ry =
+                        encodeTouchMouseDelta(
+                            currentMouseMotion_.dy
+                        );
+                } else {
+                    output.buttons |=
+                        oag::kPubgMouseLookHoldButton;
+                }
             }
 
-            const std::uint64_t nowUs = time_us_64();
             updatePubgTriangleState(
                 keyboard.pressed(kPubgKeyCUsage),
                 nowUs
@@ -1978,6 +1987,15 @@ private:
                 hostPrimaryOutputSlot_,
                 output
             );
+
+            // A relative HID mouse delta is an event, not a state. Consume it
+            // exactly once so maintenance/triangle/keyboard reports can never
+            // replay camera movement. The camera finger itself is held by
+            // kPubgMouseLookHoldButton until its normal timeout.
+            if (hasFreshMouseDelta) {
+                currentMouseMotion_ = {};
+            }
+
             return;
         }
 
@@ -2306,35 +2324,73 @@ private:
         nativeKmOutput_.task(nowUs);
     }
 
-    void servicePubgTriangleTiming() {
+    void updateMouseAimFromCurrentMotion(
+        std::uint64_t nowUs
+    ) {
+        const bool moving =
+            currentMouseMotion_.dx != 0 ||
+            currentMouseMotion_.dy != 0;
+
+        if (moving) {
+            mouseAimActive_ = true;
+            mouseAimExpiresUs_ =
+                nowUs + kMouseAimHoldUs;
+            return;
+        }
+
+        // In PUBG Touch, mouse button reports with dx=dy=0 do NOT own the
+        // camera lifecycle. Keep the camera finger until the motion timeout.
+        if (!oag::firmware::mobileTouchUsbProfileActive()) {
+            mouseAimActive_ = false;
+            mouseAimExpiresUs_ = 0;
+        }
+    }
+
+    void servicePubgTouchMaintenance() {
         if (!oag::firmware::mobileTouchUsbProfileActive()) {
             pubgTriangleKeyDown_ = false;
             pubgTriangleSequenceActive_ = false;
             pubgTriangleHoldLatched_ = false;
             pubgTriangleStartedUs_ = 0;
             pubgTriangleRefreshNotBeforeUs_ = 0;
-            return;
-        }
 
-        if (!pubgTriangleSequenceActive_) {
+            pubgMovementMask_ = 0;
+            pubgMovementPrimePending_ = false;
+            pubgMovementPrimeNotBeforeUs_ = 0;
             return;
         }
 
         const std::uint64_t nowUs = time_us_64();
+        bool sendRefresh = false;
 
+        // One guaranteed follow-up after WASD starts converts the mapper's
+        // center touch into a real drag to the requested direction.
         if (
-            pubgTriangleRefreshNotBeforeUs_ != 0 &&
-            nowUs < pubgTriangleRefreshNotBeforeUs_
+            pubgMovementPrimePending_ &&
+            nowUs >= pubgMovementPrimeNotBeforeUs_
         ) {
-            return;
+            pubgMovementPrimePending_ = false;
+            pubgMovementPrimeNotBeforeUs_ = 0;
+            sendRefresh = true;
         }
 
-        pubgTriangleRefreshNotBeforeUs_ =
-            nowUs + kPubgTriangleRefreshUs;
+        // Triangle timing still needs periodic frames to create exact
+        // 50 ms / 100 ms touch transitions with no new keyboard HID report.
+        if (
+            pubgTriangleSequenceActive_ &&
+            (
+                pubgTriangleRefreshNotBeforeUs_ == 0 ||
+                nowUs >= pubgTriangleRefreshNotBeforeUs_
+            )
+        ) {
+            pubgTriangleRefreshNotBeforeUs_ =
+                nowUs + kPubgTriangleRefreshUs;
+            sendRefresh = true;
+        }
 
-        // Drives the 50/100 ms touch transitions even while the keyboard
-        // sends no new HID reports during a held key.
-        sendComposedOutput();
+        if (sendRefresh) {
+            sendComposedOutput();
+        }
     }
 
     void serviceMouseAimRelease() {
@@ -2678,6 +2734,10 @@ private:
     bool pubgTriangleHoldLatched_ = false;
     std::uint64_t pubgTriangleStartedUs_ = 0;
     std::uint64_t pubgTriangleRefreshNotBeforeUs_ = 0;
+
+    std::uint8_t pubgMovementMask_ = 0;
+    bool pubgMovementPrimePending_ = false;
+    std::uint64_t pubgMovementPrimeNotBeforeUs_ = 0;
 
     std::array<
         XgipInitPhase,
