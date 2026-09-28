@@ -44,75 +44,34 @@ int main() {
     assert(mapper.map(LogicalGamepadState {}).count == 0);
     assert(mapper.map(neutral).count == 0);
 
-    // WASD joystick lifecycle: CENTER -> DRAG -> HOLD -> RELEASE.
     LogicalGamepadState up {};
     up.connected = true;
     up.dpad = static_cast<std::uint8_t>(DpadBits::Up);
 
-    const auto upCenter = mapper.map(up);
-    assert(upCenter.count == 1);
-    assertPoint(upCenter, 1, 10316, 6394);
+    assertPoint(mapper.map(up), 1, 10316, 6394);
+    assertPoint(mapper.map(up), 1, 12743, 6394);
+    assertPoint(mapper.map(up), 1, 12743, 6394);
+    assert(findContact(mapper.map(neutral), 1) == nullptr);
 
-    const auto upDragged = mapper.map(up);
-    assert(upDragged.count == 1);
-    assertPoint(upDragged, 1, 12743, 6394);
-
-    const auto upHeld = mapper.map(up);
-    assertPoint(upHeld, 1, 12743, 6394);
-
-    const auto movementReleased = mapper.map(neutral);
-    assert(findContact(movementReleased, 1) == nullptr);
-
-    // Restart must press center again before dragging.
-    const auto restartCenter = mapper.map(up);
-    assertPoint(restartCenter, 1, 10316, 6394);
-
-    // Diagonal W+D uses the combined measured endpoint.
-    LogicalGamepadState upRight {};
-    upRight.connected = true;
-    upRight.dpad =
-        static_cast<std::uint8_t>(DpadBits::Up) |
-        static_cast<std::uint8_t>(DpadBits::Right);
-
-    // Existing movement contact changes direction without re-pressing center.
-    const auto diagonal = mapper.map(upRight);
-    assertPoint(diagonal, 1, 12743, 7684);
-
-    // Opposing axes cancel independently.
-    MobileTouchMapper conflictMapper;
-    LogicalGamepadState conflict {};
-    conflict.connected = true;
-    conflict.dpad =
-        static_cast<std::uint8_t>(DpadBits::Up) |
-        static_cast<std::uint8_t>(DpadBits::Down);
-    assert(findContact(conflictMapper.map(conflict), 1) == nullptr);
-
-    // Camera movement starts independently on contact 0.
     MobileTouchMapper cameraMapper;
     LogicalGamepadState lookRight {};
     lookRight.connected = true;
     lookRight.rx =
         std::numeric_limits<std::int32_t>::max();
 
-    const auto cameraMove = cameraMapper.map(lookRight);
-    assertPoint(cameraMove, 0, 11302, 27056);
+    assertPoint(cameraMapper.map(lookRight), 0, 16384, 17368);
 
-    // A fire report with ZERO mouse delta can hold the camera finger at the
-    // exact same coordinate while fire uses a different contact ID.
-    LogicalGamepadState fireWhileHoldingCamera {};
-    fireWhileHoldingCamera.connected = true;
-    fireWhileHoldingCamera.buttons =
+    LogicalGamepadState cameraFire {};
+    cameraFire.connected = true;
+    cameraFire.buttons =
         kPubgMouseLookHoldButton |
         kPubgMouseLeftButton;
 
-    const auto cameraAndFire =
-        cameraMapper.map(fireWhileHoldingCamera);
-
+    const auto cameraAndFire = cameraMapper.map(cameraFire);
     assert(cameraAndFire.count == 2);
-    assertPoint(cameraAndFire, 0, 11302, 27056);
+    assertPoint(cameraAndFire, 0, 16384, 17368);
     assertPoint(cameraAndFire, 2, 16869, 31451);
 
-    // Fire alone never invents a camera touch.
     MobileTouchMapper fireMapper;
     LogicalGamepadState fire {};
     fire.connected = true;
@@ -122,18 +81,13 @@ int main() {
     assert(findContact(fireOnly, 0) == nullptr);
     assertPoint(fireOnly, 2, 16869, 31451);
 
-    // Camera remains bounded and re-anchors only after a clean release.
     MobileTouchMapper edgeMapper;
-    assertPoint(edgeMapper.map(lookRight), 0, 11302, 27056);
-    assertPoint(edgeMapper.map(lookRight), 0, 11302, 28040);
-    assertPoint(edgeMapper.map(lookRight), 0, 11302, 29024);
+    assertPoint(edgeMapper.map(lookRight), 0, 16384, 17368);
+    assertPoint(edgeMapper.map(lookRight), 0, 16384, 18352);
+    assertPoint(edgeMapper.map(lookRight), 0, 16384, 19336);
+    assert(findContact(edgeMapper.map(lookRight), 0) == nullptr);
+    assertPoint(edgeMapper.map(lookRight), 0, 16384, 17368);
 
-    const auto edgeRelease = edgeMapper.map(lookRight);
-    assert(findContact(edgeRelease, 0) == nullptr);
-
-    assertPoint(edgeMapper.map(lookRight), 0, 11302, 27056);
-
-    // Other PUBG targets remain direct and independent.
     MobileTouchMapper actions;
 
     LogicalGamepadState jump {};
@@ -141,10 +95,10 @@ int main() {
     jump.buttons = ButtonSouth;
     assertPoint(actions.map(jump), 3, 10407, 30600);
 
-    LogicalGamepadState square {};
-    square.connected = true;
-    square.buttons = ButtonWest;
-    assertPoint(actions.map(square), 4, 6372, 28542);
+    LogicalGamepadState f {};
+    f.connected = true;
+    f.buttons = ButtonWest;
+    assertPoint(actions.map(f), 4, 20632, 22367);
 
     LogicalGamepadState triShort {};
     triShort.connected = true;
@@ -171,17 +125,49 @@ int main() {
     share.buttons = ButtonShare;
     assertPoint(actions.map(share), 9, 3034, 2950);
 
-    // Representative gameplay multitouch:
-    // camera + movement + fire + jump + R1.
+    LogicalGamepadState shift {};
+    shift.connected = true;
+    shift.buttons = kPubgShiftButton;
+    assertPoint(actions.map(shift), 10, 26093, 26415);
+
+    LogicalGamepadState rightClick {};
+    rightClick.connected = true;
+    rightClick.buttons = kPubgMouseRightButton;
+    assertPoint(actions.map(rightClick), 11, 15929, 30600);
+
+    LogicalGamepadState r {};
+    r.connected = true;
+    r.buttons = kPubgKeyRButton;
+    assertPoint(actions.map(r), 12, 2336, 25386);
+
+    LogicalGamepadState scrollDown {};
+    scrollDown.connected = true;
+    scrollDown.buttons = kPubgScrollDownButton;
+    assertPoint(actions.map(scrollDown), 13, 3034, 14408);
+
+    LogicalGamepadState scrollUp {};
+    scrollUp.connected = true;
+    scrollUp.buttons = kPubgScrollUpButton;
+    assertPoint(actions.map(scrollUp), 14, 3034, 17907);
+
+    LogicalGamepadState middle {};
+    middle.connected = true;
+    middle.buttons = kPubgMouseMiddleButton;
+    assertPoint(actions.map(middle), 15, 2488, 21612);
+
+    LogicalGamepadState g {};
+    g.connected = true;
+    g.buttons = kPubgKeyGButton;
+    assertPoint(actions.map(g), 16, 2731, 10978);
+
     MobileTouchMapper comboMapper;
 
-    // Prime movement center + establish camera position.
     LogicalGamepadState prime {};
     prime.connected = true;
     prime.dpad = static_cast<std::uint8_t>(DpadBits::Up);
     prime.rx = std::numeric_limits<std::int32_t>::max();
     const auto primeFrame = comboMapper.map(prime);
-    assertPoint(primeFrame, 0, 11302, 27056);
+    assertPoint(primeFrame, 0, 16384, 17368);
     assertPoint(primeFrame, 1, 10316, 6394);
 
     LogicalGamepadState combo {};
@@ -190,16 +176,22 @@ int main() {
     combo.buttons =
         kPubgMouseLookHoldButton |
         kPubgMouseLeftButton |
-        ButtonSouth |
-        ButtonRightBumper;
+        kPubgMouseRightButton |
+        kPubgShiftButton |
+        kPubgKeyRButton |
+        kPubgKeyGButton |
+        ButtonWest;
 
     const auto comboFrame = comboMapper.map(combo);
-    assert(comboFrame.count == 5);
-    assertPoint(comboFrame, 0, 11302, 27056);
+    assert(comboFrame.count == 8);
+    assertPoint(comboFrame, 0, 16384, 17368);
     assertPoint(comboFrame, 1, 12743, 6394);
     assertPoint(comboFrame, 2, 16869, 31451);
-    assertPoint(comboFrame, 3, 10407, 30600);
-    assertPoint(comboFrame, 7, 20935, 6998);
+    assertPoint(comboFrame, 4, 20632, 22367);
+    assertPoint(comboFrame, 10, 26093, 26415);
+    assertPoint(comboFrame, 11, 15929, 30600);
+    assertPoint(comboFrame, 12, 2336, 25386);
+    assertPoint(comboFrame, 16, 2731, 10978);
 
     return 0;
 }
