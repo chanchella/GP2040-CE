@@ -52,14 +52,19 @@ jobs:
           for token in [
               "kMoveLeftX = 3139",
               "kMoveLeftY = 25903",
-              "kMoveCenterX = 6107",
-              "kMoveCenterY = 25827",
+              "kR3X = 6107",
+              "kR3Y = 25827",
               "kMoveRightX = 8681",
               "kMoveRightY = 25941",
-              "kCrossAttackX = 28547",
-              "kCrossAttackY = 26775",
+              "kR2X = 28135",
+              "kR2Y = 18394",
+              "kCrossX = 30897",
+              "kCrossY = 21010",
+              "kSquareX = 28272",
+              "kSquareY = 26965",
               "ButtonRightStick",
               "ButtonSouth",
+              "ButtonWest",
               "state.rightTrigger > kTriggerThreshold",
           ]:
               assert token in m, token
@@ -68,8 +73,10 @@ jobs:
               "assertPoint(leftFrame, 0, 3139, 25903)",
               "assertPoint(rightFrame, 0, 8681, 25941)",
               "assertPoint(r3Frame, 0, 6107, 25827)",
-              "assertPoint(crossFrame, 1, 28547, 26775)",
-              "assert(comboFrame.count == 2)",
+              "assertPoint(crossFrame, 1, 30897, 21010)",
+              "assertPoint(squareFrame, 2, 28272, 26965)",
+              "assertPoint(r2Frame, 3, 28135, 18394)",
+              "assert(comboFrame.count == 4)",
           ]:
               assert token in t, token
 
