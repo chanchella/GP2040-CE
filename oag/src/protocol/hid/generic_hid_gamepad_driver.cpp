@@ -144,13 +144,16 @@ bool dragonRiseTwinShockFamilySignature(
         return false;
     }
 
-    std::uint8_t eightBitAxisCount = 0;
+    std::uint8_t axisXCount = 0;
+    std::uint8_t axisYCount = 0;
+    std::uint8_t axisZCount = 0;
+    std::uint8_t axisRxCount = 0;
+    std::uint8_t axisRyCount = 0;
+    std::uint8_t axisRzCount = 0;
     bool hasHat = false;
 
     std::uint16_t buttonMask = 0;
     std::uint8_t buttonCount = 0;
-
-    std::uint8_t vendorOneBitFieldCount = 0;
 
     for (std::uint8_t i = 0; i < descriptor.fieldCount; ++i) {
         const HidGamepadField& field = descriptor.fields[i];
@@ -161,19 +164,19 @@ bool dragonRiseTwinShockFamilySignature(
 
         if (
             field.usagePage == kUsagePageGenericDesktop &&
-            (
-                field.usage == kUsageX ||
-                field.usage == kUsageY ||
-                field.usage == kUsageZ ||
-                field.usage == kUsageRx ||
-                field.usage == kUsageRy ||
-                field.usage == kUsageRz
-            ) &&
             field.bitSize == 8 &&
             field.logicalMin == 0 &&
             field.logicalMax == 255
         ) {
-            ++eightBitAxisCount;
+            switch (field.usage) {
+                case kUsageX:  ++axisXCount; break;
+                case kUsageY:  ++axisYCount; break;
+                case kUsageZ:  ++axisZCount; break;
+                case kUsageRx: ++axisRxCount; break;
+                case kUsageRy: ++axisRyCount; break;
+                case kUsageRz: ++axisRzCount; break;
+                default: break;
+            }
             continue;
         }
 
@@ -208,26 +211,23 @@ bool dragonRiseTwinShockFamilySignature(
             continue;
         }
 
-        // The mass-produced DragonRise/PC-Twin-Shock descriptor family
-        // carries an additional 8-bit vendor-defined input bitmap. Requiring
-        // it makes this family matcher substantially narrower than a generic
-        // "12-button DirectInput" guess.
-        if (
-            field.usagePage == 0xFF00 &&
-            field.bitSize == 1 &&
-            field.logicalMin == 0 &&
-            field.logicalMax == 1
-        ) {
-            ++vendorOneBitFieldCount;
-        }
     }
 
+    // DragonRise/PC-Twin-Shock family fingerprint:
+    // five unsigned 8-bit axes encoded as X, Y, Z and Ry twice,
+    // plus a 4-bit hat and twelve buttons. Some rebadged variants expose
+    // additional vendor fields differently, so those fields are not required
+    // for family recognition.
     return
-        eightBitAxisCount == 5 &&
+        axisXCount == 1 &&
+        axisYCount == 1 &&
+        axisZCount == 1 &&
+        axisRxCount == 0 &&
+        axisRyCount == 2 &&
+        axisRzCount == 0 &&
         hasHat &&
         buttonCount == 12 &&
-        buttonMask == 0x0FFFu &&
-        vendorOneBitFieldCount >= 8;
+        buttonMask == 0x0FFFu;
 }
 
 GenericHidButtonLayout resolveButtonLayout(
