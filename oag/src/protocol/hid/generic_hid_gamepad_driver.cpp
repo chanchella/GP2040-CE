@@ -129,12 +129,117 @@ bool gamepadUsage(
         );
 }
 
+bool dragonRiseTwinShockFamilySignature(
+    const GenericHidGamepadDescriptor& descriptor
+) {
+    if (
+        !descriptor.valid ||
+        descriptor.usesReportIds ||
+        descriptor.topUsagePage != kUsagePageGenericDesktop ||
+        (
+            descriptor.topUsage != kUsageJoystick &&
+            descriptor.topUsage != kUsageGamepad
+        )
+    ) {
+        return false;
+    }
+
+    std::uint8_t eightBitAxisCount = 0;
+    bool hasHat = false;
+
+    std::uint16_t buttonMask = 0;
+    std::uint8_t buttonCount = 0;
+
+    std::uint8_t vendorOneBitFieldCount = 0;
+
+    for (std::uint8_t i = 0; i < descriptor.fieldCount; ++i) {
+        const HidGamepadField& field = descriptor.fields[i];
+
+        if (!field.used) {
+            continue;
+        }
+
+        if (
+            field.usagePage == kUsagePageGenericDesktop &&
+            (
+                field.usage == kUsageX ||
+                field.usage == kUsageY ||
+                field.usage == kUsageZ ||
+                field.usage == kUsageRx ||
+                field.usage == kUsageRy ||
+                field.usage == kUsageRz
+            ) &&
+            field.bitSize == 8 &&
+            field.logicalMin == 0 &&
+            field.logicalMax == 255
+        ) {
+            ++eightBitAxisCount;
+            continue;
+        }
+
+        if (
+            field.usagePage == kUsagePageGenericDesktop &&
+            field.usage == kUsageHat &&
+            field.bitSize == 4 &&
+            field.logicalMin == 0 &&
+            field.logicalMax == 7
+        ) {
+            hasHat = true;
+            continue;
+        }
+
+        if (
+            field.usagePage == kUsagePageButton &&
+            field.usage >= 1 &&
+            field.usage <= 12 &&
+            field.bitSize == 1 &&
+            field.logicalMin == 0 &&
+            field.logicalMax == 1
+        ) {
+            const std::uint16_t bit =
+                static_cast<std::uint16_t>(
+                    1u << static_cast<std::uint16_t>(field.usage - 1u)
+                );
+
+            if ((buttonMask & bit) == 0) {
+                buttonMask |= bit;
+                ++buttonCount;
+            }
+            continue;
+        }
+
+        // The mass-produced DragonRise/PC-Twin-Shock descriptor family
+        // carries an additional 8-bit vendor-defined input bitmap. Requiring
+        // it makes this family matcher substantially narrower than a generic
+        // "12-button DirectInput" guess.
+        if (
+            field.usagePage == 0xFF00 &&
+            field.bitSize == 1 &&
+            field.logicalMin == 0 &&
+            field.logicalMax == 1
+        ) {
+            ++vendorOneBitFieldCount;
+        }
+    }
+
+    return
+        eightBitAxisCount == 5 &&
+        hasHat &&
+        buttonCount == 12 &&
+        buttonMask == 0x0FFFu &&
+        vendorOneBitFieldCount >= 8;
+}
+
 GenericHidButtonLayout resolveButtonLayout(
     const GenericHidGamepadDescriptor& descriptor,
     const GenericHidGamepadQuirks& quirks
 ) {
     if (quirks.buttonLayout != GenericHidButtonLayout::Auto) {
         return quirks.buttonLayout;
+    }
+
+    if (dragonRiseTwinShockFamilySignature(descriptor)) {
+        return GenericHidButtonLayout::DragonRiseTwinShockFamily;
     }
 
     bool hasRx = false;
@@ -999,6 +1104,30 @@ void GenericHidGamepadDriver::applyButton(
     bool pressed
 ) {
     if (!pressed) return;
+
+    if (
+        layout ==
+        GenericHidButtonLayout::DragonRiseTwinShockFamily
+    ) {
+        // Normalise the PC-Twin-Shock / DragonRise-family physical face
+        // order into OAG's universal South/East/West/North semantics.
+        //
+        // Raw family order observed by HID usage:
+        //   1 = physical North
+        //   2 = physical East
+        //   3 = physical South
+        //   4 = physical West
+        //
+        // Buttons 5..12 already match the legacy DirectInput semantics and
+        // are intentionally preserved.
+        switch (usage) {
+            case 1: state.buttons |= ButtonNorth; return;
+            case 2: state.buttons |= ButtonEast; return;
+            case 3: state.buttons |= ButtonSouth; return;
+            case 4: state.buttons |= ButtonWest; return;
+            default: break;
+        }
+    }
 
     if (layout == GenericHidButtonLayout::SonyPlayStation) {
         switch (usage) {
