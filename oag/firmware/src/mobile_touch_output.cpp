@@ -21,41 +21,101 @@ const oag::MobileTouchContact* findContactById(
     return nullptr;
 }
 
+void appendFrameContact(
+    oag::MobileTouchFrame& frame,
+    const oag::MobileTouchContact& contact
+) {
+    if (frame.count >= frame.contacts.size()) {
+        return;
+    }
+
+    frame.contacts[frame.count++] = contact;
+}
+
 } // namespace
 
+bool MobileTouchOutput::framesEqual(
+    const oag::MobileTouchFrame& a,
+    const oag::MobileTouchFrame& b
+) {
+    if (a.count != b.count) {
+        return false;
+    }
+
+    for (std::uint8_t i = 0; i < a.count; ++i) {
+        if (
+            a.contacts[i].id != b.contacts[i].id ||
+            a.contacts[i].x != b.contacts[i].x ||
+            a.contacts[i].y != b.contacts[i].y
+        ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void MobileTouchOutput::task() {
-    flush();
+    pump();
 }
 
 bool MobileTouchOutput::send(
     std::uint8_t logicalSlot,
     const LogicalGamepadState& state
 ) {
-    // A phone touch surface is a single-user target. The existing routing
-    // always places the selected Primary controller in output slot 0 for
-    // non-XInput profiles; ignore secondary output slots instead of merging
-    // unrelated players onto one touchscreen.
+    // Profile 7 is one touchscreen. Only Primary/output slot 0 owns it.
     if (logicalSlot != 0) {
         return true;
     }
 
-    const oag::MobileTouchFrame frame =
-        mapper_.map(state);
+    desiredFrame_ = mapper_.map(state);
+    pump();
+    return true;
+}
 
-    Report next {};
+bool MobileTouchOutput::sendNeutral() {
+    // Run the mapper through a disconnected state too, so its stateful camera
+    // and movement gesture machines are reset together with the USB contacts.
+    desiredFrame_ = mapper_.map(LogicalGamepadState {});
+    pump();
+    return true;
+}
+
+void MobileTouchOutput::preparePendingTransition() {
+    report_ = {};
+    pendingTargetFrame_ = {};
+
+    std::uint8_t releaseCount = 0;
+
+    for (std::uint8_t i = 0; i < committedFrame_.count; ++i) {
+        if (
+            findContactById(
+                desiredFrame_,
+                committedFrame_.contacts[i].id
+            ) == nullptr
+        ) {
+            ++releaseCount;
+        }
+    }
+
+    const bool needsBridge =
+        static_cast<std::size_t>(desiredFrame_.count) +
+            static_cast<std::size_t>(releaseCount) >
+        kMaxContacts;
+
     std::uint8_t reportedContacts = 0;
 
     const auto appendReportContact =
-        [&next, &reportedContacts](
+        [this, &reportedContacts](
             std::uint8_t flags,
             const oag::MobileTouchContact& contact
         ) {
-            if (reportedContacts >= next.contacts.size()) {
+            if (reportedContacts >= report_.contacts.size()) {
                 return;
             }
 
             ContactReport& out =
-                next.contacts[reportedContacts++];
+                report_.contacts[reportedContacts++];
 
             out.flags = flags;
             out.id = contact.id;
@@ -63,83 +123,130 @@ bool MobileTouchOutput::send(
             out.y = contact.y;
         };
 
-    // Report all currently active contacts first.
-    for (std::uint8_t i = 0; i < frame.count; ++i) {
-        appendReportContact(
-            0x03u, // Tip Switch + In Range.
-            frame.contacts[i]
-        );
-    }
-
-    // A HID touch contact must keep the same Contact ID for its full
-    // lifecycle and must be explicitly reported once with Tip Switch clear
-    // when it leaves the surface. The old implementation dropped released
-    // IDs from the packet and sent contactCount=0, which left Android
-    // believing IDs 1/2/3 were still down. Contact ID 0 appeared to work only
-    // because the zero-initialized first contact also happened to use ID 0.
-    //
-    // Preserve the last X/Y for the UP report, as required by HID touch
-    // semantics, and count the released contact as a reported contact in this
-    // packet even though its Tip Switch is clear.
-    for (std::uint8_t i = 0; i < previousFrame_.count; ++i) {
-        const oag::MobileTouchContact& previous =
-            previousFrame_.contacts[i];
-
-        if (findContactById(frame, previous.id) != nullptr) {
-            continue;
+    if (!needsBridge) {
+        // Normal single-packet transition: all desired active contacts first,
+        // then explicit UP entries for contacts that disappeared.
+        for (
+            std::uint8_t i = 0;
+            i < desiredFrame_.count;
+            ++i
+        ) {
+            appendReportContact(
+                0x03u, // Tip Switch + In Range.
+                desiredFrame_.contacts[i]
+            );
         }
 
-        appendReportContact(
-            0x00u, // Tip Switch clear + Out of Range = explicit UP.
-            previous
-        );
-    }
+        for (
+            std::uint8_t i = 0;
+            i < committedFrame_.count;
+            ++i
+        ) {
+            const oag::MobileTouchContact& previous =
+                committedFrame_.contacts[i];
 
-    next.contactCount = reportedContacts;
+            if (
+                findContactById(
+                    desiredFrame_,
+                    previous.id
+                ) != nullptr
+            ) {
+                continue;
+            }
 
-    report_ = next;
-    previousFrame_ = frame;
-    pending_ = true;
-    flush();
-    return true;
-}
-
-bool MobileTouchOutput::sendNeutral() {
-    Report next {};
-    std::uint8_t reportedContacts = 0;
-
-    // If a profile switch or initialization path requests neutral while
-    // contacts are active, emit their explicit UP transitions first.
-    for (std::uint8_t i = 0; i < previousFrame_.count; ++i) {
-        if (reportedContacts >= next.contacts.size()) {
-            break;
+            appendReportContact(
+                0x00u, // Explicit UP for the same Contact ID.
+                previous
+            );
         }
 
-        const oag::MobileTouchContact& previous =
-            previousFrame_.contacts[i];
+        pendingTargetFrame_ = desiredFrame_;
+    } else {
+        // At most ten finger collections exist in one HID report. If a frame
+        // change would need >10 active+release entries, never drop an UP.
+        //
+        // Bridge packet:
+        //   1) keep only contacts that exist in BOTH old and new states,
+        //   2) explicitly release every old contact that disappeared,
+        //   3) delay brand-new contacts until the following packet.
+        //
+        // common + released == committedFrame_.count <= 10, so every release
+        // is guaranteed to fit and Android can never be left with a lost UP.
+        for (
+            std::uint8_t i = 0;
+            i < desiredFrame_.count;
+            ++i
+        ) {
+            const oag::MobileTouchContact& current =
+                desiredFrame_.contacts[i];
 
-        ContactReport& out =
-            next.contacts[reportedContacts++];
+            if (
+                findContactById(
+                    committedFrame_,
+                    current.id
+                ) == nullptr
+            ) {
+                continue;
+            }
 
-        out.flags = 0x00u;
-        out.id = previous.id;
-        out.x = previous.x;
-        out.y = previous.y;
+            appendReportContact(0x03u, current);
+            appendFrameContact(
+                pendingTargetFrame_,
+                current
+            );
+        }
+
+        for (
+            std::uint8_t i = 0;
+            i < committedFrame_.count;
+            ++i
+        ) {
+            const oag::MobileTouchContact& previous =
+                committedFrame_.contacts[i];
+
+            if (
+                findContactById(
+                    desiredFrame_,
+                    previous.id
+                ) != nullptr
+            ) {
+                continue;
+            }
+
+            appendReportContact(0x00u, previous);
+        }
     }
 
-    next.contactCount = reportedContacts;
-
-    report_ = next;
-    previousFrame_ = {};
+    report_.contactCount = reportedContacts;
     pending_ = true;
-    flush();
-    return true;
 }
 
-bool MobileTouchOutput::flush() {
-    if (!pending_) {
+bool MobileTouchOutput::pump() {
+    // First preserve any already-built transition. It must never be
+    // overwritten by a newer input state while endpoint 0x81 is busy.
+    if (pending_) {
+        if (!tud_hid_n_ready(0)) {
+            return false;
+        }
+
+        if (!tud_hid_n_report(
+                0,
+                0,
+                &report_,
+                sizeof(report_)
+            )) {
+            return false;
+        }
+
+        committedFrame_ = pendingTargetFrame_;
+        pending_ = false;
+    }
+
+    if (framesEqual(committedFrame_, desiredFrame_)) {
         return true;
     }
+
+    preparePendingTransition();
 
     if (!tud_hid_n_ready(0)) {
         return false;
@@ -154,7 +261,12 @@ bool MobileTouchOutput::flush() {
         return false;
     }
 
+    committedFrame_ = pendingTargetFrame_;
     pending_ = false;
+
+    // If a bridge packet was required, desiredFrame_ still differs from the
+    // newly committed intermediary frame. The next poll will enqueue the new
+    // contacts after all releases are safely committed.
     return true;
 }
 
