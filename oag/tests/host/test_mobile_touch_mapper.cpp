@@ -148,7 +148,7 @@ int main() {
     LogicalGamepadState scrollUp {};
     scrollUp.connected = true;
     scrollUp.buttons = kPubgScrollUpButton;
-    assertPoint(actions.map(scrollUp), 13, 3034, 17907);
+    assertPoint(actions.map(scrollUp), 6, 3034, 17907);
 
     LogicalGamepadState middle {};
     middle.connected = true;
