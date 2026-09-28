@@ -94,7 +94,7 @@ jobs:
           ]:
               assert token in mapper, token
 
-          ids = [int(x) for x in re.findall(r'k\\w+ContactId\\s*=\\s*(\\d+)', mapper)]
+          ids = [int(x) for x in re.findall(r'k\w+ContactId\s*=\s*(\d+)', mapper)]
           assert ids and max(ids) <= 15, ids
 
           for token in [
