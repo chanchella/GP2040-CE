@@ -1021,18 +1021,14 @@ void GenericHidGamepadDriver::applyButton(
         return;
     }
 
-    switch (usage) {
-        case 1: state.buttons |= ButtonSouth; return;
-        case 2: state.buttons |= ButtonEast; return;
-        case 3: state.buttons |= ButtonWest; return;
-        case 4: state.buttons |= ButtonNorth; return;
-        case 5: state.buttons |= ButtonLeftBumper; return;
-        case 6: state.buttons |= ButtonRightBumper; return;
-        default: break;
-    }
-
     if (layout == GenericHidButtonLayout::ModernCanonical) {
         switch (usage) {
+            case 1: state.buttons |= ButtonSouth; break;
+            case 2: state.buttons |= ButtonEast; break;
+            case 3: state.buttons |= ButtonWest; break;
+            case 4: state.buttons |= ButtonNorth; break;
+            case 5: state.buttons |= ButtonLeftBumper; break;
+            case 6: state.buttons |= ButtonRightBumper; break;
             case 7: state.buttons |= ButtonBack; break;
             case 8: state.buttons |= ButtonStart; break;
             case 9: state.buttons |= ButtonLeftStick; break;
@@ -1044,7 +1040,23 @@ void GenericHidGamepadDriver::applyButton(
         return;
     }
 
+    // Legacy DirectInput / PC-Twin-Shock convention used by many generic
+    // low-cost USB pads:
+    //
+    //   HID Button 1 -> physical North / Triangle / Y
+    //   HID Button 2 -> physical East  / Circle   / B
+    //   HID Button 3 -> physical South / Cross    / A
+    //   HID Button 4 -> physical West  / Square   / X
+    //
+    // Keep this convention isolated to LegacyDirectInput. XInput, modern HID
+    // and Sony layouts use their own branches above.
     switch (usage) {
+        case 1: state.buttons |= ButtonNorth; break;
+        case 2: state.buttons |= ButtonEast; break;
+        case 3: state.buttons |= ButtonSouth; break;
+        case 4: state.buttons |= ButtonWest; break;
+        case 5: state.buttons |= ButtonLeftBumper; break;
+        case 6: state.buttons |= ButtonRightBumper; break;
         case 7: state.leftTrigger = std::numeric_limits<std::uint32_t>::max(); break;
         case 8: state.rightTrigger = std::numeric_limits<std::uint32_t>::max(); break;
         case 9: state.buttons |= ButtonBack; break;
