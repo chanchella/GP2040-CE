@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "pico/time.h"
 #include "tusb.h"
 
 namespace oag::firmware {
@@ -240,13 +241,30 @@ bool MobileTouchOutput::pump() {
 
         committedFrame_ = pendingTargetFrame_;
         pending_ = false;
+        lastAcceptedReportUs_ = time_us_64();
     }
 
     if (framesEqual(committedFrame_, desiredFrame_)) {
-        return true;
-    }
+        if (desiredFrame_.count == 0) {
+            return true;
+        }
 
-    preparePendingTransition();
+        const std::uint64_t nowUs = time_us_64();
+
+        // Android/Linux multitouch expects active contacts to be refreshed
+        // continuously. Keep every active touch alive at 125 Hz so a held
+        // WASD/button contact cannot be aged out by the host as "sticky".
+        if (
+            lastAcceptedReportUs_ != 0 &&
+            nowUs - lastAcceptedReportUs_ < kActiveHeartbeatUs
+        ) {
+            return true;
+        }
+
+        preparePendingTransition();
+    } else {
+        preparePendingTransition();
+    }
 
     if (!tud_hid_n_ready(0)) {
         return false;
@@ -263,6 +281,7 @@ bool MobileTouchOutput::pump() {
 
     committedFrame_ = pendingTargetFrame_;
     pending_ = false;
+    lastAcceptedReportUs_ = time_us_64();
 
     // If a bridge packet was required, desiredFrame_ still differs from the
     // newly committed intermediary frame. The next poll will enqueue the new
