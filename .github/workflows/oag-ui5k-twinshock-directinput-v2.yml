@@ -1,0 +1,188 @@
+name: OAG UI5K TwinShock DirectInput V2
+
+on:
+  push:
+    branches:
+      - chatgpt/ui5k-twinshock-directinput-v2
+    paths:
+      - 'oag/include/oag/protocol/hid/generic_hid_gamepad_driver.h'
+      - 'oag/src/protocol/hid/generic_hid_gamepad_driver.cpp'
+      - 'oag/tests/host/test_generic_hid_gamepad.cpp'
+      - '.github/workflows/oag-ui5k-twinshock-directinput-v2.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify isolated scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="5a1cee019bcad6b6329bf52ed0e24a743c372a7b"
+          UI5K="01af260742a6a402a851cceef0707ae69bd6a301"
+          PHONE_V3="2429dff3877204112b520cdc51941c489b2eecbb"
+
+          test "$(git merge-base "${BASE}" HEAD)" = "${BASE}"
+          test "$(git rev-parse origin/golden/ui5k-multiprofile-pc-phone-hw)" = "${BASE}"
+          test "$(git rev-parse "${UI5K}")" = "${UI5K}"
+          test "$(git rev-parse origin/golden/ui5k-mobile-otg-v3-hw)" = "${PHONE_V3}"
+
+          ACTUAL="$(git diff --name-only "${BASE}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-ui5k-twinshock-directinput-v2.yml' \
+            'oag/include/oag/protocol/hid/generic_hid_gamepad_driver.h' \
+            'oag/src/protocol/hid/generic_hid_gamepad_driver.cpp' \
+            'oag/tests/host/test_generic_hid_gamepad.cpp' | sort)"
+
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          git diff --exit-code "${BASE}" HEAD -- \
+            oag/firmware/src/main.cpp \
+            oag/firmware/src/usb_descriptors.cpp \
+            oag/firmware/tusb_config.h \
+            oag/firmware/src/output_profile_selector.cpp \
+            oag/firmware/src/multi_profile_platform_driver.cpp \
+            oag/firmware/src/pc_hid_output.cpp \
+            oag/firmware/src/pc_xinput_device.cpp \
+            oag/firmware/src/pc_native_km_output.cpp \
+            oag/firmware/src/bluetooth_host_v2.cpp \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/xinput_host.cpp
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          h = Path("oag/include/oag/protocol/hid/generic_hid_gamepad_driver.h").read_text()
+          cpp = Path("oag/src/protocol/hid/generic_hid_gamepad_driver.cpp").read_text()
+          test = Path("oag/tests/host/test_generic_hid_gamepad.cpp").read_text()
+
+          assert "TwinShockDirectInput" in h
+          assert "looksLikeTwinShockDirectInputFamily" in cpp
+          assert "payloadLength != 8" in cpp
+          assert "buttonCount == 12" in cpp
+          assert "buttonMask == 0x0FFFu" in cpp
+          assert "axisCount >= 4" in cpp
+          assert "axisCount <= 6" in cpp
+          assert "hatCount == 1" in cpp
+
+          assert "case 1: state.buttons |= ButtonNorth; return;" in cpp
+          assert "case 2: state.buttons |= ButtonEast; return;" in cpp
+          assert "case 3: state.buttons |= ButtonSouth; return;" in cpp
+          assert "case 4: state.buttons |= ButtonWest; return;" in cpp
+
+          assert "twinShockCross" in test
+          assert "twinShockTriangle" in test
+          assert "twinShockSquare" in test
+          assert "twinShockCircle" in test
+          assert "genericUsageOne" in test
+
+          print("TWINSHOCK_DIRECTINPUT_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build and run host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact UI5K Pico SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned SDK generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Configure and build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k" \
+          cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' | head -1)"
+          ELF="$(find build/oag-fw -maxdepth 1 -type f -name '*.elf' | head -1)"
+          MAP="$(find build/oag-fw -maxdepth 1 -type f -name '*.map' | head -1)"
+
+          test -n "${UF2}"
+          test -n "${ELF}"
+          test -n "${MAP}"
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+
+          cp "${UF2}" "artifacts/OAG_UI5K_TWINSHOCK_DIRECTINPUT_V2_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF}" "artifacts/OAG_UI5K_TWINSHOCK_DIRECTINPUT_V2_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP}" "artifacts/OAG_UI5K_TWINSHOCK_DIRECTINPUT_V2_${SHORT_SHA}_Pico2W.map"
+
+          sha256sum artifacts/OAG_UI5K_TWINSHOCK_DIRECTINPUT_V2_* > artifacts/SHA256SUMS.txt
+
+          printf '%s\n' \
+            "BASE=5a1cee019bcad6b6329bf52ed0e24a743c372a7b" \
+            "SCOPE=GENERIC_HID_8BYTE_TWINSHOCK_FACE_NORMALIZATION_ONLY" \
+            "MAPPING=b0:NORTH,b1:EAST,b2:SOUTH,b3:WEST" \
+            > artifacts/BUILD-INFO.txt
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-UI5K-TWINSHOCK-DIRECTINPUT-V2-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
