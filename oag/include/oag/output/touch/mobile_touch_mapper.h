@@ -8,6 +8,14 @@
 
 namespace oag {
 
+// Touch-profile-only synthetic controls. These bits live above every real
+// GamepadButton value and are injected only by firmware while Profile 7 is
+// active, so PC/Phone Gamepad behavior remains untouched.
+inline constexpr std::uint64_t kMobileTouchMouseLeftButton = 1ull << 63;
+inline constexpr std::uint64_t kMobileTouchTriangleShortButton = 1ull << 62;
+inline constexpr std::uint64_t kMobileTouchTriangleHoldButton = 1ull << 61;
+inline constexpr std::uint64_t kMobileTouchMouseLookHoldButton = 1ull << 60;
+
 struct MobileTouchContact {
     std::uint8_t id = 0;
     std::uint16_t x = 0;
@@ -57,8 +65,8 @@ private:
     void resetLookTouch();
 
     bool lookTouchActive_ = false;
-    std::uint16_t lookTouchX_ = 16384;
-    std::uint16_t lookTouchY_ = 16384;
+    std::uint16_t lookTouchX_ = 11302;
+    std::uint16_t lookTouchY_ = 26072;
 };
 
 } // namespace oag
