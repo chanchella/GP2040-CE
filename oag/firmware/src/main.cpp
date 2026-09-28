@@ -1123,7 +1123,7 @@ private:
     static constexpr std::uint8_t kProfileF8Usage = 0x41;
     static constexpr std::uint8_t kProfileF9Usage = 0x42;
     static constexpr std::uint8_t kProfileDigit1Usage = 0x1E;
-    static constexpr std::uint8_t kProfileDigit6Usage = 0x23;
+    static constexpr std::uint8_t kProfileDigit7Usage = 0x24;
     static constexpr std::uint8_t kProfileDigit0Usage = 0x27;
     static constexpr std::uint8_t kNoOutputProfileCandidate = 0xFF;
 
@@ -1812,10 +1812,17 @@ private:
         const bool hasKeyboard = keyboard.connected;
         const bool hasMouse = mouse.connected;
 
-        // In Native mode K/M never create or modify the XInput player.
-        // Physical gamepads keep their normal route while K/M are forwarded
-        // through the standard HID keyboard/mouse interfaces.
-        if (keyboardMouseMode_ == KeyboardMouseOutputMode::Native) {
+        const bool touchProfile =
+            oag::firmware::mobileTouchUsbProfileActive();
+
+        // Profile 7 intentionally consumes keyboard/mouse through the
+        // existing K/M->logical-gamepad mapper and then turns that unified
+        // logical state into touchscreen contacts. Profiles 0/1 keep their
+        // hardware-verified Native K/M behavior unchanged.
+        if (
+            !touchProfile &&
+            keyboardMouseMode_ == KeyboardMouseOutputMode::Native
+        ) {
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
                 basePrimaryOutput()
@@ -1873,7 +1880,7 @@ private:
 
         for (
             std::uint8_t usage = kProfileDigit1Usage;
-            usage <= kProfileDigit6Usage;
+            usage <= kProfileDigit7Usage;
             ++usage
         ) {
             keyboard.setPressed(usage, false);
@@ -1906,7 +1913,7 @@ private:
 
         for (
             std::uint8_t usage = kProfileDigit1Usage;
-            usage <= kProfileDigit6Usage;
+            usage <= kProfileDigit7Usage;
             ++usage
         ) {
             if (!keyboard.pressed(usage)) {
@@ -1962,6 +1969,14 @@ private:
     }
 
     void serviceKeyboardMouseModeToggle() {
+        // Mobile Touch is always a composed controller-to-touch profile.
+        // F4+F5 remains untouched for the hardware-verified PC/Phone modes.
+        if (oag::firmware::mobileTouchUsbProfileActive()) {
+            keyboardMouseModeChordStartedUs_ = 0;
+            keyboardMouseModeChordLatched_ = false;
+            return;
+        }
+
         const oag::KeyboardState keyboard = combinedKeyboard();
         const bool chordDown =
             keyboard.pressed(kModeToggleF4Usage) &&
@@ -2008,6 +2023,13 @@ private:
     }
 
     void serviceNativeKeyboardMouseOutput() {
+        // Profile 7 exposes exactly one HID multitouch interface. Never send
+        // keyboard/mouse report shapes to that endpoint.
+        if (oag::firmware::mobileTouchUsbProfileActive()) {
+            nativeKmOutput_.setEnabled(false);
+            return;
+        }
+
         const std::uint64_t nowUs = time_us_64();
 
         if (keyboardMouseMode_ != KeyboardMouseOutputMode::Native) {
