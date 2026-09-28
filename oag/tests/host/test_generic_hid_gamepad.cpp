@@ -108,9 +108,48 @@ int main() {
         static_cast<std::uint8_t>(DpadBits::Right)
     );
 
-    assert((state.buttons & ButtonSouth) != 0);
+    // Legacy DirectInput mapping:
+    // usage 1 -> North, usage 4 -> West, usage 10 -> Start.
     assert((state.buttons & ButtonNorth) != 0);
+    assert((state.buttons & ButtonWest) != 0);
     assert((state.buttons & ButtonStart) != 0);
+    assert((state.buttons & ButtonSouth) == 0);
+
+    // Verify the complete legacy face-button convention individually.
+    struct LegacyFaceCase {
+        std::uint8_t rawMask;
+        std::uint32_t expected;
+        std::uint32_t forbidden;
+    };
+
+    const LegacyFaceCase legacyFaceCases[] = {
+        {0x01, ButtonNorth, ButtonSouth | ButtonEast | ButtonWest},
+        {0x02, ButtonEast,  ButtonSouth | ButtonWest | ButtonNorth},
+        {0x04, ButtonSouth, ButtonEast  | ButtonWest | ButtonNorth},
+        {0x08, ButtonWest,  ButtonSouth | ButtonEast | ButtonNorth},
+    };
+
+    for (const LegacyFaceCase& face : legacyFaceCases) {
+        const std::uint8_t faceReport[] = {
+            0x80, 0x80, 0x80, 0x80,
+            0x0F,
+            face.rawMask, 0x00
+        };
+
+        UniversalGamepadState faceState {};
+        assert(driver.parseReport(
+            DeviceId {8, 1},
+            parsed,
+            quirks,
+            faceReport,
+            sizeof(faceReport),
+            123700,
+            faceState
+        ));
+
+        assert((faceState.buttons & face.expected) != 0);
+        assert((faceState.buttons & face.forbidden) == 0);
+    }
 
     // Neutral/release report must still publish after the first state.
     const std::uint8_t neutral[] = {
@@ -230,6 +269,37 @@ int main() {
     assert(recoveredVendor.valid);
     assert(recoveredVendor.fieldCount >= 12);
 
+
+    GenericHidGamepadQuirks modernQuirks {};
+    modernQuirks.buttonLayout =
+        GenericHidButtonLayout::ModernCanonical;
+
+    GenericHidGamepadDescriptor modernParsed {};
+    assert(driver.parseDescriptor(
+        descriptor,
+        sizeof(descriptor),
+        modernQuirks,
+        modernParsed
+    ));
+
+    const std::uint8_t modernUsage1[] = {
+        0x80, 0x80, 0x80, 0x80,
+        0x0F,
+        0x01, 0x00
+    };
+
+    UniversalGamepadState modernState {};
+    assert(driver.parseReport(
+        DeviceId {9, 1},
+        modernParsed,
+        modernQuirks,
+        modernUsage1,
+        sizeof(modernUsage1),
+        300000,
+        modernState
+    ));
+    assert((modernState.buttons & ButtonSouth) != 0);
+    assert((modernState.buttons & ButtonNorth) == 0);
 
     GenericHidGamepadQuirks sonyQuirks {};
     sonyQuirks.buttonLayout =
