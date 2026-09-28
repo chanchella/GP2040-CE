@@ -59,7 +59,7 @@ constexpr std::uint8_t kTriangleShortContactId = 5;
 constexpr std::uint16_t kTriangleShortX = 2124; // Pointer (70,2016)
 constexpr std::uint16_t kTriangleShortY = 27663;
 
-constexpr std::uint8_t kTriangleHoldContactId = 6;
+constexpr std::uint8_t kTriangleHoldContactId = 5;
 constexpr std::uint16_t kTriangleHoldX = 2427; // Pointer (80,2144)
 constexpr std::uint16_t kTriangleHoldY = 29420;
 
@@ -91,15 +91,15 @@ constexpr std::uint8_t kScrollDownContactId = 13;
 constexpr std::uint16_t kScrollDownX = 3034; // Pointer (100,1050)
 constexpr std::uint16_t kScrollDownY = 14408;
 
-constexpr std::uint8_t kScrollUpContactId = 14;
+constexpr std::uint8_t kScrollUpContactId = 13;
 constexpr std::uint16_t kScrollUpX = 3034; // Pointer (100,1305)
 constexpr std::uint16_t kScrollUpY = 17907;
 
-constexpr std::uint8_t kMouseMiddleContactId = 15;
+constexpr std::uint8_t kMouseMiddleContactId = 14;
 constexpr std::uint16_t kMouseMiddleX = 2488; // Pointer (82,1575)
 constexpr std::uint16_t kMouseMiddleY = 21612;
 
-constexpr std::uint8_t kGContactId = 16;
+constexpr std::uint8_t kGContactId = 15;
 constexpr std::uint16_t kGX = 2731; // Pointer (90,800)
 constexpr std::uint16_t kGY = 10978;
 
