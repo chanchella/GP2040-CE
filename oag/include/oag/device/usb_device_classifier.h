@@ -42,6 +42,7 @@ enum UsbInputQuirk : std::uint32_t {
     UsbQuirkSkipSetIdle = 1u << 3,
     UsbQuirkModernButtonLayout = 1u << 4,
     UsbQuirkSonyButtonLayout = 1u << 5,
+    UsbQuirkDragonRiseTwinShockButtons = 1u << 6,
 };
 
 struct UsbDeviceProbe {
