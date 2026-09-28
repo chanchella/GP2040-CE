@@ -2,15 +2,48 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
 
 #include "oag/input/gamepad_state.h"
 
 namespace oag {
 namespace {
 
-constexpr std::int32_t kStickDeadzone = 0x18000000;
+constexpr std::int32_t kStickDeadzone = 0x28000000;
 constexpr std::uint32_t kTriggerThreshold = 0x10000000u;
+
+// Game 1 V2 calibration source:
+// supplied/approved screenshot = 1910x864
+// target phone landscape = 2388x1080
+// HID touchscreen logical coordinates = 0..32767.
+//
+// User-approved targets:
+//   left arrow  -> movement Left
+//   center      -> R3 click
+//   right arrow -> movement Right
+//   upper R2    -> physical/logical R2
+//   upper-right X mark -> PlayStation Cross / X
+//   lower-right blue square region -> PlayStation Square
+//
+// Screenshot centers -> phone pixels -> HID normalized:
+//   Left   (176,656)  -> (220,820)  -> (3020,24902)
+//   R3     (339,654)  -> (424,818)  -> (5820,24841)
+//   Right  (502,656)  -> (628,820)  -> (8621,24902)
+//   R2     (1600,468) -> (2000,585) -> (27455,17765)
+//   Cross  (1803,555) -> (2254,694) -> (30941,21075)
+//   Square (1671,718) -> (2089,898) -> (28676,27270)
+constexpr std::uint16_t kMoveLeftX = 3020;
+constexpr std::uint16_t kMoveLeftY = 24902;
+constexpr std::uint16_t kR3X = 5820;
+constexpr std::uint16_t kR3Y = 24841;
+constexpr std::uint16_t kMoveRightX = 8621;
+constexpr std::uint16_t kMoveRightY = 24902;
+
+constexpr std::uint16_t kR2X = 27455;
+constexpr std::uint16_t kR2Y = 17765;
+constexpr std::uint16_t kCrossX = 30941;
+constexpr std::uint16_t kCrossY = 21075;
+constexpr std::uint16_t kSquareX = 28676;
+constexpr std::uint16_t kSquareY = 27270;
 
 bool hasDpad(std::uint8_t dpad, DpadBits bit) {
     return
@@ -67,24 +100,16 @@ void MobileTouchMapper::appendStick(
     std::uint16_t centerY,
     std::uint16_t radius
 ) {
-    if (!axisActive(x, y)) {
-        return;
-    }
-
-    constexpr std::int64_t kAxisMax =
-        std::numeric_limits<std::int32_t>::max();
-
-    const std::int64_t dx =
-        static_cast<std::int64_t>(x) * radius / kAxisMax;
-    const std::int64_t dy =
-        static_cast<std::int64_t>(y) * radius / kAxisMax;
-
-    append(
-        frame,
-        id,
-        clampCoord(static_cast<std::int64_t>(centerX) + dx),
-        clampCoord(static_cast<std::int64_t>(centerY) + dy)
-    );
+    // This side-scroller uses fixed left/right targets rather than a free
+    // analog joystick. Keep the generic class contract intact while this
+    // game profile maps explicit screen targets only.
+    (void)frame;
+    (void)id;
+    (void)x;
+    (void)y;
+    (void)centerX;
+    (void)centerY;
+    (void)radius;
 }
 
 MobileTouchFrame MobileTouchMapper::map(
@@ -96,49 +121,45 @@ MobileTouchFrame MobileTouchMapper::map(
         return frame;
     }
 
-    std::int32_t moveX = state.lx;
-    std::int32_t moveY = state.ly;
+    // Contact 0 owns the complete left rocker. R3 wins over movement so the
+    // mapper never places two virtual fingers on the same physical control.
+    if (state.buttons & ButtonRightStick) {
+        append(frame, 0, kR3X, kR3Y);
+    } else {
+        const bool left =
+            hasDpad(state.dpad, DpadBits::Left) ||
+            state.lx <= -kStickDeadzone;
 
-    if (!axisActive(moveX, moveY)) {
-        constexpr std::int32_t kDpadAxis =
-            std::numeric_limits<std::int32_t>::max();
+        const bool right =
+            hasDpad(state.dpad, DpadBits::Right) ||
+            state.lx >= kStickDeadzone;
 
-        if (hasDpad(state.dpad, DpadBits::Left)) {
-            moveX = -kDpadAxis;
-        } else if (hasDpad(state.dpad, DpadBits::Right)) {
-            moveX = kDpadAxis;
-        }
-
-        if (hasDpad(state.dpad, DpadBits::Up)) {
-            moveY = -kDpadAxis;
-        } else if (hasDpad(state.dpad, DpadBits::Down)) {
-            moveY = kDpadAxis;
+        // Opposing directions cancel instead of creating an ambiguous touch.
+        if (left != right) {
+            if (left) {
+                append(frame, 0, kMoveLeftX, kMoveLeftY);
+            } else {
+                append(frame, 0, kMoveRightX, kMoveRightY);
+            }
         }
     }
 
-    // Default normalized mobile-gaming layout. Coordinates intentionally use
-    // the HID logical range 0..32767 instead of pixels so the same firmware
-    // scales across phone resolutions and orientations.
-    appendStick(frame, 0, moveX, moveY, 6500, 24500, 4300);
-    appendStick(frame, 1, state.rx, state.ry, 23500, 15500, 5200);
+    // PlayStation Cross / logical South.
+    if (state.buttons & ButtonSouth) {
+        append(frame, 1, kCrossX, kCrossY);
+    }
 
-    if (state.buttons & ButtonSouth) append(frame, 2, 27000, 26000);
-    if (state.buttons & ButtonEast)  append(frame, 3, 30500, 22500);
-    if (state.buttons & ButtonWest)  append(frame, 4, 23500, 22500);
-    if (state.buttons & ButtonNorth) append(frame, 5, 27000, 19000);
+    // PlayStation Square / logical West.
+    if (state.buttons & ButtonWest) {
+        append(frame, 2, kSquareX, kSquareY);
+    }
 
-    if (state.buttons & ButtonLeftBumper)  append(frame, 6, 5500, 3500);
-    if (state.buttons & ButtonRightBumper) append(frame, 7, 27200, 3500);
-
-    if (state.leftTrigger > kTriggerThreshold)  append(frame, 8, 3500, 7600);
-    if (state.rightTrigger > kTriggerThreshold) append(frame, 9, 29500, 7600);
-
-    if (state.buttons & ButtonStart)      append(frame, 10, 18100, 5200);
-    if (state.buttons & ButtonBack)       append(frame, 11, 14600, 5200);
-    if (state.buttons & ButtonLeftStick)  append(frame, 12, 9000, 13500);
-    if (state.buttons & ButtonRightStick) append(frame, 13, 21800, 13500);
-    if (state.buttons & ButtonGuide)      append(frame, 14, 16384, 2600);
-    if (state.buttons & ButtonShare)      append(frame, 15, 16384, 8800);
+    // Physical/logical R2. The existing keyboard/mouse infrastructure maps
+    // mouse-left to RightTrigger, so it reaches the same touch target without
+    // changing the proven keyboard/mouse mapper.
+    if (state.rightTrigger > kTriggerThreshold) {
+        append(frame, 3, kR2X, kR2Y);
+    }
 
     return frame;
 }
