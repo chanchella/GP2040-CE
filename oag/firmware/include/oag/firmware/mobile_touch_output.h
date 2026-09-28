@@ -2,7 +2,7 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
+#includ <cstdint>
 
 #include "oag/output/logical_gamepad_state.h"
 #include "oag/output/touch/mobile_touch_mapper.h"
@@ -24,10 +24,19 @@ public:
     bool sendNeutral();
 
 private:
-    static constexpr std::uint64_t kActiveHeartbeatUs = 8000;
-    static constexpr std::uint8_t kContactIdCount = 16;
-    static constexpr std::uint8_t kReleaseRepeatReports = 4;
-    static constexpr std::uint8_t kZeroSyncReports = 2;
+    // USB polls at 1 ms. A 4 ms authoritative snapshot cadence is fast enough
+    // for controls while leaving margin for the rest of the firmware.
+    static constexpr std::uint64_t kSnapshotPeriodUs = 4000;
+
+    // A physical Contact ID is not allowed to become DOWN again until this
+    // many successfully accepted full snapshots have explicitly carried it as
+    // Tip=0/InRange=0. This is acceptance-count based, not time based, so USB
+    // backpressure can never silently consume the release barrier.
+    static constexpr std::uint8_t kReleaseSnapshots = 8;
+
+    // IDs 0,1,2 are permanently reserved for camera, movement and fire.
+    // Remaining mapper actions are leased onto IDs 3..9.
+    static constexpr std::uint8_t kPinnedContactCount = 3;
 
     struct __attribute__((packed)) ContactReport {
         std::uint8_t flags = 0;
@@ -41,68 +50,42 @@ private:
         std::uint8_t contactCount = 0;
     };
 
-    struct ReleaseFence {
+    struct PhysicalSlot {
+        // Mapper/logical Contact ID currently owned by this physical ID.
+        // Pinned physical IDs 0..2 always own the same logical ID.
+        std::int16_t logicalId = -1;
         bool active = false;
-        oag::MobileTouchContact contact {};
-        std::uint8_t remainingReports = 0;
+        std::uint16_t x = 0;
+        std::uint16_t y = 0;
+        std::uint8_t releaseSnapshotsRemaining = 0;
     };
 
     static_assert(sizeof(ContactReport) == 6);
     static_assert(sizeof(Report) == 61);
+    static_assert(kMaxContacts == 10);
 
-    static bool framesEqual(
-        const oag::MobileTouchFrame& a,
-        const oag::MobileTouchFrame& b
-    );
-
-    static const oag::MobileTouchContact* findContactById(
+    static const oag::MobileTouchContact* findDesiredByLogicalId(
         const oag::MobileTouchFrame& frame,
-        std::uint8_t id
+        std::uint8_t logicalId
     );
 
-    bool releaseFenceActive(std::uint8_t id) const;
-    bool anyReleaseFenceActive() const;
-    std::uint8_t releaseFenceCount() const;
-
-    void startReleaseFence(
-        const oag::MobileTouchContact& contact
-    );
-
-    void preparePendingTransition();
-    void prepareZeroSyncReport();
-    void commitAcceptedReport();
-    bool pump();
+    bool logicalIdOwned(std::uint8_t logicalId) const;
+    void reconcileDesiredState();
+    void buildAuthoritativeReport();
+    void commitAcceptedSnapshot();
+    bool pump(bool forceImmediate);
 
     oag::MobileTouchMapper mapper_ {};
-
-    // committedFrame_ is the ACTIVE touch state last accepted by TinyUSB.
-    // desiredFrame_ is the newest logical touch state requested by the mapper.
-    //
-    // A disappearing contact is NOT removed from the host lifecycle with one
-    // best-effort UP packet. It enters a short release fence:
-    //   same Contact ID + last X/Y + Tip Switch clear
-    // repeated across several accepted reports.
-    //
-    // While a Contact ID is fenced, that ID cannot be reused for a new DOWN.
-    // This prevents Android from merging a fresh press into a stale finger.
-    oag::MobileTouchFrame committedFrame_ {};
     oag::MobileTouchFrame desiredFrame_ {};
-    oag::MobileTouchFrame pendingTargetFrame_ {};
 
-    std::array<ReleaseFence, kContactIdCount> releaseFences_ {};
+    // report slot index == USB Contact Identifier, permanently. This prevents
+    // a logical finger from jumping between HID Finger collections when other
+    // fingers appear/disappear.
+    std::array<PhysicalSlot, kMaxContacts> slots_ {};
 
     Report report_ {};
-    std::uint16_t pendingReleaseMask_ = 0;
-    bool pending_ = false;
-    bool pendingIsZeroSync_ = false;
-
-    // After the final finger on the surface has completed its repeated UP
-    // fence, send two explicit all-zero frames. This gives Android a clean
-    // "surface empty" synchronization point before future Contact ID reuse.
-    bool zeroSyncArmed_ = false;
-    std::uint8_t zeroSyncRemaining_ = 0;
-
-    std::uint64_t lastAcceptedReportUs_ = 0;
+    std::uint64_t nextSnapshotUs_ = 0;
+    bool initialized_ = false;
 };
 
 } // namespace oag::firmware
