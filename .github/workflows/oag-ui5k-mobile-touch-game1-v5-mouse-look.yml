@@ -1,0 +1,262 @@
+name: OAG UI5K Mobile Touch Game1 V5 Mouse Look
+
+on:
+  push:
+    branches:
+      - chatgpt/ui5k-mobile-touch-game1-v5-mouse-look
+    paths:
+      - 'oag/firmware/src/main.cpp'
+      - 'oag/include/oag/output/touch/mobile_touch_mapper.h'
+      - 'oag/src/output/touch/mobile_touch_mapper.cpp'
+      - 'oag/tests/host/test_mobile_touch_mapper.cpp'
+      - '.github/workflows/oag-ui5k-mobile-touch-game1-v5-mouse-look.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify isolated Game 1 V5 mouse-look scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          GOLDEN="19b84f3c458384f75a44cc394da8269e49e57340"
+          TOUCH_BASE="5a087b4d062e7a123109d5d8d6abb6d32ec9e154"
+          GAME1_V3_BASE="17eb3105147191e4aa01bc8b630d5c59999d115f"
+          GAME1_V4_BASE="9e399f8ca6410bd0cb88f76c69d5bba8ce1b9d69"
+
+          test "$(git merge-base "${TOUCH_BASE}" HEAD)" = "${TOUCH_BASE}"
+          test "$(git rev-parse origin/golden/ui5k-oag-abo-gemi-ultra-gaming-v1)" = "${GOLDEN}"
+
+          ACTUAL="$(git diff --name-only "${GAME1_V4_BASE}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-ui5k-mobile-touch-game1-v5-mouse-look.yml' \
+            'oag/firmware/src/main.cpp' \
+            'oag/include/oag/output/touch/mobile_touch_mapper.h' \
+            'oag/src/output/touch/mobile_touch_mapper.cpp' \
+            'oag/tests/host/test_mobile_touch_mapper.cpp' | sort)"
+
+          echo "=== GAME1 V5 MOUSE-LOOK CHANGE SCOPE ==="
+          printf '%s\n' "${ACTUAL}"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          # V4 contact-release lifecycle and all unrelated proven paths remain unchanged.
+          git diff --exit-code "${GAME1_V4_BASE}" HEAD -- \
+            oag/firmware/include/oag/firmware/mobile_touch_output.h \
+            oag/firmware/src/mobile_touch_output.cpp \
+            oag/firmware/src/usb_descriptors.cpp \
+            oag/firmware/tusb_config.h \
+            oag/firmware/src/mobile_touch_platform_driver.cpp \
+            oag/firmware/src/multi_profile_platform_driver.cpp \
+            oag/firmware/src/output_profile_selector.cpp \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/xinput_host.cpp \
+            oag/firmware/src/bluetooth_host_v2.cpp \
+            oag/src/protocol/hid/generic_hid_gamepad_driver.cpp
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          m = Path("oag/src/output/touch/mobile_touch_mapper.cpp").read_text()
+          t = Path("oag/tests/host/test_mobile_touch_mapper.cpp").read_text()
+          out_h = Path("oag/firmware/include/oag/firmware/mobile_touch_output.h").read_text()
+          out_cpp = Path("oag/firmware/src/mobile_touch_output.cpp").read_text()
+          mapper_h = Path("oag/include/oag/output/touch/mobile_touch_mapper.h").read_text()
+          main = Path("oag/firmware/src/main.cpp").read_text()
+
+          for token in [
+              "kMoveLeftX = 6796",
+              "kMoveLeftY = 3527",
+              "kR3X = 6614",
+              "kR3Y = 6243",
+              "kMoveRightX = 6341",
+              "kMoveRightY = 9358",
+              "kR2X = 13805",
+              "kR2Y = 28404",
+              "kCrossX = 11666",
+              "kCrossY = 31259",
+              "kSquareX = 6372",
+              "kSquareY = 28542",
+              "ButtonRightStick",
+              "ButtonSouth",
+              "ButtonWest",
+              "state.rightTrigger > kTriggerThreshold",
+          ]:
+              assert token in m, token
+
+          for token in [
+              "assertPoint(leftFrame, 0, 6796, 3527)",
+              "assertPoint(rightFrame, 0, 6341, 9358)",
+              "assertPoint(r3Frame, 0, 6614, 6243)",
+              "assertPoint(crossFrame, 1, 11666, 31259)",
+              "assertPoint(squareFrame, 2, 6372, 28542)",
+              "assertPoint(r2Frame, 3, 13805, 28404)",
+              "assert(comboFrame.count == 4)",
+              "assertPoint(look1, 4, 16384, 18352)",
+              "assertPoint(look2, 4, 16384, 20320)",
+              "assertPoint(lookDownFrame, 4, 12016, 16384)",
+              "assert(allFrame.count == 5)",
+          ]:
+              assert token in t, token
+
+          for token in ["previousFrame_"]:
+              assert token in out_h, token
+
+          for token in [
+              "lookTouchActive_",
+              "lookTouchX_ = 16384",
+              "lookTouchY_ = 16384",
+              "axisToStep",
+          ]:
+              assert token in mapper_h, token
+
+          for token in [
+              "kLookContactId = 4",
+              "kLookMaxHorizontalStep = 1968",
+              "kLookMaxVerticalStep = 4368",
+              "resetLookTouch",
+              "candidateX",
+              "candidateY",
+          ]:
+              assert token in m, token
+
+          for token in [
+              "encodeTouchMouseDelta",
+              "kMaxCounts = 48",
+              "mappedMouseMotion",
+              "touchProfile && mouseAimActive_",
+          ]:
+              assert token in main, token
+
+          for token in [
+              "findContactById",
+              "previousFrame_",
+              "explicit UP",
+              "next.contactCount = reportedContacts",
+              "previousFrame_ = frame",
+              "previousFrame_ = {}",
+          ]:
+              assert token in out_cpp, token
+
+          print("GAME1_V5_MOUSE_LOOK_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Build and run all host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host             -DCMAKE_BUILD_TYPE=Release             -DOAG_BUILD_HOST_TESTS=ON
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact Golden Pico SDK
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Build Pico 2 W candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k"           cmake -S oag/firmware -B build/oag-fw             -DCMAKE_BUILD_TYPE=Release             -DPICO_BOARD=pico2_w             -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+
+          test "${#UF2[@]}" -eq 1
+          test "${#ELF[@]}" -eq 1
+          test "${#MAP[@]}" -eq 1
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+          cp "${UF2[0]}" "artifacts/OAG_UI5K_MOBILE_TOUCH_GAME1_V5_${SHORT_SHA}_Pico2W.uf2"
+          cp "${ELF[0]}" "artifacts/OAG_UI5K_MOBILE_TOUCH_GAME1_V5_${SHORT_SHA}_Pico2W.elf"
+          cp "${MAP[0]}" "artifacts/OAG_UI5K_MOBILE_TOUCH_GAME1_V5_${SHORT_SHA}_Pico2W.map"
+
+          sha256sum artifacts/OAG_UI5K_MOBILE_TOUCH_GAME1_V5_* > artifacts/SHA256SUMS.txt
+
+          printf '%s\n' \
+            "GOLDEN_BASE=19b84f3c458384f75a44cc394da8269e49e57340" \
+            "TOUCH_BASE=5a087b4d062e7a123109d5d8d6abb6d32ec9e154" \
+            "PROFILE_0=PC_GOLDEN_UNCHANGED" \
+            "PROFILE_1=PHONE_GAMEPAD_GOLDEN_UNCHANGED" \
+            "PROFILE_7=GAME1_V5_ANDROID_POINTER_CALIBRATED_MOUSE_LOOK" \
+            "HOTKEY_TOUCH=F8+F9+7_HOLD_1.5_SECONDS" \
+            "TOUCH_VID_PID=CAFE:4018" \
+            "SCREENSHOT=1910x864" \
+            "ANDROID_NATURAL_TOUCH_SPACE=1080x2388" \
+            "CENTER_PROOF_POINTER=540,1194_TO_HID_16384,16384" \
+            "DPAD_LEFT=6796,3527" \
+            "R3=6614,6243" \
+            "DPAD_RIGHT=6341,9358" \
+            "R2=13805,28404" \
+            "CROSS_X=11666,31259" \
+            "SQUARE=6372,28542" \
+            "KEYBOARD_A_D=LEFT_RIGHT_VIA_LEFT_STICK" \
+            "SPACE=CROSS_X" \
+            "Q=SQUARE" \
+            "MOUSE_LEFT=R2_VIA_RIGHT_TRIGGER" \
+            "MOUSE_MIDDLE=R3_VIA_RIGHT_STICK_CLICK" \
+            "TOUCH_RELEASE=EXPLICIT_SAME_CONTACT_ID_TIP_CLEAR_LAST_XY" \
+            "CONTACT_COUNT=TOTAL_CONTACTS_REPORTED_INCLUDING_RELEASE" \
+            "MOUSE_LOOK=RELATIVE_TOUCH_CONTACT_ID_4" \
+            "MOUSE_LOOK_RAW_CLAMP=48_COUNTS" \
+            "MOUSE_LOOK_SPEED=APPROX_3_SCREEN_PIXELS_PER_COUNT" \
+            "MOUSE_LOOK_REANCHOR=CLEAN_RELEASE_AT_SAFE_EDGE" \
+            > artifacts/BUILD-INFO.txt
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-UI5K-MOBILE-TOUCH-GAME1-V5-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
