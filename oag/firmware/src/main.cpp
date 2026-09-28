@@ -532,7 +532,12 @@ public:
         if (mouseStates_[id->index].connected) {
             mouseStates_[id->index] = {};
             currentMouseMotion_ = {};
+            currentNativeWheel_ = 0;
+            currentNativePan_ = 0;
             mouseAimActive_ = false;
+            mouseAimExpiresUs_ = 0;
+            pubgScrollPulse_ = kPubgScrollNone;
+            pubgScrollPulseExpiresUs_ = 0;
             composedChanged = true;
         }
 
@@ -1140,7 +1145,12 @@ public:
 
         if (hadKeyboard || hadMouse) {
             currentMouseMotion_ = {};
+            currentNativeWheel_ = 0;
+            currentNativePan_ = 0;
             mouseAimActive_ = false;
+            mouseAimExpiresUs_ = 0;
+            pubgScrollPulse_ = kPubgScrollNone;
+            pubgScrollPulseExpiresUs_ = 0;
             sendComposedOutput();
         }
     }
