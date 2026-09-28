@@ -9,60 +9,76 @@
 namespace oag {
 namespace {
 
-constexpr std::int32_t kStickDeadzone = 0x28000000;
 constexpr std::int32_t kLookAxisDeadzone = 0x01000000;
-constexpr std::uint32_t kTriggerThreshold = 0x10000000u;
 
-// Game 1 calibration source:
-// Android Pointer Location measurements on the real phone while landscape.
-// Android reports this device in natural portrait coordinates: 1080x2388.
-//
-// Empirical proof:
-//   diagnostic HID center (16384,16384)
-//   -> Android Pointer Location X=540, Y=1194 exactly.
-//
-// Therefore game targets are normalized directly from the measured
-// natural-orientation Android coordinates:
+// Android Pointer Location natural space: 1080 x 2388.
+// Conversion:
 //   HID_X = round(pointer_x * 32768 / 1080)
 //   HID_Y = round(pointer_y * 32768 / 2388)
-constexpr std::uint16_t kMoveLeftX = 6796;
-constexpr std::uint16_t kMoveLeftY = 3527;
-constexpr std::uint16_t kR3X = 6614;
-constexpr std::uint16_t kR3Y = 6243;
-constexpr std::uint16_t kMoveRightX = 6341;
-constexpr std::uint16_t kMoveRightY = 9358;
 
-constexpr std::uint16_t kR2X = 13805;
-constexpr std::uint16_t kR2Y = 28404;
-constexpr std::uint16_t kCrossX = 11666;
-constexpr std::uint16_t kCrossY = 31259;
+// Mouse look rectangle requested by the user:
+//   X = 135..610
+//   Y = 1640..2160
+constexpr std::uint8_t kMouseLookContactId = 0;
+constexpr std::uint16_t kMouseLookCenterX = 11302;
+constexpr std::uint16_t kMouseLookCenterY = 26072;
+constexpr std::uint16_t kMouseLookMinX = 4096;
+constexpr std::uint16_t kMouseLookMaxX = 18508;
+constexpr std::uint16_t kMouseLookMinY = 22504;
+constexpr std::uint16_t kMouseLookMaxY = 29639;
+
+// Exactly half the V5 movement step.
+constexpr std::int32_t kMouseLookMaxHorizontalStep = 984;
+constexpr std::int32_t kMouseLookMaxVerticalStep = 2184;
+
+// PUBG measured targets.
+constexpr std::uint8_t kMouseLeftContactId = 1;
+constexpr std::uint16_t kMouseLeftX = 16869;
+constexpr std::uint16_t kMouseLeftY = 31451;
+
+constexpr std::uint8_t kJumpContactId = 2;
+constexpr std::uint16_t kJumpX = 10407;
+constexpr std::uint16_t kJumpY = 30600;
+
+constexpr std::uint8_t kSquareContactId = 3;
 constexpr std::uint16_t kSquareX = 6372;
 constexpr std::uint16_t kSquareY = 28542;
 
-// Mouse / right-stick look gesture.
-//
-// Touch coordinates are still in the phone's natural portrait axes while the
-// game is landscape. Therefore:
-//   mouse/right-stick RIGHT -> touch Y increases
-//   mouse/right-stick DOWN  -> touch X decreases
-//
-// Firmware encodes touch-profile mouse deltas linearly into rx/ry with
-// +/-48 mouse counts reaching full scale. These max steps correspond to about
-// three physical screen pixels per mouse count on the 2388x1080 panel:
-//   landscape horizontal: 41 HID units/count * 48 = 1968
-//   landscape vertical:   91 HID units/count * 48 = 4368
-//
-// Contact 4 is isolated from movement/buttons (IDs 0..3), so mouse look can
-// coexist with keyboard movement, Cross, Square and R2 as real multitouch.
-constexpr std::uint8_t kLookContactId = 4;
-constexpr std::uint16_t kLookCenterX = 16384;
-constexpr std::uint16_t kLookCenterY = 16384;
-constexpr std::uint16_t kLookMinX = 4000;
-constexpr std::uint16_t kLookMaxX = 28767;
-constexpr std::uint16_t kLookMinY = 5000;
-constexpr std::uint16_t kLookMaxY = 27767;
-constexpr std::int32_t kLookMaxHorizontalStep = 1968;
-constexpr std::int32_t kLookMaxVerticalStep = 4368;
+constexpr std::uint8_t kTriangleShortContactId = 4;
+constexpr std::uint16_t kTriangleShortX = 2124;
+constexpr std::uint16_t kTriangleShortY = 27663;
+
+constexpr std::uint8_t kTriangleHoldContactId = 5;
+constexpr std::uint16_t kTriangleHoldX = 2427;
+constexpr std::uint16_t kTriangleHoldY = 29420;
+
+constexpr std::uint8_t kR1ContactId = 6;
+constexpr std::uint16_t kR1X = 20935;
+constexpr std::uint16_t kR1Y = 6998;
+
+constexpr std::uint8_t kL1ContactId = 7;
+constexpr std::uint16_t kL1X = 20935;
+constexpr std::uint16_t kL1Y = 4803;
+
+constexpr std::uint8_t kShareContactId = 8;
+constexpr std::uint16_t kShareX = 3034;
+constexpr std::uint16_t kShareY = 2950;
+
+constexpr std::uint8_t kUpContactId = 9;
+constexpr std::uint16_t kUpX = 12743;
+constexpr std::uint16_t kUpY = 6394;
+
+constexpr std::uint8_t kDownContactId = 10;
+constexpr std::uint16_t kDownX = 6372;
+constexpr std::uint16_t kDownY = 6394;
+
+constexpr std::uint8_t kLeftContactId = 11;
+constexpr std::uint16_t kLeftX = 10316;
+constexpr std::uint16_t kLeftY = 5214;
+
+constexpr std::uint8_t kRightContactId = 12;
+constexpr std::uint16_t kRightX = 10316;
+constexpr std::uint16_t kRightY = 7684;
 
 bool hasDpad(std::uint8_t dpad, DpadBits bit) {
     return
@@ -136,30 +152,10 @@ void MobileTouchMapper::append(
     contact.y = y;
 }
 
-void MobileTouchMapper::appendStick(
-    MobileTouchFrame& frame,
-    std::uint8_t id,
-    std::int32_t x,
-    std::int32_t y,
-    std::uint16_t centerX,
-    std::uint16_t centerY,
-    std::uint16_t radius
-) {
-    // Game 1 uses fixed touchscreen targets for the left control rather than
-    // a free analog touch joystick.
-    (void)frame;
-    (void)id;
-    (void)x;
-    (void)y;
-    (void)centerX;
-    (void)centerY;
-    (void)radius;
-}
-
 void MobileTouchMapper::resetLookTouch() {
     lookTouchActive_ = false;
-    lookTouchX_ = kLookCenterX;
-    lookTouchY_ = kLookCenterY;
+    lookTouchX_ = kMouseLookCenterX;
+    lookTouchY_ = kMouseLookCenterY;
 }
 
 MobileTouchFrame MobileTouchMapper::map(
@@ -172,71 +168,27 @@ MobileTouchFrame MobileTouchMapper::map(
         return frame;
     }
 
-    // Contact 0 owns the whole left-side control. R3 wins over movement so
-    // there is never more than one virtual finger on that same UI control.
-    if (state.buttons & ButtonRightStick) {
-        append(frame, 0, kR3X, kR3Y);
-    } else {
-        const bool left =
-            hasDpad(state.dpad, DpadBits::Left) ||
-            state.lx <= -kStickDeadzone;
-
-        const bool right =
-            hasDpad(state.dpad, DpadBits::Right) ||
-            state.lx >= kStickDeadzone;
-
-        if (left != right) {
-            if (left) {
-                append(frame, 0, kMoveLeftX, kMoveLeftY);
-            } else {
-                append(frame, 0, kMoveRightX, kMoveRightY);
-            }
-        }
-    }
-
-    // PlayStation Cross / logical South.
-    if (state.buttons & ButtonSouth) {
-        append(frame, 1, kCrossX, kCrossY);
-    }
-
-    // PlayStation Square / logical West.
-    if (state.buttons & ButtonWest) {
-        append(frame, 2, kSquareX, kSquareY);
-    }
-
-    // Physical/logical R2. Existing keyboard/mouse infrastructure maps
-    // mouse-left to RightTrigger, so mouse-left reaches this target too.
-    if (state.rightTrigger > kTriggerThreshold) {
-        append(frame, 3, kR2X, kR2Y);
-    }
-
-    // Mouse look / right-stick camera touch.
-    //
-    // This is a RELATIVE touchscreen drag, not an absolute cursor. Each input
-    // report advances one persistent virtual finger by an amount proportional
-    // to the mouse delta. When motion stops the contact disappears; the V4
-    // output layer then emits the explicit Tip-Switch-clear UP report.
-    //
-    // If the virtual finger approaches an edge, omit it for one report. That
-    // produces a clean UP; the next motion report re-anchors at center rather
-    // than jumping across the screen while the finger is still down.
+    // Mouse look is a real relative touchscreen drag constrained to the PUBG
+    // camera rectangle. When the next movement would cross a boundary, the
+    // contact is omitted for one frame so the V4 explicit-UP lifecycle
+    // releases it cleanly; the next movement starts again from box center.
     if (axisActive(state.rx, state.ry)) {
         if (!lookTouchActive_) {
             lookTouchActive_ = true;
-            lookTouchX_ = kLookCenterX;
-            lookTouchY_ = kLookCenterY;
+            lookTouchX_ = kMouseLookCenterX;
+            lookTouchY_ = kMouseLookCenterY;
         }
 
         const std::int32_t horizontalStep =
             axisToStep(
                 state.rx,
-                kLookMaxHorizontalStep
+                kMouseLookMaxHorizontalStep
             );
 
         const std::int32_t verticalStep =
             axisToStep(
                 state.ry,
-                kLookMaxVerticalStep
+                kMouseLookMaxVerticalStep
             );
 
         const std::int64_t candidateX =
@@ -248,10 +200,10 @@ MobileTouchFrame MobileTouchMapper::map(
             horizontalStep;
 
         if (
-            candidateX < kLookMinX ||
-            candidateX > kLookMaxX ||
-            candidateY < kLookMinY ||
-            candidateY > kLookMaxY
+            candidateX < kMouseLookMinX ||
+            candidateX > kMouseLookMaxX ||
+            candidateY < kMouseLookMinY ||
+            candidateY > kMouseLookMaxY
         ) {
             resetLookTouch();
         } else {
@@ -260,13 +212,91 @@ MobileTouchFrame MobileTouchMapper::map(
 
             append(
                 frame,
-                kLookContactId,
+                kMouseLookContactId,
                 lookTouchX_,
                 lookTouchY_
             );
         }
     } else {
         resetLookTouch();
+    }
+
+    if (state.buttons & kPubgMouseLeftButton) {
+        append(
+            frame,
+            kMouseLeftContactId,
+            kMouseLeftX,
+            kMouseLeftY
+        );
+    }
+
+    if (state.buttons & ButtonSouth) {
+        append(
+            frame,
+            kJumpContactId,
+            kJumpX,
+            kJumpY
+        );
+    }
+
+    if (state.buttons & ButtonWest) {
+        append(
+            frame,
+            kSquareContactId,
+            kSquareX,
+            kSquareY
+        );
+    }
+
+    if (state.buttons & kPubgTriangleShortButton) {
+        append(
+            frame,
+            kTriangleShortContactId,
+            kTriangleShortX,
+            kTriangleShortY
+        );
+    }
+
+    if (state.buttons & kPubgTriangleHoldButton) {
+        append(
+            frame,
+            kTriangleHoldContactId,
+            kTriangleHoldX,
+            kTriangleHoldY
+        );
+    }
+
+    if (state.buttons & ButtonRightBumper) {
+        append(frame, kR1ContactId, kR1X, kR1Y);
+    }
+
+    if (state.buttons & ButtonLeftBumper) {
+        append(frame, kL1ContactId, kL1X, kL1Y);
+    }
+
+    if (state.buttons & ButtonShare) {
+        append(
+            frame,
+            kShareContactId,
+            kShareX,
+            kShareY
+        );
+    }
+
+    if (hasDpad(state.dpad, DpadBits::Up)) {
+        append(frame, kUpContactId, kUpX, kUpY);
+    }
+
+    if (hasDpad(state.dpad, DpadBits::Down)) {
+        append(frame, kDownContactId, kDownX, kDownY);
+    }
+
+    if (hasDpad(state.dpad, DpadBits::Left)) {
+        append(frame, kLeftContactId, kLeftX, kLeftY);
+    }
+
+    if (hasDpad(state.dpad, DpadBits::Right)) {
+        append(frame, kRightContactId, kRightX, kRightY);
     }
 
     return frame;
