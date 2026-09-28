@@ -1,0 +1,171 @@
+name: OAG PUBG Touch V6 U2HTS Watchdog
+
+on:
+  push:
+    branches:
+      - chatgpt/pubg-touch-v6-u2hts-watchdog
+    paths:
+      - 'oag/firmware/include/oag/firmware/mobile_touch_output.h'
+      - 'oag/firmware/src/mobile_touch_output.cpp'
+      - 'oag/firmware/src/usb_descriptors.cpp'
+      - '.github/workflows/oag-pubg-touch-v6-u2hts-watchdog.yml'
+  workflow_dispatch:
+
+jobs:
+  guard-and-host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify isolated V6 scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          GOLDEN="19b84f3c458384f75a44cc394da8269e49e57340"
+          V5_BASE="4408cce4eb57be7ac747c10335885db66d5519a4"
+
+          test "$(git rev-parse origin/golden/ui5k-oag-abo-gemi-ultra-gaming-v1)" = "${GOLDEN}"
+          test "$(git merge-base "${V5_BASE}" HEAD)" = "${V5_BASE}"
+
+          ACTUAL="$(git diff --name-only "${V5_BASE}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-pubg-touch-v6-u2hts-watchdog.yml' \
+            'oag/firmware/include/oag/firmware/mobile_touch_output.h' \
+            'oag/firmware/src/mobile_touch_output.cpp' \
+            'oag/firmware/src/usb_descriptors.cpp' | sort)"
+
+          echo "=== PUBG TOUCH V6 CHANGE SCOPE ==="
+          printf '%s\n' "${ACTUAL}"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          # Gameplay mappings and all Golden transport paths remain untouched.
+          git diff --exit-code "${V5_BASE}" HEAD -- \
+            oag/firmware/src/main.cpp \
+            oag/include/oag/output/touch/mobile_touch_mapper.h \
+            oag/src/output/touch/mobile_touch_mapper.cpp \
+            oag/tests/host/test_mobile_touch_mapper.cpp \
+            oag/firmware/src/mobile_touch_platform_driver.cpp \
+            oag/firmware/src/multi_profile_platform_driver.cpp \
+            oag/firmware/src/output_profile_selector.cpp \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/xinput_host.cpp \
+            oag/firmware/src/bluetooth_host_v2.cpp
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          h = Path('oag/firmware/include/oag/firmware/mobile_touch_output.h').read_text()
+          cpp = Path('oag/firmware/src/mobile_touch_output.cpp').read_text()
+          desc = Path('oag/firmware/src/usb_descriptors.cpp').read_text()
+
+          for token in [
+              'kSnapshotPeriodUs = 4000',
+              'kReleaseSnapshots = 3',
+              'kTransportStallUs = 100000',
+              'kRecoveryReleaseSnapshots = 4',
+              'std::uint16_t scanTime = 0',
+              'static_assert(sizeof(Report) == 63)',
+          ]:
+              assert token in h, token
+
+          for token in [
+              'U2HTS-style hybrid report',
+              'report_.contactCount =',
+              '(nowUs / 100u) & 0xFFFFu',
+              'enterTransportRecovery();',
+              'hasActiveContacts()',
+              'releaseSnapshotsRemaining',
+          ]:
+              assert token in cpp, token
+
+          for token in [
+              'kMobileTouchDevicePid = 0x4019',
+              'Usage (Scan Time)',
+              '0x09, 0x54,       // Usage (Contact Count)',
+          ]:
+              assert token in desc, token
+
+          assert 'report_.contactCount =\n        static_cast<std::uint8_t>(slots_.size())' not in cpp
+          print('PUBG_TOUCH_V6_GUARD=PASS')
+          PY
+
+      - name: Architecture dependency guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oag/tools/check_architecture.py
+
+      - name: Build and run all host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host -DCMAKE_BUILD_TYPE=Release -DOAG_BUILD_HOST_TESTS=ON
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: guard-and-host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact Golden Pico SDK
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify pinned dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Build Pico 2 W candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k" cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=pico2_w -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package UF2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          test "${#UF2[@]}" -eq 1
+
+          SHORT_SHA="${GITHUB_SHA::8}"
+          cp "${UF2[0]}" "artifacts/PUBG_TOUCH_V6_U2HTS_WATCHDOG_${SHORT_SHA}_Pico2W.uf2"
+          sha256sum artifacts/*.uf2
+
+      - name: Upload UF2
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-PUBG-TOUCH-V6-U2HTS-WATCHDOG
+          path: artifacts/*.uf2
+          if-no-files-found: error
