@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 #include "pico/stdlib.h"
@@ -49,6 +50,14 @@ enum class XgipInitPhase : std::uint8_t {
     Led,
     AuthDone,
     Ready,
+};
+
+enum class EfootballComboPhase : std::uint8_t {
+    Idle = 0,
+    OnePress,
+    TravelWait,
+    TwoPress,
+    WaitForRightStickRelease,
 };
 
 static constexpr std::uint8_t kXonePowerOn[] = {
@@ -114,6 +123,7 @@ public:
         maintainXinputTransport();
         serviceXgipInit();
         servicePrimaryControllerChords();
+        serviceEfootballComboTimer();
         serviceOutputProfileHotkey();
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
@@ -1118,6 +1128,20 @@ private:
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
     static constexpr std::uint64_t kOutputProfileHoldUs = 1500000ull;
+
+    // eFootball experimental One-Two combo.
+    //
+    // Canonical OAG Y orientation is negative-up. Triggering has no temporal
+    // debounce: the very first output frame that crosses this threshold is
+    // consumed by the combo instead of being forwarded as Right-Stick Up.
+    static constexpr std::int32_t kEfootballComboTriggerRy =
+        -0x10000000;
+    static constexpr std::int32_t kEfootballComboRearmRy =
+        -0x08000000;
+    static constexpr std::uint64_t kEfootballOnePressUs = 90000ull;
+    static constexpr std::uint64_t kEfootballTravelDelayUs = 625000ull;
+    static constexpr std::uint64_t kEfootballTwoPressUs = 210000ull;
+
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
     static constexpr std::uint8_t kProfileF8Usage = 0x41;
@@ -1481,6 +1505,157 @@ private:
         }
     }
 
+    void updateEfootballComboTrigger(
+        const oag::LogicalGamepadState& physicalPrimary,
+        std::uint64_t nowUs
+    ) {
+        if (!physicalPrimary.connected) {
+            efootballComboPhase_ = EfootballComboPhase::Idle;
+            efootballComboPhaseStartedUs_ = 0;
+            return;
+        }
+
+        if (
+            efootballComboPhase_ == EfootballComboPhase::Idle &&
+            physicalPrimary.ry <= kEfootballComboTriggerRy
+        ) {
+            // Trigger immediately on the first sampled frame above threshold.
+            // There is intentionally no hold time and no debounce delay.
+            efootballComboPhase_ = EfootballComboPhase::OnePress;
+            efootballComboPhaseStartedUs_ = nowUs;
+            return;
+        }
+
+        if (
+            efootballComboPhase_ ==
+                EfootballComboPhase::WaitForRightStickRelease &&
+            physicalPrimary.ry >= kEfootballComboRearmRy
+        ) {
+            efootballComboPhase_ = EfootballComboPhase::Idle;
+            efootballComboPhaseStartedUs_ = 0;
+        }
+    }
+
+    oag::LogicalGamepadState applyEfootballCombo(
+        oag::LogicalGamepadState output
+    ) const {
+        if (efootballComboPhase_ == EfootballComboPhase::Idle) {
+            return output;
+        }
+
+        // Right-Stick Up is the trigger, not gameplay input while the combo is
+        // active/latched. Preserve RX and any neutral/downward RY movement.
+        if (output.ry < 0) {
+            output.ry = 0;
+        }
+
+        switch (efootballComboPhase_) {
+            case EfootballComboPhase::OnePress:
+                // "One": LB + A for 90 ms.
+                output.buttons |=
+                    oag::ButtonLeftBumper |
+                    oag::ButtonSouth;
+                break;
+
+            case EfootballComboPhase::TwoPress:
+                // "Two": RT + LB + Y for 210 ms.
+                output.buttons |=
+                    oag::ButtonLeftBumper |
+                    oag::ButtonNorth;
+                output.rightTrigger =
+                    std::numeric_limits<std::uint32_t>::max();
+                break;
+
+            case EfootballComboPhase::TravelWait:
+            case EfootballComboPhase::WaitForRightStickRelease:
+            case EfootballComboPhase::Idle:
+            default:
+                break;
+        }
+
+        return output;
+    }
+
+    void serviceEfootballComboTimer() {
+        if (efootballComboPhase_ == EfootballComboPhase::Idle) {
+            return;
+        }
+
+        const oag::LogicalGamepadState physicalPrimary =
+            basePrimaryOutput();
+
+        if (!physicalPrimary.connected) {
+            efootballComboPhase_ = EfootballComboPhase::Idle;
+            efootballComboPhaseStartedUs_ = 0;
+            sendComposedOutput();
+            return;
+        }
+
+        if (
+            efootballComboPhase_ ==
+            EfootballComboPhase::WaitForRightStickRelease
+        ) {
+            if (physicalPrimary.ry >= kEfootballComboRearmRy) {
+                efootballComboPhase_ = EfootballComboPhase::Idle;
+                efootballComboPhaseStartedUs_ = 0;
+                sendComposedOutput();
+            }
+            return;
+        }
+
+        const std::uint64_t nowUs = time_us_64();
+        bool changed = false;
+
+        switch (efootballComboPhase_) {
+            case EfootballComboPhase::OnePress:
+                if (
+                    nowUs - efootballComboPhaseStartedUs_ >=
+                    kEfootballOnePressUs
+                ) {
+                    efootballComboPhase_ =
+                        EfootballComboPhase::TravelWait;
+                    efootballComboPhaseStartedUs_ = nowUs;
+                    changed = true;
+                }
+                break;
+
+            case EfootballComboPhase::TravelWait:
+                if (
+                    nowUs - efootballComboPhaseStartedUs_ >=
+                    kEfootballTravelDelayUs
+                ) {
+                    efootballComboPhase_ =
+                        EfootballComboPhase::TwoPress;
+                    efootballComboPhaseStartedUs_ = nowUs;
+                    changed = true;
+                }
+                break;
+
+            case EfootballComboPhase::TwoPress:
+                if (
+                    nowUs - efootballComboPhaseStartedUs_ >=
+                    kEfootballTwoPressUs
+                ) {
+                    efootballComboPhase_ =
+                        EfootballComboPhase::WaitForRightStickRelease;
+                    efootballComboPhaseStartedUs_ = nowUs;
+                    changed = true;
+                }
+                break;
+
+            case EfootballComboPhase::WaitForRightStickRelease:
+            case EfootballComboPhase::Idle:
+            default:
+                break;
+        }
+
+        if (changed) {
+            // Emit each press/release boundary even if the physical controller
+            // itself has not produced another report at that exact moment.
+            sendComposedOutput();
+        }
+    }
+
     oag::KeyboardState combinedKeyboard() const {
         oag::KeyboardState combined {};
 
@@ -1812,13 +1987,24 @@ private:
         const bool hasKeyboard = keyboard.connected;
         const bool hasMouse = mouse.connected;
 
+        // Read the physical primary once. Combo trigger detection happens
+        // before this frame is submitted, so Right-Stick Up cannot leak into
+        // the game on the trigger frame.
+        oag::LogicalGamepadState physicalPrimary =
+            basePrimaryOutput();
+
+        updateEfootballComboTrigger(
+            physicalPrimary,
+            time_us_64()
+        );
+
         // In Native mode K/M never create or modify the XInput player.
         // Physical gamepads keep their normal route while K/M are forwarded
         // through the standard HID keyboard/mouse interfaces.
         if (keyboardMouseMode_ == KeyboardMouseOutputMode::Native) {
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                basePrimaryOutput()
+                applyEfootballCombo(physicalPrimary)
             );
             return;
         }
@@ -1842,8 +2028,10 @@ private:
                 mouseAimActive_
                     ? currentMouseMotion_
                     : oag::MouseMotion {},
-                basePrimaryOutput()
+                physicalPrimary
             );
+
+        output = applyEfootballCombo(output);
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
             platformOutput_.submit(
@@ -2290,6 +2478,10 @@ private:
     std::uint64_t outputProfileChordStartedUs_ = 0;
     std::uint8_t outputProfileCandidate_ = kNoOutputProfileCandidate;
     bool outputProfileChordLatched_ = false;
+
+    EfootballComboPhase efootballComboPhase_ =
+        EfootballComboPhase::Idle;
+    std::uint64_t efootballComboPhaseStartedUs_ = 0;
 
     std::int16_t currentNativeWheel_ = 0;
     std::int16_t currentNativePan_ = 0;
