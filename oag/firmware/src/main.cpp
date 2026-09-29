@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 #include "pico/stdlib.h"
@@ -118,6 +119,7 @@ public:
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
+        serviceAntiRecoil();
         servicePlatformFeedback();
     }
 
@@ -1114,6 +1116,11 @@ public:
 private:
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 10000;
+    static constexpr std::uint64_t kAntiRecoilTickUs = 8000;
+    static constexpr std::uint64_t kAntiRecoilJitterPeriodUs = 100000;
+    static constexpr std::int32_t kAntiRecoilVerticalPermille = 150;
+    static constexpr std::int32_t kAntiRecoilHorizontalPermille = -80;
+    static constexpr std::int32_t kAntiRecoilJitterRangePermille = 80;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -1845,6 +1852,8 @@ private:
                 basePrimaryOutput()
             );
 
+        applyAntiRecoil(output, mouse);
+
         if (!output.connected && !hasKeyboard && !hasMouse) {
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
@@ -2070,6 +2079,117 @@ private:
 
         currentMouseMotion_ = {};
         mouseAimActive_ = false;
+        sendComposedOutput();
+    }
+
+    static std::int32_t addAxisClamped(
+        std::int32_t value,
+        std::int32_t delta
+    ) {
+        const std::int64_t sum =
+            static_cast<std::int64_t>(value) +
+            static_cast<std::int64_t>(delta);
+
+        if (sum > std::numeric_limits<std::int32_t>::max()) {
+            return std::numeric_limits<std::int32_t>::max();
+        }
+
+        if (sum < std::numeric_limits<std::int32_t>::min()) {
+            return std::numeric_limits<std::int32_t>::min();
+        }
+
+        return static_cast<std::int32_t>(sum);
+    }
+
+    void applyAntiRecoil(
+        oag::LogicalGamepadState& output,
+        const oag::MouseState& mouse
+    ) const {
+        if (
+            keyboardMouseMode_ != KeyboardMouseOutputMode::Controller ||
+            !antiRecoilActive_ ||
+            (mouse.buttons & oag::MouseButtonLeft) == 0
+        ) {
+            return;
+        }
+
+        const std::int64_t axisMax =
+            std::numeric_limits<std::int32_t>::max();
+
+        const std::int32_t vertical =
+            static_cast<std::int32_t>(
+                axisMax * kAntiRecoilVerticalPermille / 1000
+            );
+
+        const std::int32_t horizontalBase =
+            static_cast<std::int32_t>(
+                axisMax * kAntiRecoilHorizontalPermille / 1000
+            );
+
+        // The wall pattern rises strongly and walks to the right. Counter it
+        // with a down/left vector. Horizontal compensation gets +/-8% jitter
+        // around its -8% base so the correction is not a perfectly rigid line.
+        const std::int32_t horizontal =
+            static_cast<std::int32_t>(
+                static_cast<std::int64_t>(horizontalBase) *
+                antiRecoilJitterPermille_ /
+                1000
+            );
+
+        output.rx = addAxisClamped(output.rx, horizontal);
+        output.ry = addAxisClamped(output.ry, vertical);
+    }
+
+    void serviceAntiRecoil() {
+        const oag::MouseState mouse = combinedMouse();
+
+        const bool firing =
+            keyboardMouseMode_ == KeyboardMouseOutputMode::Controller &&
+            mouse.connected &&
+            (mouse.buttons & oag::MouseButtonLeft) != 0;
+
+        if (!firing) {
+            antiRecoilActive_ = false;
+            antiRecoilNextTickUs_ = 0;
+            antiRecoilNextJitterUs_ = 0;
+            antiRecoilJitterPermille_ = 1000;
+            return;
+        }
+
+        const std::uint64_t nowUs = time_us_64();
+
+        if (!antiRecoilActive_) {
+            antiRecoilActive_ = true;
+            antiRecoilNextTickUs_ = nowUs;
+            antiRecoilNextJitterUs_ = nowUs;
+            antiRecoilJitterPermille_ = 1000;
+        }
+
+        if (nowUs >= antiRecoilNextJitterUs_) {
+            // Tiny deterministic PRNG: no libc rand(), no blocking and no
+            // dependency on wall-clock entropy. Range = 920..1080 permille.
+            antiRecoilPrng_ =
+                antiRecoilPrng_ * 1664525u + 1013904223u;
+
+            const std::int32_t span =
+                kAntiRecoilJitterRangePermille * 2 + 1;
+            const std::int32_t offset =
+                static_cast<std::int32_t>(
+                    (antiRecoilPrng_ >> 16) %
+                    static_cast<std::uint32_t>(span)
+                ) -
+                kAntiRecoilJitterRangePermille;
+
+            antiRecoilJitterPermille_ = 1000 + offset;
+            antiRecoilNextJitterUs_ =
+                nowUs + kAntiRecoilJitterPeriodUs;
+        }
+
+        if (nowUs < antiRecoilNextTickUs_) {
+            return;
+        }
+
+        antiRecoilNextTickUs_ = nowUs + kAntiRecoilTickUs;
         sendComposedOutput();
     }
 
@@ -2394,6 +2514,12 @@ private:
     oag::MouseMotion currentMouseMotion_ {};
     std::uint64_t mouseAimExpiresUs_ = 0;
     bool mouseAimActive_ = false;
+
+    bool antiRecoilActive_ = false;
+    std::uint64_t antiRecoilNextTickUs_ = 0;
+    std::uint64_t antiRecoilNextJitterUs_ = 0;
+    std::int32_t antiRecoilJitterPermille_ = 1000;
+    std::uint32_t antiRecoilPrng_ = 0xA80B0E6Du;
 
     std::array<
         XgipInitPhase,
