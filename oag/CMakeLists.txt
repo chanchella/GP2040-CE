@@ -33,6 +33,7 @@ add_library(oag_core STATIC
     src/output/platform/platform_activation_gate.cpp
     src/bluetooth/bluetooth_device_classifier.cpp
     src/audio/controller_audio_capability.cpp
+    src/audio/controller_audio_usb_parser.cpp
 )
 
 target_include_directories(oag_core
@@ -168,6 +169,13 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_bluetooth_classifier_tests PRIVATE oag_core)
     target_compile_features(oag_bluetooth_classifier_tests PRIVATE cxx_std_17)
     add_test(NAME oag_bluetooth_classifier_tests COMMAND oag_bluetooth_classifier_tests)
+
+    add_executable(oag_controller_audio_usb_parser_tests
+        tests/host/test_controller_audio_usb_parser.cpp
+    )
+    target_link_libraries(oag_controller_audio_usb_parser_tests PRIVATE oag_core)
+    target_compile_features(oag_controller_audio_usb_parser_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_controller_audio_usb_parser_tests COMMAND oag_controller_audio_usb_parser_tests)
 
     add_executable(oag_controller_audio_capability_tests
         tests/host/test_controller_audio_capability.cpp
