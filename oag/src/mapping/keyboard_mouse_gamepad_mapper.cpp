@@ -135,14 +135,16 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
 
     rebuildExtraBindings();
 
-    // Full-scale mouse->right-stick profile. Any non-zero one-count mouse
-    // movement reaches full stick magnitude immediately. Direction is still
-    // preserved by the circular boundary.
-    mouseConfig_.sensitivityX = 1.0;
-    mouseConfig_.sensitivityY = 1.0;
-    mouseConfig_.exponent = 0.58;
-    mouseConfig_.deadzoneX = 0.0;
-    mouseConfig_.deadzoneY = 0.0;
+    // Legendary Aim V1: velocity-based precision-to-flick response.
+    // One normalized count/ms stays above a typical controller deadzone,
+    // while fast mouse motion ramps progressively to full stick travel.
+    // The firmware normalizes report deltas to a 1 ms reference interval,
+    // so 125/250/500/1000 Hz mice retain comparable physical sensitivity.
+    mouseConfig_.sensitivityX = 0.09;
+    mouseConfig_.sensitivityY = 0.09;
+    mouseConfig_.exponent = 1.18;
+    mouseConfig_.deadzoneX = 0.10;
+    mouseConfig_.deadzoneY = 0.10;
     mouseConfig_.boundary = StickBoundary::Circle;
     mouseConfig_.invertY = false;
 }
@@ -225,7 +227,8 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
     const KeyboardState* keyboard,
     const MouseState* mouse,
     MouseMotion mouseMotion,
-    LogicalGamepadState base
+    LogicalGamepadState base,
+    double mouseMotionScale
 ) const {
     LogicalGamepadState output =
         bindings_.apply(keyboard, mouse, base);
@@ -237,7 +240,11 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
     );
 
     const StickVector aim =
-        mouseMapper_.map(mouseMotion, mouseConfig_);
+        mouseMapper_.map(
+            mouseMotion,
+            mouseConfig_,
+            mouseMotionScale
+        );
 
     if (mouseMotion.dx != 0 || mouseMotion.dy != 0) {
         output.rx = aim.x;

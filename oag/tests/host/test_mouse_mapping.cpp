@@ -98,5 +98,25 @@ int main() {
     assert(squareCorner.x == std::numeric_limits<std::int32_t>::max());
     assert(squareCorner.y == std::numeric_limits<std::int32_t>::max());
 
+    // Poll-rate normalization: 8 counts arriving every 8 ms represents the
+    // same velocity as 1 count arriving every 1 ms.
+    MouseStickConfig normalized {};
+    normalized.sensitivityX = 0.09;
+    normalized.sensitivityY = 0.09;
+    normalized.exponent = 1.18;
+    normalized.deadzoneX = 0.10;
+    normalized.deadzoneY = 0.10;
+    normalized.boundary = StickBoundary::Circle;
+
+    const StickVector oneKhz =
+        mapper.map({1, 0}, normalized, 1.0);
+    const StickVector oneTwentyFiveHz =
+        mapper.map({8, 0}, normalized, 0.125);
+
+    assert(std::abs(
+        axisToUnit(oneKhz.x) -
+        axisToUnit(oneTwentyFiveHz.x)
+    ) < 0.000001);
+
     return 0;
 }

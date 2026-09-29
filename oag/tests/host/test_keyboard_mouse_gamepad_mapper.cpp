@@ -160,8 +160,8 @@ int main() {
     assert((output.buttons & ButtonLeftBumper) != 0);
     assert((output.buttons & ButtonRightBumper) != 0);
 
-    // UI4E full-scale profile: one mouse count must reach 100%
-    // right-stick travel.
+    // Legendary Aim V1: a one-count 1 kHz micro movement must remain
+    // controllable instead of slamming the virtual right stick to 100%.
     output = mapper.apply(
         nullptr,
         &mouse,
@@ -175,7 +175,33 @@ int main() {
             std::numeric_limits<std::int32_t>::max()
         );
 
-    assert(oneCount == fullScale);  // 100%
+    assert(oneCount > fullScale / 10);
+    assert(oneCount < fullScale / 4);
+
+    // A real flick still reaches full stick travel quickly.
+    output = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {12, 0}
+    );
+    assert(output.rx == std::numeric_limits<std::int32_t>::max());
+
+    // Equal physical velocity at 125 Hz and 1000 Hz must map identically.
+    const auto fastPoll = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {1, 0},
+        {},
+        1.0
+    );
+    const auto slowPoll = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {8, 0},
+        {},
+        0.125
+    );
+    assert(fastPoll.rx == slowPoll.rx);
 
     return 0;
 }
