@@ -160,34 +160,39 @@ int main() {
     assert((output.buttons & ButtonLeftBumper) != 0);
     assert((output.buttons & ButtonRightBumper) != 0);
 
-    // Legendary Aim V1: a one-count 1 kHz micro movement must remain
-    // controllable instead of slamming the virtual right stick to 100%.
-    output = mapper.apply(
+    // V7 Precision Ballistics: the smallest 1 kHz delta is no longer full
+    // stick, while medium motion ramps aggressively and a flick preserves the
+    // exact V6 full-stick ceiling.
+    mouse.buttons = 0;
+    const auto microAim = mapper.apply(
         nullptr,
         &mouse,
         MouseMotion {1, 0}
     );
+    const auto mediumAim = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {2, 0}
+    );
+    const auto flickAim = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {5, 0}
+    );
 
-    const std::int64_t oneCount =
-        static_cast<std::int64_t>(output.rx);
     const std::int64_t fullScale =
         static_cast<std::int64_t>(
             std::numeric_limits<std::int32_t>::max()
         );
 
-    // V6 raises V5 base sensitivity exactly 20%. At the 1 kHz reference
-    // interval, even one whole mouse count is intentionally full-stick.
-    assert(oneCount == fullScale);
+    assert(microAim.rx > 0);
+    assert(microAim.rx < fullScale / 2);
+    assert(mediumAim.rx > microAim.rx);
+    assert(mediumAim.rx < fullScale);
+    assert(flickAim.rx == std::numeric_limits<std::int32_t>::max());
 
-    // A real flick still reaches full stick travel quickly.
-    output = mapper.apply(
-        nullptr,
-        &mouse,
-        MouseMotion {2, 0}
-    );
-    assert(output.rx == std::numeric_limits<std::int32_t>::max());
-
-    // Equal physical velocity at 125 Hz and 1000 Hz must map identically.
+    // Equal physical velocity at 125 Hz and 1000 Hz remains identical after
+    // the new curve because it operates on poll-normalized velocity.
     const auto fastPoll = mapper.apply(
         nullptr,
         &mouse,
@@ -204,30 +209,34 @@ int main() {
     );
     assert(fastPoll.rx == slowPoll.rx);
 
-    // V6: ADS inherits the same +20% base increase while the proven 2.90x ADS
-    // boost stays unchanged. Use a fractional scale so both remain distinguishable.
+    // ADS uses a separate velocity-aware response boost after precision
+    // shaping: micro ADS is stronger than hip but stays below full stick.
     mouse.buttons = 0;
     const auto hipAim = mapper.apply(
         nullptr,
         &mouse,
-        MouseMotion {1, 0},
-        {},
-        0.25
+        MouseMotion {1, 0}
     );
 
     mouse.buttons = MouseButtonRight;
     const auto adsAim = mapper.apply(
         nullptr,
         &mouse,
-        MouseMotion {1, 0},
-        {},
-        0.25
+        MouseMotion {1, 0}
     );
 
     assert(adsAim.leftTrigger ==
         std::numeric_limits<std::uint32_t>::max());
     assert(adsAim.rx > hipAim.rx);
-    assert(adsAim.rx <= std::numeric_limits<std::int32_t>::max());
+    assert(adsAim.rx < std::numeric_limits<std::int32_t>::max());
+
+    // Fast ADS still reaches the same full-stick ceiling as V6.
+    const auto adsFlick = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {5, 0}
+    );
+    assert(adsFlick.rx == std::numeric_limits<std::int32_t>::max());
 
     return 0;
 }

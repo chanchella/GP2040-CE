@@ -1,5 +1,7 @@
 #include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 
+#include <cmath>
+
 namespace oag {
 
 KeyboardMouseGamepadMapper::KeyboardMouseGamepadMapper() {
@@ -145,6 +147,10 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
     mouseConfig_.exponent = 0.72;
     mouseConfig_.deadzoneX = 0.14;
     mouseConfig_.deadzoneY = 0.14;
+    mouseConfig_.precisionBallistics = true;
+    mouseConfig_.precisionLowSpeed = 1.0;
+    mouseConfig_.precisionFullSpeed = 5.0;
+    mouseConfig_.precisionLowScale = 0.10;
     mouseConfig_.boundary = StickBoundary::Circle;
     mouseConfig_.invertY = false;
 }
@@ -239,23 +245,49 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
         output
     );
 
-    // V6 +20% over V5 fine-tuned ADS compensation: games commonly apply a lower look sensitivity
-    // while Left Trigger is held. Right mouse is the FPS profile's LT/ADS
-    // source, so compensate only during ADS instead of globally destroying
-    // micro-aim precision.
+    // V7 Precision Ballistics: preserve V6 maximum turn speed, but keep the
+    // smallest normalized mouse velocities below full stick. ADS compensation
+    // is applied after the precision curve, so Right Click cannot bypass the
+    // micro-aim region. The boost itself ramps with true mouse velocity.
     const bool adsActive =
         mouse != nullptr &&
         mouse->connected &&
         (mouse->buttons & MouseButtonRight) != 0;
 
-    constexpr double kAdsMotionBoost = 2.90;
+    const double normalizedVelocity =
+        std::hypot(
+            static_cast<double>(mouseMotion.dx) * mouseMotionScale,
+            static_cast<double>(mouseMotion.dy) * mouseMotionScale
+        );
+
+    constexpr double kAdsPrecisionBoost = 1.50;
+    constexpr double kAdsFullBoost = 2.90;
+    constexpr double kAdsBoostRampStart = 1.0;
+    constexpr double kAdsBoostRampEnd = 3.0;
+
+    double adsResponseBoost = 1.0;
+    if (adsActive) {
+        if (normalizedVelocity <= kAdsBoostRampStart) {
+            adsResponseBoost = kAdsPrecisionBoost;
+        } else if (normalizedVelocity >= kAdsBoostRampEnd) {
+            adsResponseBoost = kAdsFullBoost;
+        } else {
+            const double t =
+                (normalizedVelocity - kAdsBoostRampStart) /
+                (kAdsBoostRampEnd - kAdsBoostRampStart);
+            const double smoothT = t * t * (3.0 - 2.0 * t);
+            adsResponseBoost =
+                kAdsPrecisionBoost +
+                (kAdsFullBoost - kAdsPrecisionBoost) * smoothT;
+        }
+    }
 
     const StickVector aim =
         mouseMapper_.map(
             mouseMotion,
             mouseConfig_,
-            mouseMotionScale *
-                (adsActive ? kAdsMotionBoost : 1.0)
+            mouseMotionScale,
+            adsResponseBoost
         );
 
     if (mouseMotion.dx != 0 || mouseMotion.dy != 0) {

@@ -1,9 +1,9 @@
-name: OAG PC KM Legendary Aim V6 Plus 20
+name: OAG PC KM Legendary Aim V7 Precision Ballistics
 
 on:
   push:
     branches:
-      - chatgpt/oag-pc-km-legendary-aim-v6-plus20
+      - chatgpt/oag-pc-km-legendary-aim-v7-precision-ballistics
     paths:
       - 'oag/**'
       - '.github/workflows/oag-pc-km-legendary-aim-v3-ads-comp.yml'
@@ -63,7 +63,7 @@ jobs:
           assert "mouseConfig_.sensitivityY = 1.4352" in km
           assert "mouseConfig_.exponent = 0.72" in km
           assert "mouseConfig_.deadzoneX = 0.14" in km
-          assert "kAdsMotionBoost = 2.90" in km
+          assert "kAdsFullBoost = 2.90" in km\n          assert "kAdsPrecisionBoost = 1.50" in km\n          assert "mouseConfig_.precisionBallistics = true" in km\n          assert "mouseConfig_.precisionLowScale = 0.10" in km\n          assert "mouseConfig_.precisionFullSpeed = 5.0" in km
           assert "MouseButtonRight" in km
           assert "adsActive" in km
           assert "safeMotionScale" in mm
@@ -149,24 +149,29 @@ jobs:
           test "${#ELF[@]}" -eq 1
           test "${#MAP[@]}" -eq 1
 
-          cp "${UF2[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V6_PLUS20_Pico2W.uf2
-          cp "${ELF[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V6_PLUS20_Pico2W.elf
-          cp "${MAP[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V6_PLUS20_Pico2W.map
-          sha256sum artifacts/OAG_PC_KM_LEGENDARY_AIM_V6_PLUS20_* > artifacts/SHA256SUMS.txt
+          cp "${UF2[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V7_PRECISION_BALLISTICS_Pico2W.uf2
+          cp "${ELF[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V7_PRECISION_BALLISTICS_Pico2W.elf
+          cp "${MAP[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V7_PRECISION_BALLISTICS_Pico2W.map
+          sha256sum artifacts/OAG_PC_KM_LEGENDARY_AIM_V7_PRECISION_BALLISTICS_* > artifacts/SHA256SUMS.txt
 
           printf '%s\n' \
             "DIAMOND=19b84f3c458384f75a44cc394da8269e49e57340" \
-            "FEATURE=PC_KM_LEGENDARY_AIM_V6_PLUS20" \
+            "FEATURE=PC_KM_LEGENDARY_AIM_V7_PRECISION_BALLISTICS" \
             "MOUSE_REFERENCE_INTERVAL_US=1000" \
             "SENSITIVITY_XY=1.4352" \
             "EXPONENT=0.72" \
             "ANTI_DEADZONE_XY=0.14" \
+            "PRECISION_LOW_SPEED=1.0" \
+            "PRECISION_FULL_SPEED=5.0" \
+            "PRECISION_LOW_SCALE=0.10" \
+            "ADS_PRECISION_BOOST=1.50" \
+            "ADS_FULL_BOOST=2.90" \
             "ADAPTIVE_RELEASE_US=1500..12000" \
             > artifacts/BUILD-INFO.txt
 
       - name: Upload candidate
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-PC-KM-LEGENDARY-AIM-V6-PLUS20-${{ github.sha }}
+          name: OAG-PC-KM-LEGENDARY-AIM-V7-PRECISION-BALLISTICS-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

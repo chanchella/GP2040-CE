@@ -24,6 +24,16 @@ struct MouseStickConfig {
     double deadzoneX = 0.0;
     double deadzoneY = 0.0;
 
+    // Optional stateless low-velocity precision shaping. The input velocity is
+    // measured after poll-rate normalization but before sensitivity. At or
+    // below precisionLowSpeed, precisionLowScale is applied. The scale then
+    // ramps smoothly to 1.0 at precisionFullSpeed. This preserves fast flicks
+    // while preventing the smallest mouse delta from becoming full stick.
+    bool precisionBallistics = false;
+    double precisionLowSpeed = 1.0;
+    double precisionFullSpeed = 5.0;
+    double precisionLowScale = 0.10;
+
     StickBoundary boundary = StickBoundary::Circle;
     bool invertY = false;
 };
@@ -38,13 +48,15 @@ public:
     StickVector map(
         const MouseMotion& motion,
         const MouseStickConfig& config,
-        double motionScale = 1.0
+        double motionScale = 1.0,
+        double responseBoost = 1.0
     ) const;
 
 private:
     static double clampUnit(double value);
     static double clampDeadzone(double value);
     static double sanitizeExponent(double value);
+    static double smoothstep01(double value);
     static std::int32_t normalizedToAxis(double value);
 };
 

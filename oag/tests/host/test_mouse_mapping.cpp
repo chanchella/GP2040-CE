@@ -118,5 +118,37 @@ int main() {
         axisToUnit(oneTwentyFiveHz.x)
     ) < 0.000001);
 
+    // V7 precision ballistics is stateless and uses normalized velocity, so
+    // equivalent physical velocity stays identical across polling rates.
+    MouseStickConfig precision = normalized;
+    precision.sensitivityX = 1.4352;
+    precision.sensitivityY = 1.4352;
+    precision.exponent = 0.72;
+    precision.precisionBallistics = true;
+    precision.precisionLowSpeed = 1.0;
+    precision.precisionFullSpeed = 5.0;
+    precision.precisionLowScale = 0.10;
+
+    const StickVector precision1k =
+        mapper.map({1, 0}, precision, 1.0);
+    const StickVector precision125 =
+        mapper.map({8, 0}, precision, 0.125);
+
+    assert(std::abs(
+        axisToUnit(precision1k.x) -
+        axisToUnit(precision125.x)
+    ) < 0.000001);
+    assert(axisToUnit(precision1k.x) > 0.30);
+    assert(axisToUnit(precision1k.x) < 0.40);
+
+    const StickVector precisionMid =
+        mapper.map({2, 0}, precision, 1.0);
+    assert(axisToUnit(precisionMid.x) > axisToUnit(precision1k.x));
+    assert(axisToUnit(precisionMid.x) < 0.90);
+
+    const StickVector precisionFlick =
+        mapper.map({5, 0}, precision, 1.0);
+    assert(precisionFlick.x == std::numeric_limits<std::int32_t>::max());
+
     return 0;
 }

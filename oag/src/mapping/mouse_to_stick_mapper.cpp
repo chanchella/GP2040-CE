@@ -10,22 +10,50 @@ namespace oag {
 StickVector MouseToStickMapper::map(
     const MouseMotion& motion,
     const MouseStickConfig& config,
-    double motionScale
+    double motionScale,
+    double responseBoost
 ) const {
     const double safeMotionScale =
         std::isfinite(motionScale)
             ? std::clamp(motionScale, 0.0, 8.0)
             : 1.0;
 
+    double normalizedDx =
+        static_cast<double>(motion.dx) * safeMotionScale;
+    double normalizedDy =
+        static_cast<double>(motion.dy) * safeMotionScale;
+
+    if (config.precisionBallistics) {
+        const double velocity =
+            std::hypot(normalizedDx, normalizedDy);
+        const double lowSpeed =
+            std::max(0.0, config.precisionLowSpeed);
+        const double fullSpeed =
+            std::max(lowSpeed + 0.001, config.precisionFullSpeed);
+        const double lowScale =
+            std::clamp(config.precisionLowScale, 0.0, 1.0);
+
+        double precisionScale = 1.0;
+        if (velocity <= lowSpeed) {
+            precisionScale = lowScale;
+        } else if (velocity < fullSpeed) {
+            const double t =
+                (velocity - lowSpeed) /
+                (fullSpeed - lowSpeed);
+            precisionScale =
+                lowScale +
+                (1.0 - lowScale) * smoothstep01(t);
+        }
+
+        normalizedDx *= precisionScale;
+        normalizedDy *= precisionScale;
+    }
+
     const double sx =
-        static_cast<double>(motion.dx) *
-        safeMotionScale *
-        std::max(0.0, config.sensitivityX);
+        normalizedDx * std::max(0.0, config.sensitivityX);
 
     double sy =
-        static_cast<double>(motion.dy) *
-        safeMotionScale *
-        std::max(0.0, config.sensitivityY);
+        normalizedDy * std::max(0.0, config.sensitivityY);
 
     if (config.invertY) {
         sy = -sy;
@@ -84,6 +112,22 @@ StickVector MouseToStickMapper::map(
         }
     }
 
+    const double safeResponseBoost =
+        std::isfinite(responseBoost)
+            ? std::clamp(responseBoost, 0.0, 8.0)
+            : 1.0;
+
+    outX *= safeResponseBoost;
+    outY *= safeResponseBoost;
+
+    if (config.boundary == StickBoundary::Circle) {
+        const double boostedMagnitude = std::hypot(outX, outY);
+        if (boostedMagnitude > 1.0) {
+            outX /= boostedMagnitude;
+            outY /= boostedMagnitude;
+        }
+    }
+
     return {
         normalizedToAxis(clampUnit(outX)),
         normalizedToAxis(clampUnit(outY)),
@@ -104,6 +148,11 @@ double MouseToStickMapper::sanitizeExponent(double value) {
     }
 
     return std::clamp(value, 0.10, 8.0);
+}
+
+double MouseToStickMapper::smoothstep01(double value) {
+    const double t = std::clamp(value, 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
 }
 
 std::int32_t MouseToStickMapper::normalizedToAxis(double value) {
