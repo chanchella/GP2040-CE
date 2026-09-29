@@ -1,9 +1,9 @@
-name: OAG PC KM V11 2.25 ADS 3.25 Max Response
+name: OAG PC KM V12 3.25 ADS 3.25 Max Response
 
 on:
   push:
     branches:
-      - chatgpt/oag-pc-km-v11-225-ads325-max-response
+      - chatgpt/oag-pc-km-v12-325-ads325-max-response
     paths:
       - 'oag/**'
       - '.github/workflows/oag-pc-km-legendary-aim-v3-ads-comp.yml'
@@ -59,8 +59,8 @@ jobs:
           mm = Path("oag/src/mapping/mouse_to_stick_mapper.cpp").read_text()
           main = Path("oag/firmware/src/main.cpp").read_text()
 
-          assert "mouseConfig_.sensitivityX = 2.25" in km
-          assert "mouseConfig_.sensitivityY = 2.25" in km
+          assert "mouseConfig_.sensitivityX = 3.25" in km
+          assert "mouseConfig_.sensitivityY = 3.25" in km
           assert "mouseConfig_.exponent = 0.72" in km
           assert "mouseConfig_.deadzoneX = 0.14" in km
           assert "kAdsMotionBoost = 3.25" in km
@@ -163,9 +163,9 @@ jobs:
 
           printf '%s\n' \
             "DIAMOND=19b84f3c458384f75a44cc394da8269e49e57340" \
-            "FEATURE=PC_KM_V11_225_ADS325_MAX_RESPONSE" \
+            "FEATURE=PC_KM_V12_325_ADS325_MAX_RESPONSE" \
             "MOUSE_REFERENCE_INTERVAL_US=1000" \
-            "SENSITIVITY_XY=2.25" \
+            "SENSITIVITY_XY=3.25" \
             "EXPONENT=0.72" \
             "ANTI_DEADZONE_XY=0.14" \
             "ADAPTIVE_RELEASE_US=1250..9000" \
@@ -175,6 +175,6 @@ jobs:
       - name: Upload candidate
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-PC-KM-V11-225-ADS325-MAX-RESPONSE-${{ github.sha }}
+          name: OAG-PC-KM-V12-325-ADS325-MAX-RESPONSE-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
