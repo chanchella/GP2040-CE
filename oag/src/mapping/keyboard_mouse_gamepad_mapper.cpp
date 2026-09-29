@@ -138,8 +138,8 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
     // Full-scale mouse->right-stick profile. Any non-zero one-count mouse
     // movement reaches full stick magnitude immediately. Direction is still
     // preserved by the circular boundary.
-    mouseConfig_.sensitivityX = 1.0;
-    mouseConfig_.sensitivityY = 1.0;
+    mouseConfig_.sensitivityX = 0.50;
+    mouseConfig_.sensitivityY = 0.50;
     mouseConfig_.exponent = 0.58;
     mouseConfig_.deadzoneX = 0.0;
     mouseConfig_.deadzoneY = 0.0;
