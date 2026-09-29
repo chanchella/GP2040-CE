@@ -1,9 +1,9 @@
-name: OAG PC KM Legendary Aim V5 Plus 15
+name: OAG PC KM Legendary Aim V6 Plus 20
 
 on:
   push:
     branches:
-      - chatgpt/oag-pc-km-legendary-aim-v5-plus15
+      - chatgpt/oag-pc-km-legendary-aim-v6-plus20
     paths:
       - 'oag/**'
       - '.github/workflows/oag-pc-km-legendary-aim-v3-ads-comp.yml'
@@ -59,8 +59,8 @@ jobs:
           mm = Path("oag/src/mapping/mouse_to_stick_mapper.cpp").read_text()
           main = Path("oag/firmware/src/main.cpp").read_text()
 
-          assert "mouseConfig_.sensitivityX = 1.196" in km
-          assert "mouseConfig_.sensitivityY = 1.196" in km
+          assert "mouseConfig_.sensitivityX = 1.4352" in km
+          assert "mouseConfig_.sensitivityY = 1.4352" in km
           assert "mouseConfig_.exponent = 0.72" in km
           assert "mouseConfig_.deadzoneX = 0.14" in km
           assert "kAdsMotionBoost = 2.90" in km
@@ -149,16 +149,16 @@ jobs:
           test "${#ELF[@]}" -eq 1
           test "${#MAP[@]}" -eq 1
 
-          cp "${UF2[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V5_PLUS15_Pico2W.uf2
-          cp "${ELF[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V5_PLUS15_Pico2W.elf
-          cp "${MAP[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V5_PLUS15_Pico2W.map
-          sha256sum artifacts/OAG_PC_KM_LEGENDARY_AIM_V5_PLUS15_* > artifacts/SHA256SUMS.txt
+          cp "${UF2[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V6_PLUS20_Pico2W.uf2
+          cp "${ELF[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V6_PLUS20_Pico2W.elf
+          cp "${MAP[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V6_PLUS20_Pico2W.map
+          sha256sum artifacts/OAG_PC_KM_LEGENDARY_AIM_V6_PLUS20_* > artifacts/SHA256SUMS.txt
 
           printf '%s\n' \
             "DIAMOND=19b84f3c458384f75a44cc394da8269e49e57340" \
-            "FEATURE=PC_KM_LEGENDARY_AIM_V5_PLUS15" \
+            "FEATURE=PC_KM_LEGENDARY_AIM_V6_PLUS20" \
             "MOUSE_REFERENCE_INTERVAL_US=1000" \
-            "SENSITIVITY_XY=1.196" \
+            "SENSITIVITY_XY=1.4352" \
             "EXPONENT=0.72" \
             "ANTI_DEADZONE_XY=0.14" \
             "ADAPTIVE_RELEASE_US=1500..12000" \
@@ -167,6 +167,6 @@ jobs:
       - name: Upload candidate
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-PC-KM-LEGENDARY-AIM-V5-PLUS15-${{ github.sha }}
+          name: OAG-PC-KM-LEGENDARY-AIM-V6-PLUS20-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
