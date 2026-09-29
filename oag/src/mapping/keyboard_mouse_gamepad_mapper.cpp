@@ -140,8 +140,8 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
     // while fast mouse motion ramps progressively to full stick travel.
     // The firmware normalizes report deltas to a 1 ms reference interval,
     // so 125/250/500/1000 Hz mice retain comparable physical sensitivity.
-    mouseConfig_.sensitivityX = 1.75;
-    mouseConfig_.sensitivityY = 1.75;
+    mouseConfig_.sensitivityX = 2.25;
+    mouseConfig_.sensitivityY = 2.25;
     mouseConfig_.exponent = 0.72;
     mouseConfig_.deadzoneX = 0.14;
     mouseConfig_.deadzoneY = 0.14;
