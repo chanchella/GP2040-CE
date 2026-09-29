@@ -1020,14 +1020,7 @@ public:
                 mouseState.dy,
             };
 
-            mouseAimActive_ =
-                currentMouseMotion_.dx != 0 ||
-                currentMouseMotion_.dy != 0;
-
-            if (mouseAimActive_) {
-                mouseAimExpiresUs_ =
-                    nowUs + kMouseAimHoldUs;
-            }
+            updateMouseAimState(nowUs);
 
             composedChanged = true;
         }
