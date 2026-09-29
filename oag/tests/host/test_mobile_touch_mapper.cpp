@@ -193,5 +193,71 @@ int main() {
     assertPoint(comboFrame, 12, 2336, 25386);
     assertPoint(comboFrame, 15, 2731, 10978);
 
+    // PUBG Core Controls V1: the movement contact must remain the same
+    // physical/logical finger while WASD changes direction. No UP/re-tap
+    // transition is allowed between W -> W+D -> D.
+    MobileTouchMapper movementTransitions;
+
+    LogicalGamepadState moveW {};
+    moveW.connected = true;
+    moveW.dpad = static_cast<std::uint8_t>(DpadBits::Up);
+    assertPoint(movementTransitions.map(moveW), 1, 10316, 6394);
+    assertPoint(movementTransitions.map(moveW), 1, 12743, 6394);
+
+    LogicalGamepadState moveWD {};
+    moveWD.connected = true;
+    moveWD.dpad =
+        static_cast<std::uint8_t>(DpadBits::Up) |
+        static_cast<std::uint8_t>(DpadBits::Right);
+    const auto wdFrame = movementTransitions.map(moveWD);
+    assertPoint(wdFrame, 1, 12743, 7684);
+
+    LogicalGamepadState moveD {};
+    moveD.connected = true;
+    moveD.dpad = static_cast<std::uint8_t>(DpadBits::Right);
+    const auto dFrame = movementTransitions.map(moveD);
+    assertPoint(dFrame, 1, 10316, 7684);
+
+    // Camera, movement, fire and ADS are four independent contacts and must
+    // coexist in the same multitouch frame.
+    MobileTouchMapper coreComboMapper;
+    LogicalGamepadState corePrime {};
+    corePrime.connected = true;
+    corePrime.dpad = static_cast<std::uint8_t>(DpadBits::Up);
+    corePrime.rx = std::numeric_limits<std::int32_t>::max();
+    (void)coreComboMapper.map(corePrime);
+
+    LogicalGamepadState coreCombo {};
+    coreCombo.connected = true;
+    coreCombo.dpad =
+        static_cast<std::uint8_t>(DpadBits::Up) |
+        static_cast<std::uint8_t>(DpadBits::Right);
+    coreCombo.rx = std::numeric_limits<std::int32_t>::max();
+    coreCombo.buttons =
+        kPubgMouseLeftButton |
+        kPubgMouseRightButton;
+
+    const auto coreFrame = coreComboMapper.map(coreCombo);
+    assert(coreFrame.count == 4);
+    assert(findContact(coreFrame, 0) != nullptr);
+    assertPoint(coreFrame, 1, 12743, 7684);
+    assertPoint(coreFrame, 2, 16869, 31451);
+    assertPoint(coreFrame, 11, 15929, 30600);
+
+    // Releasing fire/ADS must not release or reposition movement/camera.
+    LogicalGamepadState coreRelease {};
+    coreRelease.connected = true;
+    coreRelease.dpad =
+        static_cast<std::uint8_t>(DpadBits::Up) |
+        static_cast<std::uint8_t>(DpadBits::Right);
+    coreRelease.buttons = kPubgMouseLookHoldButton;
+
+    const auto releasedActions = coreComboMapper.map(coreRelease);
+    assert(releasedActions.count == 2);
+    assert(findContact(releasedActions, 0) != nullptr);
+    assertPoint(releasedActions, 1, 12743, 7684);
+    assert(findContact(releasedActions, 2) == nullptr);
+    assert(findContact(releasedActions, 11) == nullptr);
+
     return 0;
 }
