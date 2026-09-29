@@ -9,14 +9,22 @@ namespace oag {
 
 StickVector MouseToStickMapper::map(
     const MouseMotion& motion,
-    const MouseStickConfig& config
+    const MouseStickConfig& config,
+    double motionScale
 ) const {
+    const double safeMotionScale =
+        std::isfinite(motionScale)
+            ? std::clamp(motionScale, 0.0, 8.0)
+            : 1.0;
+
     const double sx =
         static_cast<double>(motion.dx) *
+        safeMotionScale *
         std::max(0.0, config.sensitivityX);
 
     double sy =
         static_cast<double>(motion.dy) *
+        safeMotionScale *
         std::max(0.0, config.sensitivityY);
 
     if (config.invertY) {

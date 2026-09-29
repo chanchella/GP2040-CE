@@ -37,7 +37,8 @@ class MouseToStickMapper {
 public:
     StickVector map(
         const MouseMotion& motion,
-        const MouseStickConfig& config
+        const MouseStickConfig& config,
+        double motionScale = 1.0
     ) const;
 
 private:

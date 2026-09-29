@@ -38,8 +38,8 @@ int main() {
     linear.sensitivityX = 0.01;
     linear.sensitivityY = 0.01;
     linear.exponent = 1.0;
-    linear.deadzoneX = 0.10;
-    linear.deadzoneY = 0.10;
+    linear.deadzoneX = 0.14;
+    linear.deadzoneY = 0.14;
     linear.boundary = StickBoundary::Circle;
 
     const StickVector zero = mapper.map({0, 0}, linear);
@@ -49,7 +49,7 @@ int main() {
     const StickVector smallRight = mapper.map({1, 0}, linear);
     assert(smallRight.x > 0);
     assert(smallRight.y == 0);
-    assert(axisToUnit(smallRight.x) > 0.10);
+    assert(axisToUnit(smallRight.x) > 0.14);
 
     const StickVector smallLeft = mapper.map({-1, 0}, linear);
     assert(smallLeft.x < 0);
@@ -97,6 +97,26 @@ int main() {
     const StickVector squareCorner = mapper.map({100, 100}, square);
     assert(squareCorner.x == std::numeric_limits<std::int32_t>::max());
     assert(squareCorner.y == std::numeric_limits<std::int32_t>::max());
+
+    // Poll-rate normalization: 8 counts arriving every 8 ms represents the
+    // same velocity as 1 count arriving every 1 ms.
+    MouseStickConfig normalized {};
+    normalized.sensitivityX = 0.38;
+    normalized.sensitivityY = 0.38;
+    normalized.exponent = 0.82;
+    normalized.deadzoneX = 0.14;
+    normalized.deadzoneY = 0.14;
+    normalized.boundary = StickBoundary::Circle;
+
+    const StickVector oneKhz =
+        mapper.map({1, 0}, normalized, 1.0);
+    const StickVector oneTwentyFiveHz =
+        mapper.map({8, 0}, normalized, 0.125);
+
+    assert(std::abs(
+        axisToUnit(oneKhz.x) -
+        axisToUnit(oneTwentyFiveHz.x)
+    ) < 0.000001);
 
     return 0;
 }

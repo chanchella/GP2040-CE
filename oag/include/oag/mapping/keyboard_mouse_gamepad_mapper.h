@@ -43,7 +43,8 @@ public:
         const KeyboardState* keyboard,
         const MouseState* mouse,
         MouseMotion mouseMotion,
-        LogicalGamepadState base = {}
+        LogicalGamepadState base = {},
+        double mouseMotionScale = 1.0
     ) const;
 
     DigitalBindingEngine& bindings() { return bindings_; }

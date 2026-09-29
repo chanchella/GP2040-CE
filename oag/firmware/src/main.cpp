@@ -616,14 +616,7 @@ public:
                 currentNativeWheel_ = mouseState.wheel;
                 currentNativePan_ = mouseState.pan;
 
-                mouseAimActive_ =
-                    currentMouseMotion_.dx != 0 ||
-                    currentMouseMotion_.dy != 0;
-
-                if (mouseAimActive_) {
-                    mouseAimExpiresUs_ =
-                        nowUs + kMouseAimHoldUs;
-                }
+                updateMouseAimState(nowUs);
 
                 composedChanged = true;
             }
@@ -677,14 +670,7 @@ public:
                 currentNativeWheel_ = mouseState.wheel;
                 currentNativePan_ = mouseState.pan;
 
-                mouseAimActive_ =
-                    currentMouseMotion_.dx != 0 ||
-                    currentMouseMotion_.dy != 0;
-
-                if (mouseAimActive_) {
-                    mouseAimExpiresUs_ =
-                        time_us_64() + kMouseAimHoldUs;
-                }
+                updateMouseAimState(time_us_64());
 
                 sendComposedOutput();
             }
@@ -1034,14 +1020,7 @@ public:
                 mouseState.dy,
             };
 
-            mouseAimActive_ =
-                currentMouseMotion_.dx != 0 ||
-                currentMouseMotion_.dy != 0;
-
-            if (mouseAimActive_) {
-                mouseAimExpiresUs_ =
-                    nowUs + kMouseAimHoldUs;
-            }
+            updateMouseAimState(nowUs);
 
             composedChanged = true;
         }
@@ -1113,7 +1092,11 @@ public:
 
 private:
     static constexpr std::uint8_t kRootCount = 3;
-    static constexpr std::uint64_t kMouseAimHoldUs = 10000;
+    static constexpr std::uint64_t kMouseReferenceIntervalUs = 1000;
+    static constexpr std::uint64_t kMouseIntervalMinUs = 250;
+    static constexpr std::uint64_t kMouseIntervalMaxUs = 16000;
+    static constexpr std::uint64_t kMouseAimHoldMinUs = 1500;
+    static constexpr std::uint64_t kMouseAimHoldMaxUs = 12000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -1842,7 +1825,10 @@ private:
                 mouseAimActive_
                     ? currentMouseMotion_
                     : oag::MouseMotion {},
-                basePrimaryOutput()
+                basePrimaryOutput(),
+                mouseAimActive_
+                    ? currentMouseMotionScale_
+                    : 1.0
             );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
@@ -1999,6 +1985,9 @@ private:
         currentNativePan_ = 0;
         mouseAimActive_ = false;
         mouseAimExpiresUs_ = 0;
+        lastMouseReportUs_ = 0;
+        mouseReportIntervalUs_ = 0;
+        currentMouseMotionScale_ = 1.0;
 
         if (keyboardMouseMode_ == KeyboardMouseOutputMode::Controller) {
             nativeKmOutput_.releaseAll();
@@ -2057,6 +2046,73 @@ private:
         }
 
         nativeKmOutput_.task(nowUs);
+    }
+
+    void updateMouseAimState(std::uint64_t nowUs) {
+        std::uint64_t intervalUs = 0;
+
+        if (
+            lastMouseReportUs_ != 0 &&
+            nowUs > lastMouseReportUs_
+        ) {
+            intervalUs = nowUs - lastMouseReportUs_;
+        }
+
+        lastMouseReportUs_ = nowUs;
+
+        if (
+            intervalUs >= kMouseIntervalMinUs &&
+            intervalUs <= kMouseIntervalMaxUs
+        ) {
+            if (mouseReportIntervalUs_ == 0) {
+                mouseReportIntervalUs_ = intervalUs;
+            } else {
+                // 4-sample-ish EMA: stable enough to ignore USB scheduling
+                // jitter while following a genuine polling-rate change.
+                mouseReportIntervalUs_ =
+                    (
+                        mouseReportIntervalUs_ * 3ull +
+                        intervalUs
+                    ) /
+                    4ull;
+            }
+        }
+
+        mouseAimActive_ =
+            currentMouseMotion_.dx != 0 ||
+            currentMouseMotion_.dy != 0;
+
+        if (!mouseAimActive_) {
+            currentMouseMotionScale_ = 1.0;
+            mouseAimExpiresUs_ = 0;
+            return;
+        }
+
+        const std::uint64_t estimatedIntervalUs =
+            mouseReportIntervalUs_ != 0
+                ? mouseReportIntervalUs_
+                : kMouseReferenceIntervalUs;
+
+        currentMouseMotionScale_ =
+            static_cast<double>(kMouseReferenceIntervalUs) /
+            static_cast<double>(estimatedIntervalUs);
+
+        if (currentMouseMotionScale_ < 0.0625) {
+            currentMouseMotionScale_ = 0.0625;
+        } else if (currentMouseMotionScale_ > 4.0) {
+            currentMouseMotionScale_ = 4.0;
+        }
+
+        std::uint64_t holdUs =
+            (estimatedIntervalUs * 5ull) / 4ull + 500ull;
+
+        if (holdUs < kMouseAimHoldMinUs) {
+            holdUs = kMouseAimHoldMinUs;
+        } else if (holdUs > kMouseAimHoldMaxUs) {
+            holdUs = kMouseAimHoldMaxUs;
+        }
+
+        mouseAimExpiresUs_ = nowUs + holdUs;
     }
 
     void serviceMouseAimRelease() {
@@ -2393,6 +2449,9 @@ private:
 
     oag::MouseMotion currentMouseMotion_ {};
     std::uint64_t mouseAimExpiresUs_ = 0;
+    std::uint64_t lastMouseReportUs_ = 0;
+    std::uint64_t mouseReportIntervalUs_ = 0;
+    double currentMouseMotionScale_ = 1.0;
     bool mouseAimActive_ = false;
 
     std::array<

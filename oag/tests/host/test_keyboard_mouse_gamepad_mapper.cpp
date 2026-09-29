@@ -160,8 +160,8 @@ int main() {
     assert((output.buttons & ButtonLeftBumper) != 0);
     assert((output.buttons & ButtonRightBumper) != 0);
 
-    // UI4E full-scale profile: one mouse count must reach 100%
-    // right-stick travel.
+    // Legendary Aim V1: a one-count 1 kHz micro movement must remain
+    // controllable instead of slamming the virtual right stick to 100%.
     output = mapper.apply(
         nullptr,
         &mouse,
@@ -175,7 +175,55 @@ int main() {
             std::numeric_limits<std::int32_t>::max()
         );
 
-    assert(oneCount == fullScale);  // 100%
+    assert(oneCount > (fullScale * 2) / 3);
+    assert(oneCount < (fullScale * 3) / 4);
+
+    // A real flick still reaches full stick travel quickly.
+    output = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {2, 0}
+    );
+    assert(output.rx == std::numeric_limits<std::int32_t>::max());
+
+    // Equal physical velocity at 125 Hz and 1000 Hz must map identically.
+    const auto fastPoll = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {1, 0},
+        {},
+        1.0
+    );
+    const auto slowPoll = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {8, 0},
+        {},
+        0.125
+    );
+    assert(fastPoll.rx == slowPoll.rx);
+
+    // V3: Right Mouse is ADS/Left Trigger and receives a dedicated motion
+    // boost so controller-mode aiming does not collapse to the game's slower
+    // ADS stick sensitivity.
+    mouse.buttons = 0;
+    const auto hipAim = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {1, 0}
+    );
+
+    mouse.buttons = MouseButtonRight;
+    const auto adsAim = mapper.apply(
+        nullptr,
+        &mouse,
+        MouseMotion {1, 0}
+    );
+
+    assert(adsAim.leftTrigger ==
+        std::numeric_limits<std::uint32_t>::max());
+    assert(adsAim.rx > hipAim.rx);
+    assert(adsAim.rx <= std::numeric_limits<std::int32_t>::max());
 
     return 0;
 }

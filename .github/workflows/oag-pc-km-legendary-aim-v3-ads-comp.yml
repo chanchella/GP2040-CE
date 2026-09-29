@@ -1,0 +1,169 @@
+name: OAG PC KM Legendary Aim V3 ADS Comp
+
+on:
+  push:
+    branches:
+      - chatgpt/oag-pc-km-legendary-aim-v3-ads-comp
+    paths:
+      - 'oag/**'
+      - '.github/workflows/oag-pc-km-legendary-aim-v3-ads-comp.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Guard Diamond and isolated scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIAMOND="19b84f3c458384f75a44cc394da8269e49e57340"
+
+          test "$(git rev-parse origin/golden/ui5k-oag-abo-gemi-ultra-gaming-v1)" = "${DIAMOND}"
+          test "$(git merge-base "${DIAMOND}" HEAD)" = "${DIAMOND}"
+
+          ACTUAL="$(git diff --name-only "${DIAMOND}" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-pc-km-legendary-aim-v3-ads-comp.yml' \
+            'oag/firmware/src/main.cpp' \
+            'oag/include/oag/mapping/keyboard_mouse_gamepad_mapper.h' \
+            'oag/include/oag/mapping/mouse_to_stick_mapper.h' \
+            'oag/src/mapping/keyboard_mouse_gamepad_mapper.cpp' \
+            'oag/src/mapping/mouse_to_stick_mapper.cpp' \
+            'oag/tests/host/test_keyboard_mouse_gamepad_mapper.cpp' \
+            'oag/tests/host/test_mouse_mapping.cpp' | sort)"
+          test "${ACTUAL}" = "${EXPECTED}"
+
+          # Do not touch Golden USB identity/topology, controller drivers,
+          # Bluetooth, PIO USB host, rumble, or profile routing.
+          git diff --exit-code "${DIAMOND}" HEAD -- \
+            oag/firmware/src/usb_descriptors.cpp \
+            oag/firmware/tusb_config.h \
+            oag/firmware/src/pc_xinput_device.cpp \
+            oag/firmware/src/pc_xinput_platform_driver.cpp \
+            oag/firmware/src/usb_pio_host.cpp \
+            oag/firmware/src/bluetooth_host_v2.cpp \
+            oag/firmware/src/xinput_host.cpp \
+            oag/firmware/src/output_profile_selector.cpp \
+            oag/firmware/src/multi_profile_platform_driver.cpp
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          km = Path("oag/src/mapping/keyboard_mouse_gamepad_mapper.cpp").read_text()
+          mm = Path("oag/src/mapping/mouse_to_stick_mapper.cpp").read_text()
+          main = Path("oag/firmware/src/main.cpp").read_text()
+
+          assert "mouseConfig_.sensitivityX = 0.38" in km
+          assert "mouseConfig_.sensitivityY = 0.38" in km
+          assert "mouseConfig_.exponent = 0.82" in km
+          assert "mouseConfig_.deadzoneX = 0.14" in km
+          assert "safeMotionScale" in mm
+          assert "kMouseReferenceIntervalUs = 1000" in main
+          assert "mouseReportIntervalUs_" in main
+          assert "currentMouseMotionScale_" in main
+          assert "updateMouseAimState" in main
+          assert "kMouseAimHoldMinUs = 1500" in main
+          assert "kMouseAimHoldMaxUs = 12000" in main
+
+          print("DIAMOND_GUARD=PASS")
+          print("LEGENDARY_AIM_POLICY=PASS")
+          PY
+
+      - name: Architecture guard
+        run: python3 oag/tools/check_architecture.py
+
+      - name: Host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOAG_BUILD_HOST_TESTS=ON
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact Golden Pico SDK
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-golden
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Prepare dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-golden rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-golden" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Build Pico 2 W
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-golden" \
+          cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          mapfile -t ELF < <(find build/oag-fw -maxdepth 1 -type f -name '*.elf' -print)
+          mapfile -t MAP < <(find build/oag-fw -maxdepth 1 -type f -name '*.map' -print)
+          test "${#UF2[@]}" -eq 1
+          test "${#ELF[@]}" -eq 1
+          test "${#MAP[@]}" -eq 1
+
+          cp "${UF2[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V3_ADS_COMP_Pico2W.uf2
+          cp "${ELF[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V3_ADS_COMP_Pico2W.elf
+          cp "${MAP[0]}" artifacts/OAG_PC_KM_LEGENDARY_AIM_V3_ADS_COMP_Pico2W.map
+          sha256sum artifacts/OAG_PC_KM_LEGENDARY_AIM_V3_ADS_COMP_* > artifacts/SHA256SUMS.txt
+
+          printf '%s\n' \
+            "DIAMOND=19b84f3c458384f75a44cc394da8269e49e57340" \
+            "FEATURE=PC_KM_LEGENDARY_AIM_V3_ADS_COMP" \
+            "MOUSE_REFERENCE_INTERVAL_US=1000" \
+            "SENSITIVITY_XY=0.38" \
+            "EXPONENT=0.82" \
+            "ANTI_DEADZONE_XY=0.14" \
+            "ADAPTIVE_RELEASE_US=1500..12000" \
+            > artifacts/BUILD-INFO.txt
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-PC-KM-LEGENDARY-AIM-V3-ADS-COMP-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error

@@ -135,14 +135,16 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
 
     rebuildExtraBindings();
 
-    // Full-scale mouse->right-stick profile. Any non-zero one-count mouse
-    // movement reaches full stick magnitude immediately. Direction is still
-    // preserved by the circular boundary.
-    mouseConfig_.sensitivityX = 1.0;
-    mouseConfig_.sensitivityY = 1.0;
-    mouseConfig_.exponent = 0.58;
-    mouseConfig_.deadzoneX = 0.0;
-    mouseConfig_.deadzoneY = 0.0;
+    // Legendary Aim V1: velocity-based precision-to-flick response.
+    // One normalized count/ms stays above a typical controller deadzone,
+    // while fast mouse motion ramps progressively to full stick travel.
+    // The firmware normalizes report deltas to a 1 ms reference interval,
+    // so 125/250/500/1000 Hz mice retain comparable physical sensitivity.
+    mouseConfig_.sensitivityX = 0.52;
+    mouseConfig_.sensitivityY = 0.52;
+    mouseConfig_.exponent = 0.72;
+    mouseConfig_.deadzoneX = 0.14;
+    mouseConfig_.deadzoneY = 0.14;
     mouseConfig_.boundary = StickBoundary::Circle;
     mouseConfig_.invertY = false;
 }
@@ -225,7 +227,8 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
     const KeyboardState* keyboard,
     const MouseState* mouse,
     MouseMotion mouseMotion,
-    LogicalGamepadState base
+    LogicalGamepadState base,
+    double mouseMotionScale
 ) const {
     LogicalGamepadState output =
         bindings_.apply(keyboard, mouse, base);
@@ -236,8 +239,24 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
         output
     );
 
+    // V3 ADS compensation: games commonly apply a lower look sensitivity
+    // while Left Trigger is held. Right mouse is the FPS profile's LT/ADS
+    // source, so compensate only during ADS instead of globally destroying
+    // micro-aim precision.
+    const bool adsActive =
+        mouse != nullptr &&
+        mouse->connected &&
+        (mouse->buttons & MouseButtonRight) != 0;
+
+    constexpr double kAdsMotionBoost = 1.45;
+
     const StickVector aim =
-        mouseMapper_.map(mouseMotion, mouseConfig_);
+        mouseMapper_.map(
+            mouseMotion,
+            mouseConfig_,
+            mouseMotionScale *
+                (adsActive ? kAdsMotionBoost : 1.0)
+        );
 
     if (mouseMotion.dx != 0 || mouseMotion.dy != 0) {
         output.rx = aim.x;
