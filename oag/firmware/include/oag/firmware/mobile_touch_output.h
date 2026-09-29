@@ -23,10 +23,14 @@ public:
 
     bool sendNeutral();
 
+    // Commit touch lifecycle transitions only after the USB IN transfer has
+    // actually completed. Queue acceptance alone is not an ACK from Android.
+    void onReportComplete(std::uint16_t length);
+
 private:
     // 250 Hz keeps active contacts refreshed well above common display/input
     // refresh rates while leaving headroom for the rest of the firmware.
-    static constexpr std::uint64_t kSnapshotPeriodUs = 4000;
+    static constexpr std::uint64_t kSnapshotPeriodUs = 8000;
 
     // U2HTS-style release semantics: a released Contact ID remains present
     // briefly with Tip=0/InRange=0, then disappears from subsequent reports.
@@ -34,11 +38,11 @@ private:
     // re-press delay.
     static constexpr std::uint8_t kReleaseSnapshots = 3;
 
-    // Linux hid-multitouch has a 100 ms "sticky fingers" recovery concept.
-    // Here the same threshold is used only for a device-side USB transport
-    // stall: if active contacts cannot be delivered for this long, force an
-    // all-UP recovery before allowing touches to become active again.
-    static constexpr std::uint64_t kTransportStallUs = 100000;
+    // Completion-aware transport watchdog. A stuck interrupt-IN transfer is
+    // recovered by a target-side USB soft reconnect; USB Host/BT stay alive.
+    static constexpr std::uint64_t kTransferTimeoutUs = 250000;
+    static constexpr std::uint64_t kSoftDisconnectUs = 50000;
+    static constexpr std::uint64_t kReconnectSettleUs = 100000;
     static constexpr std::uint8_t kRecoveryReleaseSnapshots = 4;
 
     // IDs 0,1,2 are permanently reserved for camera, movement and fire.
@@ -66,6 +70,12 @@ private:
         std::uint8_t releaseSnapshotsRemaining = 0;
     };
 
+    enum class LinkRecoveryPhase : std::uint8_t {
+        Online = 0,
+        DisconnectedWait,
+        ReconnectSettle,
+    };
+
     static_assert(sizeof(ContactReport) == 6);
     static_assert(sizeof(Report) == 63);
     static_assert(kMaxContacts == 10);
@@ -78,12 +88,15 @@ private:
     bool logicalIdOwned(std::uint8_t logicalId) const;
     bool hasActiveContacts() const;
     bool hasPendingRelease() const;
+    bool needsTransport() const;
 
     void initializeSlots();
     void reconcileDesiredState();
     void enterTransportRecovery();
+    void beginLinkRecovery(std::uint64_t nowUs);
+    bool serviceLinkRecovery(std::uint64_t nowUs);
     void buildReport(std::uint64_t nowUs);
-    void commitAcceptedSnapshot(std::uint64_t nowUs);
+    void commitCompletedSnapshot(std::uint64_t nowUs);
     bool pump(bool forceImmediate);
 
     oag::MobileTouchMapper mapper_ {};
@@ -93,9 +106,13 @@ private:
 
     Report report_ {};
     std::uint64_t nextSnapshotUs_ = 0;
-    std::uint64_t lastAcceptedReportUs_ = 0;
+    std::uint64_t reportQueuedUs_ = 0;
+    std::uint64_t notReadySinceUs_ = 0;
+    std::uint64_t recoveryDeadlineUs_ = 0;
     bool initialized_ = false;
+    bool reportPending_ = false;
     bool transportRecoveryActive_ = false;
+    LinkRecoveryPhase linkRecoveryPhase_ = LinkRecoveryPhase::Online;
 };
 
 } // namespace oag::firmware
