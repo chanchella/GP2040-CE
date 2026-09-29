@@ -140,8 +140,8 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
     // while fast mouse motion ramps progressively to full stick travel.
     // The firmware normalizes report deltas to a 1 ms reference interval,
     // so 125/250/500/1000 Hz mice retain comparable physical sensitivity.
-    mouseConfig_.sensitivityX = 1.4352;
-    mouseConfig_.sensitivityY = 1.4352;
+    mouseConfig_.sensitivityX = 1.75;
+    mouseConfig_.sensitivityY = 1.75;
     mouseConfig_.exponent = 0.72;
     mouseConfig_.deadzoneX = 0.14;
     mouseConfig_.deadzoneY = 0.14;
@@ -252,7 +252,7 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
         output
     );
 
-    // V6 +20% over V5 fine-tuned ADS compensation: games commonly apply a lower look sensitivity
+    // V10 high-response ADS compensation: games commonly apply a lower look sensitivity
     // while Left Trigger is held. Right mouse is the FPS profile's LT/ADS
     // source, so compensate only during ADS instead of globally destroying
     // micro-aim precision.
@@ -261,7 +261,7 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
         mouse->connected &&
         (mouse->buttons & MouseButtonRight) != 0;
 
-    constexpr double kAdsMotionBoost = 2.90;
+    constexpr double kAdsMotionBoost = 3.25;
 
     const StickVector aim =
         mouseMapper_.map(
