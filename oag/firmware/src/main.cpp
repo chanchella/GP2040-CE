@@ -74,13 +74,14 @@ static constexpr std::uint8_t kXoneAuthDone[] = {
     0x06, 0x20, 0x00, 0x02, 0x01, 0x00
 };
 
-// Profile 7 only: preserve RAW relative mouse speed in the existing rx/ry
-// logical axes without changing the proven PC/Phone keyboard-mouse mapping.
-// +/-48 counts per HID mouse report maps to full scale; smaller deltas remain
-// proportional, so the touch mapper can reproduce a fast, natural-feeling
-// relative finger drag instead of the old "any motion = full stick" behavior.
+// Profile 7 only: preserve the user's hardware-tuned PUBG camera contract
+// without changing the proven PC/Phone keyboard-mouse mapping.
+// Any non-zero relative mouse count maps to 100% logical camera magnitude;
+// direction/sign remains intact. The touch mapper converts that magnitude into
+// a bounded swipe step, while the existing 10 ms hold keeps button-only HID
+// reports from lifting or stealing the camera finger.
 static std::int32_t encodeTouchMouseDelta(std::int32_t delta) {
-    static constexpr std::int64_t kMaxCounts = 48;
+    static constexpr std::int64_t kMaxCounts = 1;
 
     const std::int64_t clamped =
         std::clamp<std::int64_t>(
