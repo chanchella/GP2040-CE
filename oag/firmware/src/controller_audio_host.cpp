@@ -1,4 +1,5 @@
 #include "oag/firmware/controller_audio_host.h"
+#include "oag/firmware/controller_audio_device.h"
 #include <algorithm>
 #include "host/usbh.h"
 
@@ -99,6 +100,47 @@ void ControllerAudioHost::onCapture(tuh_xfer_t* xfer) {
             if (pos + n > total) break;
             ++capturedPackets_;
             capturedBytes_ += n;
+
+            const auto& stream = descriptors_[activeDevAddr_].capture;
+            if (
+                controllerAudioDeviceStreaming() &&
+                stream.sampleRate == 48000 &&
+                stream.channels == 2 &&
+                stream.bytesPerSample == 2 &&
+                (n % 4u) == 0
+            ) {
+                // DualSense capture is stereo S16LE at 48 kHz. Present a
+                // low-cost mono bridge to the PC by averaging L/R.
+                std::array<std::int16_t, 49> mono {};
+                const std::size_t frames =
+                    std::min<std::size_t>(n / 4u, mono.size());
+                const std::uint8_t* pcm = captureBuffer_.data() + pos;
+
+                for (std::size_t i = 0; i < frames; ++i) {
+                    const std::int16_t left =
+                        static_cast<std::int16_t>(
+                            static_cast<std::uint16_t>(pcm[i * 4u]) |
+                            (static_cast<std::uint16_t>(pcm[i * 4u + 1u]) << 8)
+                        );
+                    const std::int16_t right =
+                        static_cast<std::int16_t>(
+                            static_cast<std::uint16_t>(pcm[i * 4u + 2u]) |
+                            (static_cast<std::uint16_t>(pcm[i * 4u + 3u]) << 8)
+                        );
+                    mono[i] = static_cast<std::int16_t>(
+                        (static_cast<std::int32_t>(left) +
+                         static_cast<std::int32_t>(right)) / 2
+                    );
+                }
+
+                controllerAudioDeviceWrite(
+                    mono.data(),
+                    static_cast<std::uint16_t>(
+                        frames * sizeof(std::int16_t)
+                    )
+                );
+            }
+
             pos += n;
         }
     }

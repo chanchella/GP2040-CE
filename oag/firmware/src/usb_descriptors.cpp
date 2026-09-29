@@ -17,7 +17,7 @@ namespace {
 
 
 constexpr std::uint16_t kPcReceiverVid = 0xCAFE;
-constexpr std::uint16_t kPcReceiverPid = 0x4016;
+constexpr std::uint16_t kPcReceiverPid = 0x401A;
 constexpr std::uint8_t kPcMsOsVendorCode = 0x90;
 constexpr std::size_t kPcOutputSlots =
     oag::firmware::PcXinputDevice::kOutputSlots;
@@ -49,20 +49,22 @@ const std::uint8_t kPcMouseReportDescriptor[] = {
 const std::uint8_t kPcDeviceDescriptor[] = {
     0x12, 0x01,
     0x00, 0x02,
-    0x00, 0x00, 0x00,
+    TUSB_CLASS_MISC, MISC_SUBCLASS_COMMON, MISC_PROTOCOL_IAD,
     0x08,
     0xFE, 0xCA,
-    0x16, 0x40,
+    0x1A, 0x40,
     0x00, 0x01,
     0x01, 0x02, 0x03,
     0x01,
 };
 
 const std::uint8_t kPcConfigurationDescriptor[] = {
-    // Xbox receiver core = 321 bytes. Two standard HID interfaces add
-    // 25 bytes each, giving 371 bytes total (0x0173).
-    0x09, 0x02, 0x73, 0x01,
-    0x0A,
+    // Golden receiver + native KM + controller microphone UAC2.
+    // 371-byte receiver/KM topology + TinyUSB one-channel microphone function.
+    0x09, 0x02,
+    static_cast<std::uint8_t>((0x0173 + TUD_AUDIO_MIC_ONE_CH_DESC_LEN) & 0xFFu),
+    static_cast<std::uint8_t>((0x0173 + TUD_AUDIO_MIC_ONE_CH_DESC_LEN) >> 8),
+    0x0C,
     0x01,
     0x00,
     0xA0,
@@ -149,11 +151,21 @@ const std::uint8_t kPcConfigurationDescriptor[] = {
         8,
         1
     ),
+
+    // Controller headset microphone bridge — interfaces 10/11 — EP 8B.
+    TUD_AUDIO_MIC_ONE_CH_DESCRIPTOR(
+        0x0A,
+        0,
+        CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX,
+        16,
+        0x8B,
+        CFG_TUD_AUDIO_EP_SZ_IN
+    ),
 };
 
 static_assert(sizeof(kPcDeviceDescriptor) == 18);
 static_assert(kPcOutputSlots == 4);
-static_assert(sizeof(kPcConfigurationDescriptor) == 0x0173);
+static_assert(sizeof(kPcConfigurationDescriptor) == 0x0173 + TUD_AUDIO_MIC_ONE_CH_DESC_LEN);
 
 alignas(2) const std::uint8_t kPcMsOsStringDescriptor[] = {
     0x12, 0x03,
