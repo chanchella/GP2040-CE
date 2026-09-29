@@ -33,6 +33,26 @@ for path, expected in EXPECTED.items():
             f"expected {expected}, got {actual}"
         )
 
+# Controller-audio branch: add the upstream-reviewed Pico-PIO-USB
+# isochronous IN transport work from PR #214 on top of the exact Golden
+# dependency SHA. Keep it as a source patch so the Diamond submodule pointer
+# remains untouched.
+iso_patch = ROOT / "oag/patches/pico_pio_usb/0003-controller-audio-iso-in.patch"
+iso_token = "PIO_USB_HOST_ISOCHRONOUS"
+iso_cfg = ROOT / "lib/pico_pio_usb/src/pio_usb_configuration.h"
+iso_text = iso_cfg.read_text(encoding="utf-8")
+
+if iso_token not in iso_text:
+    subprocess.check_call(
+        ["git", "-C", str(ROOT / "lib/pico_pio_usb"), "apply", "--check", str(iso_patch)]
+    )
+    subprocess.check_call(
+        ["git", "-C", str(ROOT / "lib/pico_pio_usb"), "apply", str(iso_patch)]
+    )
+
+if iso_token not in iso_cfg.read_text(encoding="utf-8"):
+    raise SystemExit("Pico-PIO-USB isochronous IN patch verification failed")
+
 cfg = ROOT / "lib/pico_pio_usb/src/pio_usb_configuration.h"
 text = cfg.read_text(encoding="utf-8")
 
@@ -118,6 +138,7 @@ patch_record = "\n".join(
         EXPECTED[ROOT / "lib/tinyusb"],
         patched,
         "G808_SKIP_SET_IDLE_2563_0575",
+        "PIO_USB_CONTROLLER_AUDIO_ISO_IN_PR214",
     ]
 )
 
@@ -126,6 +147,6 @@ print(f"PICO_PIO_USB_SHA={EXPECTED[ROOT / 'lib/pico_pio_usb']}")
 print(f"TINYUSB_SHA={EXPECTED[ROOT / 'lib/tinyusb']}")
 print("PIO_USB_ROOT_PORT_CNT=3")
 print("PIO_USB_RP2350_E9_WORKAROUND=UPSTREAM")
-print("PIO_USB_RUNTIME_PATCHES=NONE")
+print("PIO_USB_RUNTIME_PATCHES=CONTROLLER_AUDIO_ISO_IN_PR214")
 print("TINYUSB_G808_SKIP_SET_IDLE=YES")
 print(f"OAG_PIO_PATCH_DIGEST={sha256_text(patch_record)}")
