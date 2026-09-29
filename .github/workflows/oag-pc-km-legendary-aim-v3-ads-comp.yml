@@ -59,10 +59,13 @@ jobs:
           mm = Path("oag/src/mapping/mouse_to_stick_mapper.cpp").read_text()
           main = Path("oag/firmware/src/main.cpp").read_text()
 
-          assert "mouseConfig_.sensitivityX = 0.38" in km
-          assert "mouseConfig_.sensitivityY = 0.38" in km
-          assert "mouseConfig_.exponent = 0.82" in km
+          assert "mouseConfig_.sensitivityX = 0.52" in km
+          assert "mouseConfig_.sensitivityY = 0.52" in km
+          assert "mouseConfig_.exponent = 0.72" in km
           assert "mouseConfig_.deadzoneX = 0.14" in km
+          assert "kAdsMotionBoost = 1.45" in km
+          assert "MouseButtonRight" in km
+          assert "adsActive" in km
           assert "safeMotionScale" in mm
           assert "kMouseReferenceIntervalUs = 1000" in main
           assert "mouseReportIntervalUs_" in main
