@@ -175,7 +175,7 @@ int main() {
             std::numeric_limits<std::int32_t>::max()
         );
 
-    // V4 deliberately doubles V3 hip sensitivity. At the 1 kHz reference
+    // V5 keeps V4's fast response and raises base sensitivity exactly 15%. At the 1 kHz reference
     // interval, even one whole mouse count is intentionally full-stick.
     assert(oneCount == fullScale);
 
@@ -204,8 +204,8 @@ int main() {
     );
     assert(fastPoll.rx == slowPoll.rx);
 
-    // V4: ADS compensation is doubled from V3. Use a fractional normalized
-    // polling scale here so hip and ADS remain distinguishable below clamp.
+    // V5: ADS inherits the same +15% base increase while the proven 2.90x ADS
+    // boost stays unchanged. Use a fractional scale so both remain distinguishable.
     mouse.buttons = 0;
     const auto hipAim = mapper.apply(
         nullptr,
