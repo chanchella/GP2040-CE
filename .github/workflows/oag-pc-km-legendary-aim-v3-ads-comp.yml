@@ -1,9 +1,9 @@
-name: OAG PC KM V8 V6 Speed Custom Controls
+name: OAG PC KM V9 Max Response
 
 on:
   push:
     branches:
-      - chatgpt/oag-pc-km-v8-v6-speed-custom-controls
+      - chatgpt/oag-pc-km-v9-max-response
     paths:
       - 'oag/**'
       - '.github/workflows/oag-pc-km-legendary-aim-v3-ads-comp.yml'
@@ -76,8 +76,10 @@ jobs:
           assert "mouseReportIntervalUs_" in main
           assert "currentMouseMotionScale_" in main
           assert "updateMouseAimState" in main
-          assert "kMouseAimHoldMinUs = 1500" in main
-          assert "kMouseAimHoldMaxUs = 12000" in main
+          assert "kMouseAimHoldMinUs = 1250" in main
+          assert "kMouseAimHoldMaxUs = 9000" in main
+          assert "estimatedIntervalUs + 250ull" in main
+          assert main.count("platformOutput_.poll();") >= 3
 
           print("DIAMOND_GUARD=PASS")
           print("LEGENDARY_AIM_POLICY=PASS")
@@ -154,24 +156,25 @@ jobs:
           test "${#ELF[@]}" -eq 1
           test "${#MAP[@]}" -eq 1
 
-          cp "${UF2[0]}" artifacts/OAG_PC_KM_V8_V6_SPEED_CUSTOM_CONTROLS_Pico2W.uf2
-          cp "${ELF[0]}" artifacts/OAG_PC_KM_V8_V6_SPEED_CUSTOM_CONTROLS_Pico2W.elf
-          cp "${MAP[0]}" artifacts/OAG_PC_KM_V8_V6_SPEED_CUSTOM_CONTROLS_Pico2W.map
-          sha256sum artifacts/OAG_PC_KM_V8_V6_SPEED_CUSTOM_CONTROLS_* > artifacts/SHA256SUMS.txt
+          cp "${UF2[0]}" artifacts/OAG_PC_KM_V9_MAX_RESPONSE_Pico2W.uf2
+          cp "${ELF[0]}" artifacts/OAG_PC_KM_V9_MAX_RESPONSE_Pico2W.elf
+          cp "${MAP[0]}" artifacts/OAG_PC_KM_V9_MAX_RESPONSE_Pico2W.map
+          sha256sum artifacts/OAG_PC_KM_V9_MAX_RESPONSE_* > artifacts/SHA256SUMS.txt
 
           printf '%s\n' \
             "DIAMOND=19b84f3c458384f75a44cc394da8269e49e57340" \
-            "FEATURE=PC_KM_V8_V6_SPEED_CUSTOM_CONTROLS" \
+            "FEATURE=PC_KM_V9_MAX_RESPONSE" \
             "MOUSE_REFERENCE_INTERVAL_US=1000" \
             "SENSITIVITY_XY=1.4352" \
             "EXPONENT=0.72" \
             "ANTI_DEADZONE_XY=0.14" \
-            "ADAPTIVE_RELEASE_US=1500..12000" \
+            "ADAPTIVE_RELEASE_US=1250..9000" \
+            "OUTPUT_FAST_PATH=POST_INPUT_AND_POST_RELEASE" \
             > artifacts/BUILD-INFO.txt
 
       - name: Upload candidate
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-PC-KM-V8-V6-SPEED-CUSTOM-CONTROLS-${{ github.sha }}
+          name: OAG-PC-KM-V9-MAX-RESPONSE-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error

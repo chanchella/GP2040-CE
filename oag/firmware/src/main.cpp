@@ -110,6 +110,12 @@ public:
         usbHost_.task();
         serviceBluetoothHostV2();
 
+        // V9 low-latency fast path: USB/Bluetooth callbacks above may have
+        // submitted a fresh controller state. Service the PC XInput endpoint
+        // again in the same main-loop iteration instead of waiting for the
+        // next pass.
+        platformOutput_.poll();
+
         serviceKeyboardLeds();
         maintainXinputTransport();
         serviceXgipInit();
@@ -118,6 +124,12 @@ public:
         serviceKeyboardMouseModeToggle();
         serviceNativeKeyboardMouseOutput();
         serviceMouseAimRelease();
+
+        // A mouse-vector expiry submits neutral right-stick state. Give that
+        // release the same-iteration fast path as fresh input so stop/reversal
+        // response is not delayed by another firmware loop.
+        platformOutput_.poll();
+
         servicePlatformFeedback();
     }
 
@@ -1095,8 +1107,8 @@ private:
     static constexpr std::uint64_t kMouseReferenceIntervalUs = 1000;
     static constexpr std::uint64_t kMouseIntervalMinUs = 250;
     static constexpr std::uint64_t kMouseIntervalMaxUs = 16000;
-    static constexpr std::uint64_t kMouseAimHoldMinUs = 1500;
-    static constexpr std::uint64_t kMouseAimHoldMaxUs = 12000;
+    static constexpr std::uint64_t kMouseAimHoldMinUs = 1250;
+    static constexpr std::uint64_t kMouseAimHoldMaxUs = 9000;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -2103,8 +2115,12 @@ private:
             currentMouseMotionScale_ = 4.0;
         }
 
+        // V9: retain only a small 250 us scheduling margin beyond the
+        // estimated mouse report interval. This keeps continuous motion
+        // robust to normal USB jitter while releasing the virtual stick much
+        // sooner when the mouse actually stops.
         std::uint64_t holdUs =
-            (estimatedIntervalUs * 5ull) / 4ull + 500ull;
+            estimatedIntervalUs + 250ull;
 
         if (holdUs < kMouseAimHoldMinUs) {
             holdUs = kMouseAimHoldMinUs;
