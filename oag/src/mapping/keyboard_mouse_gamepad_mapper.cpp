@@ -1,5 +1,7 @@
 #include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 
+#include "oag/input/gamepad_state.h"
+
 namespace oag {
 
 KeyboardMouseGamepadMapper::KeyboardMouseGamepadMapper() {
