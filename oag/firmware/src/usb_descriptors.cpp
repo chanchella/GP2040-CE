@@ -382,6 +382,140 @@ static_assert(kMobileOutputSlots == 4);
 static_assert(kMobileInterfaceCount == 6);
 static_assert(sizeof(kMobileConfigurationDescriptor) == kMobileConfigurationLength);
 
+// Profile 7: Android/mobile USB HID multitouch digitizer.
+// A distinct PID prevents host-side descriptor cache collisions with the
+// hardware-verified Phone Gamepad profile (0x4017).
+constexpr std::uint16_t kMobileTouchDeviceVid = 0xCAFE;
+// V6 changes the touchscreen report layout (Scan Time + real Contact Count).
+// Use a fresh PID so Android cannot reuse a cached V5 report descriptor.
+constexpr std::uint16_t kMobileTouchDevicePid = 0x4019;
+constexpr std::uint8_t kMobileTouchEndpointSize = 64;
+constexpr std::uint8_t kMobileTouchPollingIntervalMs = 1;
+constexpr std::uint8_t kMobileTouchContactCount = 10;
+
+#define OAG_TOUCH_FINGER_DESCRIPTOR \
+    0x09, 0x22,       /* Usage (Finger) */ \
+    0xA1, 0x02,       /* Collection (Logical) */ \
+    0x09, 0x42,       /*   Usage (Tip Switch) */ \
+    0x09, 0x32,       /*   Usage (In Range) */ \
+    0x15, 0x00,       /*   Logical Min 0 */ \
+    0x25, 0x01,       /*   Logical Max 1 */ \
+    0x75, 0x01,       /*   Report Size 1 */ \
+    0x95, 0x02,       /*   Report Count 2 */ \
+    0x81, 0x02,       /*   Input Data,Var,Abs */ \
+    0x75, 0x06,       /*   Padding */ \
+    0x95, 0x01, \
+    0x81, 0x03,       /*   Input Const,Var,Abs */ \
+    0x09, 0x51,       /*   Usage (Contact Identifier) */ \
+    0x15, 0x00, \
+    0x25, 0x0F, \
+    0x75, 0x08, \
+    0x95, 0x01, \
+    0x81, 0x02, \
+    0x05, 0x01,       /*   Usage Page (Generic Desktop) */ \
+    0x09, 0x30,       /*   Usage (X) */ \
+    0x09, 0x31,       /*   Usage (Y) */ \
+    0x16, 0x00, 0x00, /*   Logical Min 0 */ \
+    0x26, 0xFF, 0x7F, /*   Logical Max 32767 */ \
+    0x75, 0x10, \
+    0x95, 0x02, \
+    0x81, 0x02,       /*   Input Data,Var,Abs */ \
+    0x05, 0x0D,       /*   Usage Page (Digitizers) */ \
+    0xC0              /* End Logical Collection */
+
+const std::uint8_t kMobileTouchReportDescriptor[] = {
+    0x05, 0x0D,       // Usage Page (Digitizers)
+    0x09, 0x04,       // Usage (Touch Screen)
+    0xA1, 0x01,       // Collection (Application)
+
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+    OAG_TOUCH_FINGER_DESCRIPTOR,
+
+    // Scan Time, 16-bit, units of 10^-4 seconds (100 us), matching the
+    // multitouch report shape used by mature HID touchscreen implementations.
+    0x09, 0x56,       // Usage (Scan Time)
+    0x15, 0x00,       // Logical Min 0
+    0x27, 0xFF, 0xFF, 0x00, 0x00, // Logical Max 65535
+    0x55, 0x0C,       // Unit Exponent -4
+    0x66, 0x01, 0x10, // Unit SI Linear, Seconds
+    0x75, 0x10,       // Report Size 16
+    0x95, 0x01,       // Report Count 1
+    0x81, 0x02,       // Input Data,Var,Abs
+
+    0x05, 0x0D,       // Usage Page (Digitizers)
+    0x55, 0x00,       // Unit Exponent 0
+    0x65, 0x00,       // Unit None
+
+    0x09, 0x54,       // Usage (Contact Count)
+    0x15, 0x00,
+    0x25, kMobileTouchContactCount,
+    0x75, 0x08,
+    0x95, 0x01,
+    0x81, 0x02,       // Input Data,Var,Abs
+
+    0x09, 0x55,       // Usage (Contact Count Maximum)
+    0x15, 0x00,
+    0x25, kMobileTouchContactCount,
+    0x75, 0x08,
+    0x95, 0x01,
+    0xB1, 0x02,       // Feature Data,Var,Abs
+
+    0xC0,             // End Application Collection
+};
+
+#undef OAG_TOUCH_FINGER_DESCRIPTOR
+
+const std::uint8_t kMobileTouchDeviceDescriptor[] = {
+    0x12, 0x01,
+    0x00, 0x02,
+    0x00, 0x00, 0x00,
+    0x08,
+    static_cast<std::uint8_t>(kMobileTouchDeviceVid & 0xFFu),
+    static_cast<std::uint8_t>(kMobileTouchDeviceVid >> 8),
+    static_cast<std::uint8_t>(kMobileTouchDevicePid & 0xFFu),
+    static_cast<std::uint8_t>(kMobileTouchDevicePid >> 8),
+    0x00, 0x01,
+    0x01, 0x02, 0x03,
+    0x01,
+};
+
+constexpr std::uint8_t kMobileTouchInterfaceCount = 1;
+constexpr std::uint16_t kMobileTouchConfigurationLength =
+    TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN;
+
+const std::uint8_t kMobileTouchConfigurationDescriptor[] = {
+    TUD_CONFIG_DESCRIPTOR(
+        1,
+        kMobileTouchInterfaceCount,
+        0,
+        kMobileTouchConfigurationLength,
+        0x00,
+        100
+    ),
+    TUD_HID_DESCRIPTOR(
+        0,
+        0,
+        HID_ITF_PROTOCOL_NONE,
+        sizeof(kMobileTouchReportDescriptor),
+        0x81,
+        kMobileTouchEndpointSize,
+        kMobileTouchPollingIntervalMs
+    ),
+};
+
+static_assert(sizeof(kMobileTouchDeviceDescriptor) == 18);
+static_assert(
+    sizeof(kMobileTouchConfigurationDescriptor) ==
+    kMobileTouchConfigurationLength
+);
 
 
 std::uint16_t gStringDescriptor[64] {};
@@ -391,6 +525,12 @@ bool mobileProfile() {
     return
         oag::firmware::activeOutputProfile() ==
         oag::firmware::OutputProfileId::Phone;
+}
+
+bool mobileTouchProfile() {
+    return
+        oag::firmware::activeOutputProfile() ==
+        oag::firmware::OutputProfileId::MobileTouch;
 }
 
 const char* stringValue(std::uint8_t index) {
@@ -411,9 +551,13 @@ const char* stringValue(std::uint8_t index) {
             std::snprintf(
                 gSerial,
                 sizeof(gSerial),
-                mobileProfile()
-                    ? "OAG-MOB-%02X%02X%02X%02X%02X%02X"
-                    : "AOG-XI2-%02X%02X%02X%02X%02X%02X",
+                mobileTouchProfile()
+                    ? "OAG-TCH-%02X%02X%02X%02X%02X%02X"
+                    : (
+                        mobileProfile()
+                            ? "OAG-MOB-%02X%02X%02X%02X%02X%02X"
+                            : "AOG-XI2-%02X%02X%02X%02X%02X%02X"
+                    ),
                 id.id[2],
                 id.id[3],
                 id.id[4],
@@ -432,6 +576,10 @@ const char* stringValue(std::uint8_t index) {
 } // namespace
 
 extern "C" std::uint8_t const* tud_descriptor_device_cb(void) {
+    if (mobileTouchProfile()) {
+        return kMobileTouchDeviceDescriptor;
+    }
+
     return mobileProfile()
         ? kMobileDeviceDescriptor
         : kPcDeviceDescriptor;
@@ -442,6 +590,10 @@ extern "C" std::uint8_t const* tud_descriptor_configuration_cb(
 ) {
     (void)index;
 
+    if (mobileTouchProfile()) {
+        return kMobileTouchConfigurationDescriptor;
+    }
+
     return mobileProfile()
         ? kMobileConfigurationDescriptor
         : kPcConfigurationDescriptor;
@@ -450,6 +602,12 @@ extern "C" std::uint8_t const* tud_descriptor_configuration_cb(
 extern "C" std::uint8_t const* tud_hid_descriptor_report_cb(
     std::uint8_t instance
 ) {
+    if (mobileTouchProfile()) {
+        return instance == 0
+            ? kMobileTouchReportDescriptor
+            : nullptr;
+    }
+
     if (mobileProfile()) {
         if (instance < kMobileOutputSlots) {
             return kMobileGamepadReportDescriptor;
@@ -481,7 +639,11 @@ extern "C" std::uint16_t const* tud_descriptor_string_cb(
 ) {
     (void)langid;
 
-    if (!mobileProfile() && index == 0xEE) {
+    if (
+        !mobileProfile() &&
+        !mobileTouchProfile() &&
+        index == 0xEE
+    ) {
         return reinterpret_cast<std::uint16_t const*>(
             kPcMsOsStringDescriptor
         );
@@ -527,7 +689,10 @@ bool handleWindowsXusb20CompatIdRequest(
     std::uint8_t rhport,
     tusb_control_request_t const* request
 ) {
-    if (mobileUsbProfileActive()) {
+    if (
+        mobileUsbProfileActive() ||
+        mobileTouchUsbProfileActive()
+    ) {
         return false;
     }
 

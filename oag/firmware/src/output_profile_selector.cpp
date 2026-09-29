@@ -13,7 +13,7 @@ constexpr std::uint32_t kProfileValueIndex = 7u;
 
 bool validProfileValue(std::uint32_t value) {
     return value <=
-        static_cast<std::uint32_t>(OutputProfileId::Nintendo);
+        static_cast<std::uint32_t>(OutputProfileId::MobileTouch);
 }
 
 } // namespace
@@ -37,6 +37,7 @@ bool outputProfileRuntimeAvailable(OutputProfileId profile) {
     switch (profile) {
         case OutputProfileId::Pc:
         case OutputProfileId::Phone:
+        case OutputProfileId::MobileTouch:
             return true;
 
         case OutputProfileId::XboxOne:
@@ -67,6 +68,10 @@ bool requestOutputProfile(OutputProfileId profile) {
 
 bool mobileUsbProfileActive() {
     return activeOutputProfile() == OutputProfileId::Phone;
+}
+
+bool mobileTouchUsbProfileActive() {
+    return activeOutputProfile() == OutputProfileId::MobileTouch;
 }
 
 std::uint8_t nativeKeyboardHidInstance() {

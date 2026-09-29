@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "oag/firmware/mobile_touch_platform_driver.h"
 #include "oag/firmware/pc_hid_platform_driver.h"
 #include "oag/firmware/pc_xinput_platform_driver.h"
 #include "oag/output/platform/platform_output_driver.h"
@@ -36,9 +37,16 @@ public:
     );
 
 private:
-    bool phoneProfile_ = false;
+    enum class ActiveMode : std::uint8_t {
+        Pc = 0,
+        Phone,
+        MobileTouch,
+    };
+
+    ActiveMode activeMode_ = ActiveMode::Pc;
     PcXinputPlatformDriver pc_ {};
     PcHidPlatformDriver phone_ {};
+    MobileTouchPlatformDriver touch_ {};
 };
 
 } // namespace oag::firmware

@@ -6,7 +6,9 @@
 
 #include "tusb.h"
 
+#include "oag/firmware/output_profile_selector.h"
 #include "oag/input/gamepad_state.h"
+#include "oag/output/touch/mobile_touch_mapper.h"
 
 namespace oag::firmware {
 namespace {
@@ -195,11 +197,23 @@ extern "C" std::uint16_t tud_hid_get_report_cb(
     std::uint8_t* buffer,
     std::uint16_t reqlen
 ) {
-    (void)instance;
     (void)report_id;
-    (void)report_type;
-    (void)buffer;
-    (void)reqlen;
+
+    // The multitouch descriptor exposes Contact Count Maximum as a Feature.
+    // Return the exact descriptor capacity when the host queries it.
+    if (
+        oag::firmware::mobileTouchUsbProfileActive() &&
+        instance == 0 &&
+        report_type == HID_REPORT_TYPE_FEATURE &&
+        buffer != nullptr &&
+        reqlen >= 1
+    ) {
+        buffer[0] = static_cast<std::uint8_t>(
+            oag::MobileTouchFrame::kMaxContacts
+        );
+        return 1;
+    }
+
     return 0;
 }
 

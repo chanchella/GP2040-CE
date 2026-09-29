@@ -5,38 +5,71 @@
 namespace oag::firmware {
 
 PlatformId MultiProfilePlatformDriver::platformId() const {
-    return phoneProfile_
-        ? PlatformId::AndroidGamepad
-        : PlatformId::PcXinput360;
+    switch (activeMode_) {
+        case ActiveMode::Phone:
+            return phone_.platformId();
+        case ActiveMode::MobileTouch:
+            return touch_.platformId();
+        case ActiveMode::Pc:
+        default:
+            return pc_.platformId();
+    }
 }
 
 PlatformOutputCapabilities
 MultiProfilePlatformDriver::capabilities() const {
-    return phoneProfile_
-        ? phone_.capabilities()
-        : pc_.capabilities();
+    switch (activeMode_) {
+        case ActiveMode::Phone:
+            return phone_.capabilities();
+        case ActiveMode::MobileTouch:
+            return touch_.capabilities();
+        case ActiveMode::Pc:
+        default:
+            return pc_.capabilities();
+    }
 }
 
 AuthRequirement MultiProfilePlatformDriver::authRequirement() const {
-    return phoneProfile_
-        ? phone_.authRequirement()
-        : pc_.authRequirement();
+    switch (activeMode_) {
+        case ActiveMode::Phone:
+            return phone_.authRequirement();
+        case ActiveMode::MobileTouch:
+            return touch_.authRequirement();
+        case ActiveMode::Pc:
+        default:
+            return pc_.authRequirement();
+    }
 }
 
 bool MultiProfilePlatformDriver::initialize() {
-    phoneProfile_ =
-        activeOutputProfile() == OutputProfileId::Phone;
+    switch (activeOutputProfile()) {
+        case OutputProfileId::Phone:
+            activeMode_ = ActiveMode::Phone;
+            return phone_.initialize();
 
-    return phoneProfile_
-        ? phone_.initialize()
-        : pc_.initialize();
+        case OutputProfileId::MobileTouch:
+            activeMode_ = ActiveMode::MobileTouch;
+            return touch_.initialize();
+
+        case OutputProfileId::Pc:
+        default:
+            activeMode_ = ActiveMode::Pc;
+            return pc_.initialize();
+    }
 }
 
 void MultiProfilePlatformDriver::poll() {
-    if (phoneProfile_) {
-        phone_.poll();
-    } else {
-        pc_.poll();
+    switch (activeMode_) {
+        case ActiveMode::Phone:
+            phone_.poll();
+            return;
+        case ActiveMode::MobileTouch:
+            touch_.poll();
+            return;
+        case ActiveMode::Pc:
+        default:
+            pc_.poll();
+            return;
     }
 }
 
@@ -44,25 +77,37 @@ bool MultiProfilePlatformDriver::submit(
     std::uint8_t logicalSlot,
     const LogicalGamepadState& state
 ) {
-    return phoneProfile_
-        ? phone_.submit(logicalSlot, state)
-        : pc_.submit(logicalSlot, state);
+    switch (activeMode_) {
+        case ActiveMode::Phone:
+            return phone_.submit(logicalSlot, state);
+        case ActiveMode::MobileTouch:
+            return touch_.submit(logicalSlot, state);
+        case ActiveMode::Pc:
+        default:
+            return pc_.submit(logicalSlot, state);
+    }
 }
 
 bool MultiProfilePlatformDriver::takeRumble(
     std::uint8_t& logicalSlot,
     RumbleCommand& output
 ) {
-    return phoneProfile_
-        ? phone_.takeRumble(logicalSlot, output)
-        : pc_.takeRumble(logicalSlot, output);
+    switch (activeMode_) {
+        case ActiveMode::Phone:
+            return phone_.takeRumble(logicalSlot, output);
+        case ActiveMode::MobileTouch:
+            return touch_.takeRumble(logicalSlot, output);
+        case ActiveMode::Pc:
+        default:
+            return pc_.takeRumble(logicalSlot, output);
+    }
 }
 
 bool MultiProfilePlatformDriver::takePlayerAssignment(
     std::uint8_t& receiverSlot,
     std::uint8_t& playerIndex
 ) {
-    if (phoneProfile_) {
+    if (activeMode_ != ActiveMode::Pc) {
         return false;
     }
 

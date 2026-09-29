@@ -12,6 +12,7 @@ enum class OutputProfileId : std::uint8_t {
     Playstation4 = 4,
     Playstation5 = 5,
     Nintendo = 6,
+    MobileTouch = 7,
 };
 
 OutputProfileId activeOutputProfile();
@@ -23,6 +24,7 @@ bool outputProfileRuntimeAvailable(OutputProfileId profile);
 bool requestOutputProfile(OutputProfileId profile);
 
 bool mobileUsbProfileActive();
+bool mobileTouchUsbProfileActive();
 
 std::uint8_t nativeKeyboardHidInstance();
 std::uint8_t nativeMouseHidInstance();
