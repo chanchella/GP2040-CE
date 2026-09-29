@@ -7,6 +7,14 @@
 #include "pico/time.h"
 #include "tusb.h"
 
+#include "oag/firmware/output_profile_selector.h"
+
+namespace {
+
+oag::firmware::MobileTouchOutput* gMobileTouchOutput = nullptr;
+
+} // namespace
+
 namespace oag::firmware {
 
 const oag::MobileTouchContact*
@@ -55,10 +63,16 @@ bool MobileTouchOutput::hasPendingRelease() const {
     return false;
 }
 
+bool MobileTouchOutput::needsTransport() const {
+    return hasActiveContacts() || hasPendingRelease();
+}
+
 void MobileTouchOutput::initializeSlots() {
     if (initialized_) {
         return;
     }
+
+    gMobileTouchOutput = this;
 
     for (std::size_t i = 0; i < slots_.size(); ++i) {
         PhysicalSlot& slot = slots_[i];
@@ -226,6 +240,45 @@ void MobileTouchOutput::enterTransportRecovery() {
     }
 }
 
+void MobileTouchOutput::beginLinkRecovery(std::uint64_t nowUs) {
+    if (linkRecoveryPhase_ != LinkRecoveryPhase::Online) {
+        return;
+    }
+
+    // Reset only the target-facing USB device link. USB Host and Bluetooth
+    // remain alive, so input devices do not need to reconnect.
+    tud_disconnect();
+    reportPending_ = false;
+    reportQueuedUs_ = 0;
+    notReadySinceUs_ = 0;
+    nextSnapshotUs_ = 0;
+
+    enterTransportRecovery();
+    linkRecoveryPhase_ = LinkRecoveryPhase::DisconnectedWait;
+    recoveryDeadlineUs_ = nowUs + kSoftDisconnectUs;
+}
+
+bool MobileTouchOutput::serviceLinkRecovery(std::uint64_t nowUs) {
+    if (linkRecoveryPhase_ == LinkRecoveryPhase::Online) {
+        return false;
+    }
+
+    if (nowUs < recoveryDeadlineUs_) {
+        return true;
+    }
+
+    if (linkRecoveryPhase_ == LinkRecoveryPhase::DisconnectedWait) {
+        tud_connect();
+        linkRecoveryPhase_ = LinkRecoveryPhase::ReconnectSettle;
+        recoveryDeadlineUs_ = nowUs + kReconnectSettleUs;
+        return true;
+    }
+
+    linkRecoveryPhase_ = LinkRecoveryPhase::Online;
+    recoveryDeadlineUs_ = 0;
+    return false;
+}
+
 void MobileTouchOutput::buildReport(std::uint64_t nowUs) {
     report_ = {};
 
@@ -283,7 +336,7 @@ void MobileTouchOutput::buildReport(std::uint64_t nowUs) {
         static_cast<std::uint8_t>(recordIndex);
 }
 
-void MobileTouchOutput::commitAcceptedSnapshot(
+void MobileTouchOutput::commitCompletedSnapshot(
     std::uint64_t nowUs
 ) {
     for (PhysicalSlot& slot : slots_) {
@@ -294,8 +347,6 @@ void MobileTouchOutput::commitAcceptedSnapshot(
             --slot.releaseSnapshotsRemaining;
         }
     }
-
-    lastAcceptedReportUs_ = nowUs;
 
     if (
         transportRecoveryActive_ &&
@@ -324,11 +375,38 @@ void MobileTouchOutput::commitAcceptedSnapshot(
             }
         }
     }
+
+    nextSnapshotUs_ = nowUs + kSnapshotPeriodUs;
+    reconcileDesiredState();
+}
+
+void MobileTouchOutput::onReportComplete(std::uint16_t length) {
+    if (!reportPending_) {
+        return;
+    }
+
+    reportPending_ = false;
+    reportQueuedUs_ = 0;
+
+    if (length != sizeof(Report)) {
+        enterTransportRecovery();
+        nextSnapshotUs_ = 0;
+        return;
+    }
+
+    commitCompletedSnapshot(time_us_64());
 }
 
 void MobileTouchOutput::task() {
+    initializeSlots();
+    const std::uint64_t nowUs = time_us_64();
+
+    if (serviceLinkRecovery(nowUs)) {
+        return;
+    }
+
     reconcileDesiredState();
-    pump(false);
+    (void)pump(false);
 }
 
 bool MobileTouchOutput::send(
@@ -356,16 +434,20 @@ bool MobileTouchOutput::sendNeutral() {
 bool MobileTouchOutput::pump(bool forceImmediate) {
     const std::uint64_t nowUs = time_us_64();
 
-    // Device-side equivalent of the Linux sticky-finger safety net. This only
-    // fires if USB transport delivery itself has stalled while contacts are
-    // active; it does NOT impose a maximum duration on a legitimate hold.
-    if (
-        !transportRecoveryActive_ &&
-        hasActiveContacts() &&
-        lastAcceptedReportUs_ != 0 &&
-        nowUs - lastAcceptedReportUs_ >= kTransportStallUs
-    ) {
-        enterTransportRecovery();
+    if (serviceLinkRecovery(nowUs)) {
+        return false;
+    }
+
+    // Never mutate/reuse the report buffer or commit release fences while an
+    // interrupt-IN transfer is still in flight.
+    if (reportPending_) {
+        if (
+            reportQueuedUs_ != 0 &&
+            nowUs - reportQueuedUs_ >= kTransferTimeoutUs
+        ) {
+            beginLinkRecovery(nowUs);
+        }
+        return false;
     }
 
     if (
@@ -376,27 +458,58 @@ bool MobileTouchOutput::pump(bool forceImmediate) {
         return true;
     }
 
-    if (!tud_hid_n_ready(0)) {
+    // An unplugged/suspended phone is not an endpoint fault.
+    if (!tud_mounted()) {
+        notReadySinceUs_ = 0;
         return false;
     }
 
+    if (!tud_hid_n_ready(0)) {
+        if (!needsTransport()) {
+            notReadySinceUs_ = 0;
+            return false;
+        }
+
+        if (notReadySinceUs_ == 0) {
+            notReadySinceUs_ = nowUs;
+        } else if (nowUs - notReadySinceUs_ >= kTransferTimeoutUs) {
+            beginLinkRecovery(nowUs);
+        }
+        return false;
+    }
+
+    notReadySinceUs_ = 0;
     buildReport(nowUs);
 
-    if (!tud_hid_n_report(
-            0,
-            0,
-            &report_,
-            sizeof(report_)
-        )) {
+    if (!tud_hid_n_report(0, 0, &report_, sizeof(report_))) {
+        if (needsTransport() && notReadySinceUs_ == 0) {
+            notReadySinceUs_ = nowUs;
+        }
         return false;
     }
 
-    commitAcceptedSnapshot(nowUs);
-    nextSnapshotUs_ = nowUs + kSnapshotPeriodUs;
-
-    // Accepted UP records may have completed a release/recovery barrier.
-    reconcileDesiredState();
+    reportPending_ = true;
+    reportQueuedUs_ = nowUs;
     return true;
 }
 
 } // namespace oag::firmware
+
+
+extern "C" void tud_hid_report_complete_cb(
+    std::uint8_t instance,
+    std::uint8_t const* report,
+    std::uint16_t length
+) {
+    (void)report;
+
+    if (
+        instance != 0 ||
+        !oag::firmware::mobileTouchUsbProfileActive() ||
+        gMobileTouchOutput == nullptr
+    ) {
+        return;
+    }
+
+    gMobileTouchOutput->onReportComplete(length);
+}
