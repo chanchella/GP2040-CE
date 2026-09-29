@@ -1,0 +1,117 @@
+name: OAG PUBG Core Controls V1
+
+on:
+  push:
+    branches:
+      - chatgpt/oag-pubg-core-controls-v1
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Baseline and scope guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIAMOND="19b84f3c458384f75a44cc394da8269e49e57340"
+          TOUCH_BASE="594eed51da2be67a747361d0a28e7e2cad244d89"
+          test "$(git rev-parse origin/golden/ui5k-oag-abo-gemi-ultra-gaming-v1)" = "${DIAMOND}"
+          test "$(git rev-parse origin/golden/oag-mobile-touch-engine-v1-hw-proven)" = "${TOUCH_BASE}"
+          test "$(git merge-base "${TOUCH_BASE}" HEAD)" = "${TOUCH_BASE}"
+
+          ALLOWED='^(\.github/workflows/oag-pubg-core-controls-v1\.yml|oag/firmware/src/main\.cpp|oag/tests/host/test_mobile_touch_mapper\.cpp)$'
+          while IFS= read -r file; do
+            echo "PUBG_CORE_SCOPE: ${file}"
+            [[ "${file}" =~ ${ALLOWED} ]] || { echo "OUT_OF_SCOPE=${file}"; exit 1; }
+          done < <(git diff --name-only "${TOUCH_BASE}" HEAD)
+
+          python3 - <<'PY'
+          from pathlib import Path
+          main = Path('oag/firmware/src/main.cpp').read_text()
+          tests = Path('oag/tests/host/test_mobile_touch_mapper.cpp').read_text()
+          assert 'kMaxCounts = 1' in main
+          assert 'kMouseAimHoldUs = 10000' in main
+          assert 'kPubgMouseLeftButton' in main
+          assert 'kPubgMouseRightButton' in main
+          assert 'movementTransitions' in tests
+          assert 'coreComboMapper' in tests
+          print('PUBG_CORE_CONTROLS_GUARD=PASS')
+          PY
+
+      - name: Architecture guard
+        run: python3 oag/tools/check_architecture.py
+
+      - name: Host tests
+        run: |
+          cmake -S oag -B build/oag-host -DCMAKE_BUILD_TYPE=Release -DOAG_BUILD_HOST_TESTS=ON
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact Golden Pico SDK
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Prepare dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-ui5k rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk-ui5k" >> "${GITHUB_ENV}"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Build Pico 2 W
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="${GITHUB_WORKSPACE}/pico-sdk-ui5k" cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=pico2_w -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          test "${#UF2[@]}" -eq 1
+          cp "${UF2[0]}" artifacts/OAG_PUBG_CORE_CONTROLS_V1_Pico2W.uf2
+          sha256sum artifacts/OAG_PUBG_CORE_CONTROLS_V1_Pico2W.uf2 | tee artifacts/SHA256SUMS.txt
+          printf '%s\n' \
+            "DIAMOND_BASE=19b84f3c458384f75a44cc394da8269e49e57340" \
+            "TOUCH_HW_BASE=594eed51da2be67a747361d0a28e7e2cad244d89" \
+            "MODE=F8+F9+7" \
+            "MOUSE_NONZERO=100_PERCENT_CAMERA_MAGNITUDE" \
+            "MOUSE_HOLD_US=10000" \
+            "CORE_CONTROLS=WASD+CAMERA+FIRE+ADS" \
+            > artifacts/BUILD-INFO.txt
+
+      - uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-PUBG-CORE-CONTROLS-V1-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
