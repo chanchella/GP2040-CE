@@ -1,0 +1,130 @@
+name: OAG Diamond BloodStrike Anti-Recoil V1
+
+on:
+  push:
+    branches:
+      - chatgpt/diamond-bloodstrike-antirecoil-v1
+    paths:
+      - 'oag/firmware/src/main.cpp'
+      - '.github/workflows/oag-diamond-bloodstrike-antirecoil-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify Diamond baseline and isolated scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="19b84f3c458384f75a44cc394da8269e49e57340"
+          test "$(git merge-base "$BASE" HEAD)" = "$BASE"
+
+          ACTUAL="$(git diff --name-only "$BASE" HEAD | sort)"
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/oag-diamond-bloodstrike-antirecoil-v1.yml' \
+            'oag/firmware/src/main.cpp' | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("oag/firmware/src/main.cpp").read_text()
+          required = [
+              "kAntiRecoilVerticalPermille = 150",
+              "kAntiRecoilHorizontalPermille = -80",
+              "kAntiRecoilJitterRangePermille = 80",
+              "void serviceAntiRecoil()",
+              "applyAntiRecoil(output, mouse);",
+              "serviceAntiRecoil();",
+          ]
+          for token in required:
+              assert token in s, token
+          print("ANTI_RECOIL_SOURCE_GUARD=PASS")
+          PY
+
+      - name: Architecture dependency guard
+        run: python3 oag/tools/check_architecture.py
+
+      - name: Configure host tests
+        run: cmake -S oag -B build/oag-host -DCMAKE_BUILD_TYPE=Release -DOAG_BUILD_HOST_TESTS=ON
+
+      - name: Build and run host tests
+        run: |
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+
+      - name: Setup Pico SDK toolchain
+        uses: Fortinbra/RaspberryPiPicoBuild@v7
+
+      - name: Checkout exact Diamond Pico SDK generation
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-diamond
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Prepare dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pico-sdk-diamond rev-parse HEAD)" = "98a542c1a62fb549ffb5d66a3e5892b06276b670"
+          echo "PICO_SDK_PATH=$GITHUB_WORKSPACE/pico-sdk-diamond" >> "$GITHUB_ENV"
+          python3 oag/tools/prepare_dependencies.py
+
+      - name: Configure and build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="$GITHUB_WORKSPACE/pico-sdk-diamond" \
+          cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_BOARD=pico2_w \
+            -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+
+      - name: Package UF2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          test "${#UF2[@]}" -eq 1
+          cp "${UF2[0]}" "artifacts/OAG_DIAMOND_BLOODSTRIKE_ANTI_RECOIL_V1_Pico2W.uf2"
+          sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
+          printf '%s\n' \
+            "BASE=19b84f3c458384f75a44cc394da8269e49e57340" \
+            "VERTICAL_COMPENSATION=15_PERCENT_DOWN" \
+            "HORIZONTAL_COMPENSATION=8_PERCENT_LEFT" \
+            "HORIZONTAL_JITTER=PLUS_MINUS_8_PERCENT_OF_HORIZONTAL_BASE" \
+            "TICK_MS=8" \
+            "JITTER_PERIOD_MS=100" \
+            > artifacts/BUILD-INFO.txt
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-DIAMOND-BLOODSTRIKE-ANTI-RECOIL-V1-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
