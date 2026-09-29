@@ -175,8 +175,9 @@ int main() {
             std::numeric_limits<std::int32_t>::max()
         );
 
-    assert(oneCount > (fullScale * 2) / 3);
-    assert(oneCount < (fullScale * 3) / 4);
+    // V4 deliberately doubles V3 hip sensitivity. At the 1 kHz reference
+    // interval, even one whole mouse count is intentionally full-stick.
+    assert(oneCount == fullScale);
 
     // A real flick still reaches full stick travel quickly.
     output = mapper.apply(
@@ -203,21 +204,24 @@ int main() {
     );
     assert(fastPoll.rx == slowPoll.rx);
 
-    // V3: Right Mouse is ADS/Left Trigger and receives a dedicated motion
-    // boost so controller-mode aiming does not collapse to the game's slower
-    // ADS stick sensitivity.
+    // V4: ADS compensation is doubled from V3. Use a fractional normalized
+    // polling scale here so hip and ADS remain distinguishable below clamp.
     mouse.buttons = 0;
     const auto hipAim = mapper.apply(
         nullptr,
         &mouse,
-        MouseMotion {1, 0}
+        MouseMotion {1, 0},
+        {},
+        0.25
     );
 
     mouse.buttons = MouseButtonRight;
     const auto adsAim = mapper.apply(
         nullptr,
         &mouse,
-        MouseMotion {1, 0}
+        MouseMotion {1, 0},
+        {},
+        0.25
     );
 
     assert(adsAim.leftTrigger ==
