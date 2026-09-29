@@ -18,14 +18,22 @@ int main() {
     MouseState mouse {};
     mouse.connected = true;
 
-    // W + D + Space -> up/right left-stick + South.
-    keyboard.setPressed(0x1A, true);
-    keyboard.setPressed(0x07, true);
-    keyboard.setPressed(0x2C, true);
+    // V8 custom layout plus the existing WASD/mouse trigger behavior.
+    keyboard.setPressed(0x1A, true); // W
+    keyboard.setPressed(0x07, true); // D
+    keyboard.setPressed(0x2C, true); // Space -> X / South
+    keyboard.setPressed(0x06, true); // C -> Circle / East
+    keyboard.setPressed(0x09, true); // F -> Square / West
+    keyboard.setPressed(0x08, true); // E -> Triangle / North
+    keyboard.setPressed(0x14, true); // Q -> L1 / LB
+    keyboard.setPressed(0x29, true); // Escape -> Start
+    keyboard.setPressed(0x10, true); // M -> Share / Back
+    keyboard.modifiers = 0x02;       // Left Shift -> R1 / RB
 
     mouse.buttons =
         MouseButtonLeft |
-        MouseButtonRight;
+        MouseButtonRight |
+        MouseButtonMiddle;
 
     LogicalGamepadState output = mapper.apply(
         &keyboard,
@@ -37,6 +45,14 @@ int main() {
     assert(output.lx == std::numeric_limits<std::int32_t>::max());
     assert(output.ly == std::numeric_limits<std::int32_t>::min());
     assert((output.buttons & ButtonSouth) != 0);
+    assert((output.buttons & ButtonEast) != 0);
+    assert((output.buttons & ButtonWest) != 0);
+    assert((output.buttons & ButtonNorth) != 0);
+    assert((output.buttons & ButtonLeftBumper) != 0);
+    assert((output.buttons & ButtonRightBumper) != 0);
+    assert((output.buttons & ButtonRightStick) != 0);
+    assert((output.buttons & ButtonStart) != 0);
+    assert((output.buttons & ButtonBack) != 0);
     assert(output.rightTrigger ==
         std::numeric_limits<std::uint32_t>::max());
     assert(output.leftTrigger ==
@@ -44,6 +60,20 @@ int main() {
 
     assert(output.rx > 0);
     assert(output.ry < 0);
+
+    // Right Shift must behave identically to Left Shift.
+    keyboard = {};
+    keyboard.connected = true;
+    keyboard.modifiers = 0x20;
+    output = mapper.apply(&keyboard, nullptr, MouseMotion {});
+    assert((output.buttons & ButtonRightBumper) != 0);
+
+    // Keyboard 3 -> Guide / Home.
+    keyboard = {};
+    keyboard.connected = true;
+    keyboard.setPressed(0x20, true);
+    output = mapper.apply(&keyboard, nullptr, MouseMotion {});
+    assert((output.buttons & ButtonGuide) != 0);
 
     // Mouse aim is a pulse. A zero delta must leave an existing base right
     // stick untouched; the firmware decides when to recenter.
@@ -109,10 +139,13 @@ int main() {
     }
 
     const ExtraBindSlot* extra0 = mapper.extraBind(0);
+    const ExtraBindSlot* extra2 = mapper.extraBind(2);
     const ExtraBindSlot* extra4 = mapper.extraBind(4);
     const ExtraBindSlot* extra5 = mapper.extraBind(5);
 
     assert(extra0->source == keyboardUsage(0x1E));
+    assert(extra2->source == keyboardUsage(0x20));
+    assert(extra2->target == LogicalDigitalControl::Guide);
     assert(extra4->source == mouseButton(MouseButtonBack));
     assert(extra5->source == mouseButton(MouseButtonForward));
 

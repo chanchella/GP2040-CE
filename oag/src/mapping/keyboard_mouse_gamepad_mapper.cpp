@@ -29,40 +29,38 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
         LogicalDigitalControl::LeftStickRight
     );
 
-    // Common face-button cluster.
+    // V8 custom controller layout. PlayStation-style names are mapped onto
+    // the existing XInput logical controls: X/South, Circle/East,
+    // Square/West, Triangle/North, L1/LB, R1/RB.
     bindings_.addBinding(
-        keyboardUsage(0x2C), // Space
+        keyboardUsage(0x2C), // Space -> X / South
         LogicalDigitalControl::South
     );
     bindings_.addBinding(
-        keyboardUsage(0x08), // E
+        keyboardUsage(0x06), // C -> Circle / East
         LogicalDigitalControl::East
     );
     bindings_.addBinding(
-        keyboardUsage(0x14), // Q
+        keyboardUsage(0x09), // F -> Square / West
         LogicalDigitalControl::West
     );
     bindings_.addBinding(
-        keyboardUsage(0x15), // R
+        keyboardUsage(0x08), // E -> Triangle / North
         LogicalDigitalControl::North
+    );
+    bindings_.addBinding(
+        keyboardUsage(0x14), // Q -> L1 / Left Bumper
+        LogicalDigitalControl::LeftBumper
     );
 
     // Navigation / utility.
     bindings_.addBinding(
-        keyboardUsage(0x2B), // Tab
-        LogicalDigitalControl::Back
-    );
-    bindings_.addBinding(
-        keyboardUsage(0x28), // Enter
+        keyboardUsage(0x29), // Escape -> Start
         LogicalDigitalControl::Start
     );
     bindings_.addBinding(
-        keyboardUsage(0x06), // C
-        LogicalDigitalControl::LeftStickClick
-    );
-    bindings_.addBinding(
-        keyboardUsage(0x09), // F
-        LogicalDigitalControl::RightBumper
+        keyboardUsage(0x10), // M -> Share / Back
+        LogicalDigitalControl::Back
     );
 
     // Arrow keys -> D-pad.
@@ -114,8 +112,8 @@ void KeyboardMouseGamepadMapper::loadDefaultFpsProfile() {
     };
     extraBindSlots_[2] = {
         true,
-        keyboardUsage(0x20), // 3
-        LogicalDigitalControl::Start,
+        keyboardUsage(0x20), // 3 -> Guide / Home
+        LogicalDigitalControl::Guide,
     };
     extraBindSlots_[3] = {
         true,
@@ -232,6 +230,19 @@ LogicalGamepadState KeyboardMouseGamepadMapper::apply(
 ) const {
     LogicalGamepadState output =
         bindings_.apply(keyboard, mouse, base);
+
+    // HID keyboard modifiers are carried separately from normal key usages.
+    // Treat either Shift key as R1 / Right Bumper.
+    constexpr std::uint8_t kLeftShiftModifier = 0x02;
+    constexpr std::uint8_t kRightShiftModifier = 0x20;
+    if (
+        keyboard != nullptr &&
+        keyboard->connected &&
+        (keyboard->modifiers &
+            (kLeftShiftModifier | kRightShiftModifier)) != 0
+    ) {
+        output.buttons |= ButtonRightBumper;
+    }
 
     output = extraBindings_.apply(
         keyboard,
