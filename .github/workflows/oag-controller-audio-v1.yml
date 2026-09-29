@@ -1,0 +1,72 @@
+name: OAG Controller Audio V1
+on:
+  push:
+    branches: [chatgpt/oag-controller-audio-v1]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with: {fetch-depth: 0}
+      - name: Guard Diamond
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIAMOND="19b84f3c458384f75a44cc394da8269e49e57340"
+          test "$(git rev-parse golden/ui5k-oag-abo-gemi-ultra-gaming-v1)" = "$DIAMOND"
+          test "$(git merge-base "$DIAMOND" HEAD)" = "$DIAMOND"
+          test "$(git rev-parse HEAD:oag/firmware/src/bluetooth_host_v2.cpp)" = "$(git rev-parse "$DIAMOND":oag/firmware/src/bluetooth_host_v2.cpp)"
+          echo "DIAMOND_GUARD=PASS"
+      - name: Host tests
+        run: |
+          set -euo pipefail
+          cmake -S oag -B build/oag-host -DCMAKE_BUILD_TYPE=Release -DOAG_BUILD_HOST_TESTS=ON
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+  firmware:
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: jwlawson/actions-setup-cmake@v2
+        with: {cmake-version: "3.24.x"}
+      - uses: Fortinbra/RaspberryPiPicoBuild@v7
+      - name: Checkout exact Golden Pico SDK
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-audio
+          submodules: recursive
+          fetch-depth: 1
+      - name: Prepare isolated audio dependencies
+        run: |
+          set -euo pipefail
+          export PICO_SDK_PATH="$GITHUB_WORKSPACE/pico-sdk-audio"
+          python3 oag/tools/prepare_dependencies.py
+          grep -q "PIO_USB_HOST_ISOCHRONOUS" lib/pico_pio_usb/src/pio_usb_configuration.h
+          grep -q "PIO_USB_ROOT_PORT_CNT 3" lib/pico_pio_usb/src/pio_usb_configuration.h
+      - name: Build Pico 2 W
+        run: |
+          set -euo pipefail
+          export PICO_SDK_PATH="$GITHUB_WORKSPACE/pico-sdk-audio"
+          cmake -S oag/firmware -B build/oag-fw -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=pico2_w -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print -quit)"
+          test -n "$UF2"
+          cp "$UF2" artifacts/OAG_CONTROLLER_AUDIO_V1_TRANSPORT_Pico2W.uf2
+          sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
+          printf '%s\n' "DIAMOND=19b84f3c458384f75a44cc394da8269e49e57340" "PIO_USB_ISO_IN=PR214" > artifacts/BUILD-INFO.txt
+      - uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-CONTROLLER-AUDIO-V1-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
