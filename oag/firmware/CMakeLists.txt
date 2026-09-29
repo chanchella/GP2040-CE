@@ -37,6 +37,7 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     src/usb_descriptors.cpp
     src/bluetooth_host_v2.cpp
     src/bluetooth_hid_parser_v2.cpp
+    src/controller_audio_host.cpp
 
     ../src/device/device_registry.cpp
     ../src/device/usb_device_classifier.cpp
@@ -54,6 +55,7 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     ../src/output/xinput/xinput_report_encoder.cpp
     ../src/output/xinput/xinput_feedback_decoder.cpp
     ../src/feedback/keyboard_led_state.cpp
+    ../src/audio/controller_audio_usb_parser.cpp
 )
 
 target_include_directories(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE

@@ -15,6 +15,7 @@
 #include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
+#include "oag/firmware/controller_audio_host.h"
 #include "oag/firmware/multi_profile_platform_driver.h"
 #include "oag/firmware/output_profile_selector.h"
 #include "oag/firmware/pc_native_km_output.h"
@@ -121,8 +122,17 @@ public:
         servicePlatformFeedback();
     }
 
+    void onUsbConfigurationDescriptor(
+        std::uint8_t devAddr,
+        const std::uint8_t* descriptor,
+        std::size_t length
+    ) {
+        controllerAudioHost_.onConfigurationDescriptor(devAddr, descriptor, length);
+    }
+
     void onUsbDeviceMounted(std::uint8_t devAddr) {
         rememberMountedRoot(devAddr);
+        controllerAudioHost_.onMounted(devAddr);
     }
 
     void onXinputMounted(
@@ -716,6 +726,7 @@ public:
     }
 
     void onUsbDeviceUnmounted(std::uint8_t devAddr) {
+        controllerAudioHost_.onUnmounted(devAddr);
         forgetMountedRoot(devAddr);
 
         for (std::uint8_t instance = 0;
@@ -2255,6 +2266,7 @@ private:
     }
 
     oag::firmware::UsbPioHost usbHost_;
+    oag::firmware::ControllerAudioHost controllerAudioHost_;
 
     oag::firmware::BluetoothHostV2 bluetoothHost_;
     oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
@@ -2434,6 +2446,22 @@ private:
 FirmwareCore gCore;
 
 } // namespace
+
+extern "C" bool tuh_enum_descriptor_configuration_cb(
+    std::uint8_t dev_addr,
+    std::uint8_t cfg_index,
+    tusb_desc_configuration_t const* desc_config
+) {
+    (void)cfg_index;
+    if (desc_config != nullptr) {
+        gCore.onUsbConfigurationDescriptor(
+            dev_addr,
+            reinterpret_cast<const std::uint8_t*>(desc_config),
+            tu_le16toh(desc_config->wTotalLength)
+        );
+    }
+    return true;
+}
 
 extern "C" void tuh_mount_cb(std::uint8_t dev_addr) {
     gCore.onUsbDeviceMounted(dev_addr);
