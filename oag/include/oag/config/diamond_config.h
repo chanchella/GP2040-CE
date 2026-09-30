@@ -19,7 +19,7 @@ struct StickCalibration {
 };
 
 struct ControllerCalibration {
-    bool enabled = true;
+    bool enabled = false;
     StickCalibration left {};
     StickCalibration right {};
 };
