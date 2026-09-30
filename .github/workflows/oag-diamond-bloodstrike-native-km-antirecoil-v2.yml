@@ -1,0 +1,88 @@
+name: OAG Diamond BloodStrike Native KM Anti-Recoil V2
+
+on:
+  push:
+    branches:
+      - chatgpt/diamond-bloodstrike-native-km-antirecoil-v2
+    paths:
+      - 'oag/firmware/src/main.cpp'
+      - '.github/workflows/oag-diamond-bloodstrike-native-km-antirecoil-v2.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+      - name: Verify Diamond baseline and native-KM scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="19b84f3c458384f75a44cc394da8269e49e57340"
+          test "$(git merge-base "$BASE" HEAD)" = "$BASE"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("oag/firmware/src/main.cpp").read_text()
+          for token in [
+            "kNativeAntiRecoilTickUs = 40000",
+            "kNativeAntiRecoilDy = 1",
+            "kNativeAntiRecoilHorizontalPermille = 80",
+            "nativeKmOutput_.addMouseMotion(",
+            "keyboardMouseMode_ != KeyboardMouseOutputMode::Native",
+          ]:
+              assert token in s, token
+          assert "kAntiRecoilVerticalPermille" not in s
+          print("NATIVE_HID_ANTI_RECOIL_GUARD=PASS")
+          PY
+      - run: python3 oag/tools/check_architecture.py
+      - run: cmake -S oag -B build/oag-host -DCMAKE_BUILD_TYPE=Release -DOAG_BUILD_HOST_TESTS=ON
+      - run: |
+          cmake --build build/oag-host --parallel 2
+          ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+      - uses: Fortinbra/RaspberryPiPicoBuild@v7
+      - uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-diamond
+          submodules: recursive
+          fetch-depth: 1
+      - name: Prepare dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PICO_SDK_PATH=$GITHUB_WORKSPACE/pico-sdk-diamond" >> "$GITHUB_ENV"
+          python3 oag/tools/prepare_dependencies.py
+      - name: Build Pico 2 W
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="$GITHUB_WORKSPACE/pico-sdk-diamond" cmake -S oag/firmware -B build/oag-fw -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=pico2_w -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
+          test "${#UF2[@]}" -eq 1
+          cp "${UF2[0]}" artifacts/OAG_DIAMOND_BLOODSTRIKE_NATIVE_KM_ANTI_RECOIL_V2_Pico2W.uf2
+          sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-DIAMOND-BLOODSTRIKE-NATIVE-KM-ANTI-RECOIL-V2-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
