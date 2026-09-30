@@ -18,6 +18,7 @@
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
 #include "oag/firmware/diamond_wifi_portal.h"
+#include "oag/firmware/diamond_config_store.h"
 #include "oag/firmware/multi_profile_platform_driver.h"
 #include "oag/firmware/output_profile_selector.h"
 #include "oag/firmware/pc_native_km_output.h"
@@ -150,7 +151,7 @@ public:
         if (configMode_) {
             // Config mode owns CYW43. USB Host remains available for local
             // inputs/calibration, while Bluetooth and gaming output stay off.
-            if (!wifiPortal_.start()) {
+            if (!wifiPortal_.start(configStore_)) {
                 return false;
             }
             bluetoothInitNotBeforeUs_ = 0;
@@ -2709,6 +2710,7 @@ private:
     }
 
     oag::firmware::UsbPioHost usbHost_;
+    oag::firmware::DiamondConfigStore configStore_;
     oag::firmware::DiamondWifiPortal wifiPortal_;
     bool configMode_ = false;
 
