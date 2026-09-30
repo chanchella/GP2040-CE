@@ -139,6 +139,96 @@ int main() {
     assert((out.buttons & ButtonSouth) == 0);
     assert(!engine.active());
 
+    // V9 editor: HOLD for a finite millisecond duration must release
+    // before the next action, without changing legacy latched HOLD records.
+    engine.reset();
+    p = {};
+    p.enabled = true;
+    p.activation = DiamondComboActivationMode::PressOnce;
+    p.cancelOnTriggerRelease = false;
+    p.triggers[0].enabled = true;
+    p.triggers[0].kind = DiamondComboTriggerKind::LogicalControl;
+    p.triggers[0].code =
+        static_cast<std::uint16_t>(DiamondLogicalControl::East);
+    p.stepCount = 1;
+    p.steps[0].enabled = true;
+    p.steps[0].kind = DiamondComboStepKind::HoldStart;
+    p.steps[0].control = DiamondLogicalControl::South;
+    p.steps[0].durationMs = 100;
+    p.steps[0].intervalMs = 0; // V9 finite-HOLD marker.
+
+    input = {};
+    input.connected = true;
+    input.buttons = ButtonEast;
+    out = engine.apply(programs, nullptr, nullptr, input, 700000);
+    assert((out.buttons & ButtonSouth) != 0);
+    out = engine.apply(programs, nullptr, nullptr, input, 750000);
+    assert((out.buttons & ButtonSouth) != 0);
+    out = engine.apply(programs, nullptr, nullptr, input, 810000);
+    assert((out.buttons & ButtonSouth) == 0);
+    assert(!engine.active());
+
+    // HOLD UNTIL COMBO END is persisted with delayAfterMs=0xFFFF. It must
+    // stay down while later actions execute and release on normal completion.
+    engine.reset();
+    p = {};
+    p.enabled = true;
+    p.activation = DiamondComboActivationMode::PressOnce;
+    p.cancelOnTriggerRelease = false;
+    p.triggers[0].enabled = true;
+    p.triggers[0].kind = DiamondComboTriggerKind::LogicalControl;
+    p.triggers[0].code =
+        static_cast<std::uint16_t>(DiamondLogicalControl::East);
+    p.stepCount = 2;
+    p.steps[0].enabled = true;
+    p.steps[0].kind = DiamondComboStepKind::HoldStart;
+    p.steps[0].control = DiamondLogicalControl::LeftTrigger;
+    p.steps[0].durationMs = 0;
+    p.steps[0].delayAfterMs = 0xFFFFu;
+    p.steps[1].enabled = true;
+    p.steps[1].kind = DiamondComboStepKind::Press;
+    p.steps[1].control = DiamondLogicalControl::South;
+    p.steps[1].durationMs = 20;
+
+    input.buttons = ButtonEast;
+    out = engine.apply(programs, nullptr, nullptr, input, 900000);
+    assert(out.leftTrigger == 0xFFFFu);
+    assert((out.buttons & ButtonSouth) != 0);
+    out = engine.apply(programs, nullptr, nullptr, input, 930000);
+    assert(out.leftTrigger == 0);
+    assert((out.buttons & ButtonSouth) == 0);
+    assert(!engine.active());
+
+    // Ctrl/Shift/Alt can be standalone combo triggers using HID modifier bits.
+    engine.reset();
+    p = {};
+    p.enabled = true;
+    p.activation = DiamondComboActivationMode::PressOnce;
+    p.cancelOnTriggerRelease = false;
+    p.triggers[0].enabled = true;
+    p.triggers[0].kind = DiamondComboTriggerKind::KeyboardUsage;
+    p.triggers[0].code = 0;
+    p.triggers[0].modifiers = 0x01u; // Left Ctrl
+    p.stepCount = 1;
+    p.steps[0].enabled = true;
+    p.steps[0].kind = DiamondComboStepKind::Press;
+    p.steps[0].control = DiamondLogicalControl::North;
+    p.steps[0].durationMs = 20;
+
+    KeyboardState modifierKeyboard {};
+    modifierKeyboard.connected = true;
+    modifierKeyboard.modifiers = 0x01u;
+    input = {};
+    input.connected = true;
+    out = engine.apply(
+        programs,
+        &modifierKeyboard,
+        nullptr,
+        input,
+        1000000
+    );
+    assert((out.buttons & ButtonNorth) != 0);
+
     // Press-once sequence with a wait-until-release condition.
     engine.reset();
     p = {};
