@@ -143,9 +143,9 @@ public:
             return false;
         }
 
-        configMode_ =
-            oag::firmware::activeOutputProfile() ==
-            oag::firmware::OutputProfileId::OagConfig;
+        // DIAGNOSTIC BUILD: force Wi-Fi Config Mode at every boot to
+        // isolate AP/CYW43 runtime from the keyboard profile hotkey path.
+        configMode_ = true;
 
         if (configMode_) {
             // Config mode owns CYW43. USB Host remains available for local
