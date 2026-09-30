@@ -113,7 +113,8 @@ load().then(()=>loadComboTiming()).catch(e=>$('gen').textContent=e.message);
 )JS";
 
 static_assert(sizeof(kDashboardHtml) + 640u < TCP_SND_BUF);
-static_assert(sizeof(kAppCss) + 640u < TCP_SND_BUF);\nstatic_assert(sizeof(kComboCss) + 640u < TCP_SND_BUF);
+static_assert(sizeof(kAppCss) + 640u < TCP_SND_BUF);
+static_assert(sizeof(kComboCss) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kAppJs) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kNamesJs) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kGwcJs) + 640u < TCP_SND_BUF);
@@ -230,7 +231,8 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     const char* body=std::strstr(request,"\r\n\r\n");body=body?body+4:"";auto& pc=store_->config();auto& runtime=pc.runtime;
 
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/")){sendResponse(client,"200 OK","text/html; charset=utf-8",kDashboardHtml);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kAppCss);return;}\n    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/combo.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kComboCss);return;}
+    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kAppCss);return;}
+    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/combo.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kComboCss);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kAppJs);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/names.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kNamesJs);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/gwc.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcJs);return;}
