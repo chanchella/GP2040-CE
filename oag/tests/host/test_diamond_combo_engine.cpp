@@ -304,7 +304,7 @@ int main() {
     assert(engine.nativeOutput().mouse.wheel == 0);
 
     // eFootball Game 1 / Combo 1 contract:
-    // one L2 tap toggles a generated L2 hold plus X/West pulse
+    // one L2 tap toggles a generated L2 hold plus Cross/South pulse
     // (200 ms down / 750 ms up); the next L2 tap cancels everything.
     engine.reset();
     p = {};
@@ -323,7 +323,7 @@ int main() {
     p.steps[0].control = DiamondLogicalControl::LeftTrigger;
     p.steps[1].enabled = true;
     p.steps[1].kind = DiamondComboStepKind::Pulse;
-    p.steps[1].control = DiamondLogicalControl::West;
+    p.steps[1].control = DiamondLogicalControl::South;
     p.steps[1].durationMs = 200;
     p.steps[1].intervalMs = 750;
     p.steps[1].repeatCount = 0;
@@ -333,20 +333,20 @@ int main() {
     input.leftTrigger = 0xFFFFu;
     out = engine.apply(programs, nullptr, nullptr, input, 2000000);
     assert(out.leftTrigger == 0xFFFFu);
-    assert((out.buttons & ButtonWest) != 0);
+    assert((out.buttons & ButtonSouth) != 0);
     assert(engine.active());
 
     // Physical L2 may be released; generated L2 remains held.
     input.leftTrigger = 0;
     out = engine.apply(programs, nullptr, nullptr, input, 2210000);
     assert(out.leftTrigger == 0xFFFFu);
-    assert((out.buttons & ButtonWest) == 0);
+    assert((out.buttons & ButtonSouth) == 0);
     assert(engine.active());
 
-    // 750 ms released interval expires, then X/West pulses again.
+    // 750 ms released interval expires, then Cross/South pulses again.
     out = engine.apply(programs, nullptr, nullptr, input, 2961000);
     assert(out.leftTrigger == 0xFFFFu);
-    assert((out.buttons & ButtonWest) != 0);
+    assert((out.buttons & ButtonSouth) != 0);
     assert(engine.active());
 
     // Second physical L2 tap is the Toggle-off edge. The physical L2 report
@@ -355,14 +355,12 @@ int main() {
     input.leftTrigger = 0xFFFFu;
     out = engine.apply(programs, nullptr, nullptr, input, 2970000);
     assert(out.leftTrigger == 0xFFFFu);
-    assert((out.buttons & ButtonWest) == 0);
-    assert(!engine.active());
+    assert((out.buttons & ButtonSouth) == 0);\n    assert(!engine.active());
 
     input.leftTrigger = 0;
     out = engine.apply(programs, nullptr, nullptr, input, 2980000);
     assert(out.leftTrigger == 0);
-    assert((out.buttons & ButtonWest) == 0);
-    assert(!engine.active());
+    assert((out.buttons & ButtonSouth) == 0);\n    assert(!engine.active());
 
     std::cout << "OAG_DIAMOND_COMBO_ENGINE_TESTS=PASS\n";
     return 0;
