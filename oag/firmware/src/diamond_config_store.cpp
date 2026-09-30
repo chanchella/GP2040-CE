@@ -33,6 +33,43 @@ static_assert(sizeof(oag::DiamondConfigRecord) <= kSlotSize);
 
 extern "C" std::uint8_t __flash_binary_end;
 
+struct LegacyContentNamesV3 {
+    std::array<std::array<char, oag::kDiamondDisplayNameBytes>, oag::kDiamondGameSlots> games {};
+    std::array<
+        std::array<
+            std::array<char, oag::kDiamondDisplayNameBytes>,
+            oag::kDiamondWeaponSlotsPerGame
+        >,
+        oag::kDiamondGameSlots
+    > weapons {};
+    std::array<std::array<char, oag::kDiamondDisplayNameBytes>, oag::kDiamondComboSlots> combos {};
+    std::array<oag::DiamondComboTiming, oag::kDiamondComboSlots> comboTiming {};
+};
+
+struct LegacyPersistentConfigV3 {
+    static constexpr std::uint32_t kMagic = 0x4F414750u;
+    static constexpr std::uint16_t kSchemaVersion = 3;
+    std::uint32_t magic = kMagic;
+    std::uint16_t schemaVersion = kSchemaVersion;
+    std::uint16_t reserved = 0;
+    oag::DiamondRuntimeConfig runtime {};
+    oag::DiamondSecurityConfig security {};
+    LegacyContentNamesV3 names {};
+};
+
+struct LegacyConfigRecordV3 {
+    static constexpr std::uint32_t kMagic = 0x4F414743u;
+    static constexpr std::uint16_t kRecordVersion = 3;
+    std::uint32_t magic = kMagic;
+    std::uint16_t recordVersion = kRecordVersion;
+    std::uint16_t payloadLength = sizeof(LegacyPersistentConfigV3);
+    std::uint32_t generation = 0;
+    std::uint32_t payloadCrc32 = 0;
+    LegacyPersistentConfigV3 payload {};
+};
+
+static_assert(sizeof(LegacyConfigRecordV3) <= kSlotSize);
+
 struct LegacyContentNamesV2 {
     std::array<std::array<char, oag::kDiamondDisplayNameBytes>, oag::kDiamondGameSlots> games {};
     std::array<
@@ -105,6 +142,35 @@ void __not_in_flash_func(writeConfigSlot)(void* raw) {
 
 const oag::DiamondConfigRecord* recordAt(std::uint32_t offset) {
     return reinterpret_cast<const oag::DiamondConfigRecord*>(XIP_BASE + offset);
+}
+
+const LegacyConfigRecordV3* legacyV3RecordAt(std::uint32_t offset) {
+    return reinterpret_cast<const LegacyConfigRecordV3*>(XIP_BASE + offset);
+}
+
+bool validLegacyV3(const LegacyConfigRecordV3& record) {
+    return
+        record.magic == LegacyConfigRecordV3::kMagic &&
+        record.recordVersion == LegacyConfigRecordV3::kRecordVersion &&
+        record.payloadLength == sizeof(LegacyPersistentConfigV3) &&
+        record.payload.magic == LegacyPersistentConfigV3::kMagic &&
+        record.payload.schemaVersion == LegacyPersistentConfigV3::kSchemaVersion &&
+        record.payload.runtime.magic == oag::DiamondRuntimeConfig::kMagic &&
+        record.payload.runtime.schemaVersion == oag::DiamondRuntimeConfig::kSchemaVersion &&
+        record.payloadCrc32 == oag::diamondConfigCrc32(
+            &record.payload, sizeof(record.payload)
+        );
+}
+
+const LegacyConfigRecordV3* selectLegacyV3() {
+    const auto* a = legacyV3RecordAt(kSlotAOffset);
+    const auto* b = legacyV3RecordAt(kSlotBOffset);
+    const bool va = validLegacyV3(*a);
+    const bool vb = validLegacyV3(*b);
+    if (!va) return vb ? b : nullptr;
+    if (!vb) return a;
+    const auto delta = static_cast<std::int32_t>(b->generation - a->generation);
+    return delta > 0 ? b : a;
 }
 
 const LegacyConfigRecordV2* legacyV2RecordAt(std::uint32_t offset) {
@@ -190,6 +256,22 @@ bool DiamondConfigStore::load() {
         config_ = selected->payload;
         generation_ = selected->generation;
         activeSlot_ = selected == slotA ? 0u : 1u;
+        loadedFromFlash_ = true;
+        return true;
+    }
+
+    // Transparent V3 -> V4 migration. Preserve runtime settings, security,
+    // user-created OAG names and the first-generation combo timing records.
+    // Programmable combo steps start empty until the user creates/edits them.
+    if (const auto* legacyV3 = selectLegacyV3(); legacyV3 != nullptr) {
+        config_.runtime = legacyV3->payload.runtime;
+        config_.security = legacyV3->payload.security;
+        config_.names.games = legacyV3->payload.names.games;
+        config_.names.weapons = legacyV3->payload.names.weapons;
+        config_.names.combos = legacyV3->payload.names.combos;
+        config_.names.comboTiming = legacyV3->payload.names.comboTiming;
+        generation_ = legacyV3->generation;
+        activeSlot_ = legacyV3 == legacyV3RecordAt(kSlotAOffset) ? 0u : 1u;
         loadedFromFlash_ = true;
         return true;
     }
