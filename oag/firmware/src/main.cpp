@@ -175,6 +175,7 @@ public:
         usbHost_.task();
 
         if (configMode_) {
+            wifiPortal_.task();
             // Keep the exit hotkey alive in config mode without touching the
             // proven Bluetooth/XInput/touch gaming paths.
             serviceOutputProfileHotkey();
