@@ -14,6 +14,7 @@ constexpr std::size_t kDiamondPasswordSaltBytes = 16;
 constexpr std::size_t kDiamondPasswordVerifierBytes = 32;
 constexpr std::size_t kDiamondDisplayNameBytes = 33; // 32 chars + NUL
 constexpr std::size_t kDiamondComboSteps = 16;
+constexpr std::size_t kDiamondComboTriggers = 4;
 
 struct DiamondComboTiming {
     bool enabled = false;
@@ -41,6 +42,23 @@ enum class DiamondLogicalControl : std::uint8_t {
     DpadDown,
     DpadLeft,
     DpadRight,
+};
+
+enum class DiamondComboTriggerKind : std::uint8_t {
+    LogicalControl = 0,
+    KeyboardUsage,
+    MouseButton,
+};
+
+struct DiamondComboTrigger {
+    bool enabled = false;
+    DiamondComboTriggerKind kind = DiamondComboTriggerKind::LogicalControl;
+
+    // LogicalControl: DiamondLogicalControl value.
+    // KeyboardUsage: USB HID usage ID.
+    // MouseButton: OAG mouse-button bit mask.
+    std::uint16_t code = 0;
+    std::uint8_t modifiers = 0;
 };
 
 enum class DiamondComboActivationMode : std::uint8_t {
@@ -83,6 +101,7 @@ struct DiamondComboStep {
 
 struct DiamondComboProgram {
     bool enabled = false;
+    std::array<DiamondComboTrigger, kDiamondComboTriggers> triggers {};
     DiamondComboActivationMode activation =
         DiamondComboActivationMode::WhileHeld;
     DiamondComboRepeatMode repeat = DiamondComboRepeatMode::Once;
