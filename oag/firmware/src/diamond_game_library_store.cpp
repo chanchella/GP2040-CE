@@ -148,7 +148,9 @@ void seedEfootballComboOne(oag::DiamondGameContent& game) {
     holdL2.durationMs = 0;
     holdL2.intervalMs = 0;
     holdL2.repeatCount = 1;
-    holdL2.delayAfterMs = 0;
+    // Persist as HOLD UNTIL COMBO END so the editor and runtime both describe
+    // the toggle contract accurately. Toggle-off releases the generated hold.
+    holdL2.delayAfterMs = 0xFFFFu;
 
     // Step 2: PlayStation Cross / Xbox A logical South button.
     // 200 ms down, 750 ms released, forever until Combo 1 is toggled off.
