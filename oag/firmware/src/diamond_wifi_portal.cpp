@@ -34,7 +34,7 @@ DiamondWifiPortal* gPortal = nullptr;
 
 constexpr std::size_t kHttpBufferBytes = 3072;
 // Mobile browsers may preload assets in parallel. OAG V11 also loads the
-// dependent combo modules sequentially with retry so the editor is atomic.
+// dependent combo modules sequentially with retry. Static asset routing also\n// tolerates optional query strings, preventing cache-busting URLs from 404ing.
 // Config Mode is isolated from Gaming Mode, so reserve enough short-lived
 // request slots here without touching the frozen controller path.
 constexpr std::size_t kHttpClientSlots = 12;
@@ -81,7 +81,7 @@ async function load(){cfg=await json('/api/config');$('gen').textContent='Flash 
 async function loadWeapons(g){weapons=(await json('/api/weapons?game='+g)).names;names($('ws'),weapons,'ADD OAG WEAPON');names($('aw'),weapons,'OAG WEAPON');showWeaponName();updateAddButtons();if(typeof loadWeaponSettings==='function')await loadWeaponSettings()}
 function recoilLive(){let h=$('rh'),v=$('rv'),hv=$('rhv'),vv=$('rvv');if(!h||!v||!hv||!vv)return;let draw=()=>{let x=Number(h.value)/100,y=Number(v.value)/100;hv.textContent=(x>=0?'+':'')+x.toFixed(2);vv.textContent=(y>=0?'+':'')+y.toFixed(2)};h.addEventListener('input',draw);v.addEventListener('input',draw);h.addEventListener('change',draw);v.addEventListener('change',draw);draw()}recoilLive();
 
-function oagLoadScript(src,attempt=0){return new Promise((resolve,reject)=>{let s=document.createElement('script');s.src=src+'?v=11';s.onload=()=>resolve();s.onerror=()=>{s.remove();if(attempt<20)setTimeout(()=>oagLoadScript(src,attempt+1).then(resolve,reject),150);else reject(new Error('Failed to load '+src))};document.body.appendChild(s)})}
+function oagLoadScript(src,attempt=0){return new Promise((resolve,reject)=>{let s=document.createElement('script');s.src=src;s.onload=()=>resolve();s.onerror=()=>{s.remove();if(attempt<20)setTimeout(()=>oagLoadScript(src,attempt+1).then(resolve,reject),150);else reject(new Error('Failed to load '+src))};document.body.appendChild(s)})}
 (async()=>{try{await oagLoadScript('/gwc.js');await oagLoadScript('/gwc-editor.js');await oagLoadScript('/gwc-save.js');await oagLoadScript('/names.js')}catch(e){$('cmsg').textContent=e.message}})();
 )JS";
 
@@ -140,6 +140,12 @@ void sendResponse(tcp_pcb* client,const char* status,const char* contentType,con
             tcp_write(client,body,static_cast<u16_t>(bodyLength),TCP_WRITE_FLAG_COPY)==ERR_OK) tcp_output(client);
     }
     tcp_close(client);
+}
+
+bool staticPath(const char* requested,const char* asset){
+    if(!requested||!asset)return false;
+    const std::size_t n=std::strlen(asset);
+    return std::strncmp(requested,asset,n)==0&&(requested[n]=='\0'||requested[n]=='?');
 }
 
 std::size_t contentLength(const char* request) {
@@ -235,13 +241,13 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     const char* body=std::strstr(request,"\r\n\r\n");body=body?body+4:"";auto& pc=store_->config();auto& runtime=pc.runtime;
 
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/")){sendResponse(client,"200 OK","text/html; charset=utf-8",kDashboardHtml);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kAppCss);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/combo.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kComboCss);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kAppJs);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/names.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kNamesJs);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/gwc.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcJs);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/gwc-editor.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcEditorJs);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/gwc-save.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcSaveJs);return;}
+    if(!std::strcmp(method,"GET")&&staticPath(path,"/app.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kAppCss);return;}
+    if(!std::strcmp(method,"GET")&&staticPath(path,"/combo.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kComboCss);return;}
+    if(!std::strcmp(method,"GET")&&staticPath(path,"/app.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kAppJs);return;}
+    if(!std::strcmp(method,"GET")&&staticPath(path,"/names.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kNamesJs);return;}
+    if(!std::strcmp(method,"GET")&&staticPath(path,"/gwc.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcJs);return;}
+    if(!std::strcmp(method,"GET")&&staticPath(path,"/gwc-editor.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcEditorJs);return;}
+    if(!std::strcmp(method,"GET")&&staticPath(path,"/gwc-save.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcSaveJs);return;}
 
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/games")){sendNames(client,pc.names.games);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/combos")){sendNames(client,pc.names.combos);return;}
