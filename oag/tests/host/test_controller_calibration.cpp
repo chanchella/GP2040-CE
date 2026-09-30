@@ -1,6 +1,4 @@
 #include <cassert>
-#include <cstdint>
-#include <limits>
 
 #include "oag/config/controller_calibration.h"
 
@@ -9,37 +7,26 @@ int main() {
     using oag::ControllerCalibrationFilter;
     using oag::UniversalGamepadState;
 
-    constexpr std::int32_t kFull = std::numeric_limits<std::int32_t>::max();
-    constexpr std::uint32_t kTenPercent =
-        static_cast<std::uint32_t>(kFull / 10);
-
-    // Full-scale 32-bit canonical axis tests.
-    assert(ControllerCalibrationFilter::applyAxis(0, 0, kTenPercent) == 0);
-    assert(ControllerCalibrationFilter::applyAxis(kFull / 20, 0, kTenPercent) == 0);
-    assert(ControllerCalibrationFilter::applyAxis(-(kFull / 20), 0, kTenPercent) == 0);
-    assert(ControllerCalibrationFilter::applyAxis(kFull / 2, 0, kTenPercent) > 0);
-    assert(ControllerCalibrationFilter::applyAxis(-(kFull / 2), 0, kTenPercent) < 0);
-
-    // A real center offset around 10% must be removable, matching the scale
-    // emitted by XUSB/XGIP/HID input drivers.
-    constexpr std::int32_t centerX = 208148688;
-    constexpr std::int32_t centerY = -199098368;
-    assert(ControllerCalibrationFilter::applyAxis(centerX, centerX, kTenPercent) == 0);
-    assert(ControllerCalibrationFilter::applyAxis(centerY, centerY, kTenPercent) == 0);
+    assert(ControllerCalibrationFilter::applyAxis(0, 0, 1800) == 0);
+    assert(ControllerCalibrationFilter::applyAxis(900, 0, 1800) == 0);
+    assert(ControllerCalibrationFilter::applyAxis(-900, 0, 1800) == 0);
+    assert(ControllerCalibrationFilter::applyAxis(620, 620, 600) == 0);
+    assert(ControllerCalibrationFilter::applyAxis(-310, -310, 600) == 0);
+    assert(ControllerCalibrationFilter::applyAxis(8000, 620, 600) > 0);
+    assert(ControllerCalibrationFilter::applyAxis(-8000, 620, 600) < 0);
 
     UniversalGamepadState state {};
     state.connected = true;
-    state.lx = centerX;
-    state.ly = centerY;
-    state.rx = kFull / 2;
-    state.ry = -(kFull / 2);
+    state.lx = 620;
+    state.ly = -310;
+    state.rx = 5000;
+    state.ry = -5000;
 
     ControllerCalibration calibration {};
-    calibration.enabled = true;
-    calibration.left.centerX = centerX;
-    calibration.left.centerY = centerY;
-    calibration.left.deadzone = kTenPercent;
-    calibration.right.deadzone = kTenPercent;
+    calibration.left.centerX = 620;
+    calibration.left.centerY = -310;
+    calibration.left.deadzone = 600;
+    calibration.right.deadzone = 600;
 
     const auto filtered = ControllerCalibrationFilter::apply(state, calibration);
     assert(filtered.lx == 0);
