@@ -4,7 +4,8 @@
 
 namespace {
 
-constexpr std::uint32_t kFullTrigger = 0xFFFFu;\nconstexpr std::uint16_t kHoldUntilComboEndSentinel = 0xFFFFu;
+constexpr std::uint32_t kFullTrigger = 0xFFFFu;
+constexpr std::uint16_t kHoldUntilComboEndSentinel = 0xFFFFu;
 
 constexpr std::uint32_t controlBit(oag::DiamondLogicalControl control) {
     const auto raw = static_cast<std::uint8_t>(control);
