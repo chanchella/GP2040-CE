@@ -1,6 +1,7 @@
 #include "oag/firmware/diamond_wifi_portal.h"
 
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 
 #include "dhcpserver.h"
