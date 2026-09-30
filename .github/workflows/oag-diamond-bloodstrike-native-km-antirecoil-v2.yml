@@ -1,9 +1,9 @@
-name: OAG Diamond BloodStrike Native KM Anti-Recoil V5
+name: OAG Diamond BloodStrike Native KM Anti-Recoil V8
 
 on:
   push:
     branches:
-      - chatgpt/diamond-bloodstrike-native-km-antirecoil-v5
+      - chatgpt/diamond-bloodstrike-native-km-antirecoil-v8
     paths:
       - 'oag/firmware/src/main.cpp'
       - '.github/workflows/oag-diamond-bloodstrike-native-km-antirecoil-v2.yml'
@@ -27,7 +27,7 @@ jobs:
           for token in [
             "kNativeAntiRecoilTickUs = 40000",
             "kNativeAntiRecoilDy = 2",
-            "kNativeAntiRecoilHorizontalPermille = -500",
+            "kNativeAntiRecoilHorizontalHalfPermille = -1125",
             "nativeKmOutput_.addMouseMotion(",
             "keyboardMouseMode_ != KeyboardMouseOutputMode::Native",
           ]:
@@ -79,10 +79,10 @@ jobs:
           mkdir -p artifacts
           mapfile -t UF2 < <(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print)
           test "${#UF2[@]}" -eq 1
-          cp "${UF2[0]}" artifacts/OAG_DIAMOND_BLOODSTRIKE_NATIVE_KM_ANTI_RECOIL_V5_Pico2W.uf2
+          cp "${UF2[0]}" artifacts/OAG_DIAMOND_BLOODSTRIKE_NATIVE_KM_ANTI_RECOIL_V8_Pico2W.uf2
           sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-DIAMOND-BLOODSTRIKE-NATIVE-KM-ANTI-RECOIL-V5-${{ github.sha }}
+          name: OAG-DIAMOND-BLOODSTRIKE-NATIVE-KM-ANTI-RECOIL-V8-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
