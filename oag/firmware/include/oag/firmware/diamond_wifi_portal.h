@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "oag/config/diamond_game_library.h"
+
 namespace oag::firmware {
 
 class DiamondConfigStore;
@@ -25,6 +27,7 @@ private:
 
     DiamondConfigStore* store_ = nullptr;
     DiamondGameLibraryStore* games_ = nullptr;
+    oag::DiamondGameContent scratchGame_ {};
     std::uint64_t playRebootAtUs_ = 0;
     bool playRebootPending_ = false;
     bool started_ = false;
