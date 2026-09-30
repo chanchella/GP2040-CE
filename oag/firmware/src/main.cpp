@@ -1192,7 +1192,9 @@ private:
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 1000000ull;
-    static constexpr std::uint64_t kOutputProfileHoldUs = 1000000ull;
+    // User-facing hold remains ~1 second. A small HID-report margin avoids
+    // missing the chord when the third key arrives just after the first two.
+    static constexpr std::uint64_t kOutputProfileHoldUs = 850000ull;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
     static constexpr std::uint8_t kProfileF8Usage = 0x41;
@@ -1200,6 +1202,7 @@ private:
     static constexpr std::uint8_t kProfileDigit1Usage = 0x1E;
     static constexpr std::uint8_t kProfileDigit7Usage = 0x24;
     static constexpr std::uint8_t kProfileDigit8Usage = 0x25;
+    static constexpr std::uint8_t kProfileKeypad8Usage = 0x60;
     static constexpr std::uint8_t kProfileDigit0Usage = 0x27;
     static constexpr std::uint8_t kNoOutputProfileCandidate = 0xFF;
 
@@ -2220,6 +2223,8 @@ private:
         ) {
             keyboard.setPressed(usage, false);
         }
+
+        keyboard.setPressed(kProfileKeypad8Usage, false);
     }
 
     void serviceOutputProfileHotkey() {
@@ -2257,6 +2262,16 @@ private:
 
             candidate = static_cast<std::uint8_t>(
                 usage - kProfileDigit1Usage + 1u
+            );
+            ++pressedDigits;
+        }
+
+        // Accept keypad 8 as the same Config Mode selector. If both physical
+        // 8 keys are down simultaneously it is intentionally rejected by the
+        // exact-one-selector rule below.
+        if (keyboard.pressed(kProfileKeypad8Usage)) {
+            candidate = static_cast<std::uint8_t>(
+                oag::firmware::OutputProfileId::OagConfig
             );
             ++pressedDigits;
         }
