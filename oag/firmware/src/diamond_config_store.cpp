@@ -8,17 +8,23 @@
 #include "hardware/sync.h"
 #include "pico/flash.h"
 #include "pico/platform.h"
+#include "pico/btstack_flash_bank.h"
 
 namespace {
 
 constexpr std::uint32_t kSlotSize = FLASH_SECTOR_SIZE;
+// BTstack owns two sectors near the end of flash (and RP2350 may reserve
+// the final sector for errata handling). Keep Diamond config immediately
+// before BTstack's official storage region so pairing data is never touched.
 constexpr std::uint32_t kSlotBOffset =
-    PICO_FLASH_SIZE_BYTES - kSlotSize;
+    PICO_FLASH_BANK_STORAGE_OFFSET - kSlotSize;
 constexpr std::uint32_t kSlotAOffset =
-    PICO_FLASH_SIZE_BYTES - (2u * kSlotSize);
+    PICO_FLASH_BANK_STORAGE_OFFSET - (2u * kSlotSize);
 
+static_assert(PICO_FLASH_BANK_STORAGE_OFFSET >= (2u * kSlotSize));
 static_assert((kSlotAOffset % FLASH_SECTOR_SIZE) == 0);
 static_assert((kSlotBOffset % FLASH_SECTOR_SIZE) == 0);
+static_assert(kSlotBOffset + kSlotSize <= PICO_FLASH_BANK_STORAGE_OFFSET);
 static_assert(sizeof(oag::DiamondConfigRecord) <= FLASH_SECTOR_SIZE);
 
 extern "C" std::uint8_t __flash_binary_end;
