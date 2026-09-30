@@ -20,8 +20,8 @@ struct DiamondConfigRecord {
 };
 
 static_assert(
-    sizeof(DiamondConfigRecord) <= 16384,
-    "Diamond config record must fit in the 16 KiB Diamond slot"
+    sizeof(DiamondConfigRecord) <= 24576,
+    "Diamond config record must fit in the 24 KiB Diamond slot"
 );
 
 std::uint32_t diamondConfigCrc32(const void* data, std::size_t size);
