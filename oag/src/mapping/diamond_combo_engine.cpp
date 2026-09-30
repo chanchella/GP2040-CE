@@ -38,6 +38,10 @@ bool DiamondComboEngine::controlActive(
     DiamondLogicalControl control,
     const LogicalGamepadState& state
 ) {
+    // Input-only threshold for newly added combo triggers; no calibration change.
+    constexpr std::int32_t threshold = 1073741823;
+    const int x = state.rx > threshold ? 1 : (state.rx < -threshold ? -1 : 0);
+    const int y = state.ry > threshold ? 1 : (state.ry < -threshold ? -1 : 0);
     switch (control) {
     case DiamondLogicalControl::South: return (state.buttons & ButtonSouth) != 0;
     case DiamondLogicalControl::East: return (state.buttons & ButtonEast) != 0;
@@ -60,6 +64,14 @@ bool DiamondComboEngine::controlActive(
         return (state.dpad & static_cast<std::uint8_t>(DpadBits::Left)) != 0;
     case DiamondLogicalControl::DpadRight:
         return (state.dpad & static_cast<std::uint8_t>(DpadBits::Right)) != 0;
+    case DiamondLogicalControl::RightStickRight: return x == 1 && y == 0;
+    case DiamondLogicalControl::RightStickLeft: return x == -1 && y == 0;
+    case DiamondLogicalControl::RightStickUp: return x == 0 && y == -1;
+    case DiamondLogicalControl::RightStickDown: return x == 0 && y == 1;
+    case DiamondLogicalControl::RightStickUpRight: return x == 1 && y == -1;
+    case DiamondLogicalControl::RightStickUpLeft: return x == -1 && y == -1;
+    case DiamondLogicalControl::RightStickDownRight: return x == 1 && y == 1;
+    case DiamondLogicalControl::RightStickDownLeft: return x == -1 && y == 1;
     case DiamondLogicalControl::None:
     default: return false;
     }
@@ -100,27 +112,35 @@ void DiamondComboEngine::setControl(
     case DiamondLogicalControl::DpadRight: setDpad(DpadBits::Right); break;
     case DiamondLogicalControl::RightStickRight:
         if (down) { state.rx = kAxisMax; state.ry = 0; }
+        else { state.rx = 0; state.ry = 0; }
         break;
     case DiamondLogicalControl::RightStickLeft:
         if (down) { state.rx = kAxisMin; state.ry = 0; }
+        else { state.rx = 0; state.ry = 0; }
         break;
     case DiamondLogicalControl::RightStickUp:
         if (down) { state.rx = 0; state.ry = kAxisMin; }
+        else { state.rx = 0; state.ry = 0; }
         break;
     case DiamondLogicalControl::RightStickDown:
         if (down) { state.rx = 0; state.ry = kAxisMax; }
+        else { state.rx = 0; state.ry = 0; }
         break;
     case DiamondLogicalControl::RightStickUpRight:
         if (down) { state.rx = kDiagonal; state.ry = -kDiagonal; }
+        else { state.rx = 0; state.ry = 0; }
         break;
     case DiamondLogicalControl::RightStickUpLeft:
         if (down) { state.rx = -kDiagonal; state.ry = -kDiagonal; }
+        else { state.rx = 0; state.ry = 0; }
         break;
     case DiamondLogicalControl::RightStickDownRight:
         if (down) { state.rx = kDiagonal; state.ry = kDiagonal; }
+        else { state.rx = 0; state.ry = 0; }
         break;
     case DiamondLogicalControl::RightStickDownLeft:
         if (down) { state.rx = -kDiagonal; state.ry = kDiagonal; }
+        else { state.rx = 0; state.ry = 0; }
         break;
     case DiamondLogicalControl::None:
     default: break;
@@ -152,7 +172,9 @@ void DiamondComboEngine::applyLogicalMask(
         ++raw
     ) {
         if ((mask & (1u << raw)) != 0) {
-            setControl(static_cast<DiamondLogicalControl>(raw), down, state);
+            if (down || raw < static_cast<std::uint8_t>(DiamondLogicalControl::RightStickRight)) {
+                setControl(static_cast<DiamondLogicalControl>(raw), down, state);
+            }
         }
     }
 }
@@ -193,7 +215,7 @@ bool DiamondComboEngine::triggerActive(
         case DiamondComboTriggerKind::LogicalControl:
             if (
                 trigger.code <= static_cast<std::uint16_t>(
-                    DiamondLogicalControl::DpadRight
+                    DiamondLogicalControl::RightStickDownLeft
                 ) &&
                 controlActive(
                     static_cast<DiamondLogicalControl>(trigger.code),
@@ -257,7 +279,7 @@ void DiamondComboEngine::clearLogicalTriggers(
             trigger.enabled &&
             trigger.kind == DiamondComboTriggerKind::LogicalControl &&
             trigger.code <= static_cast<std::uint16_t>(
-                DiamondLogicalControl::DpadRight
+                DiamondLogicalControl::RightStickDownLeft
             )
         ) {
             setControl(

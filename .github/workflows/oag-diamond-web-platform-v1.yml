@@ -30,6 +30,8 @@ jobs:
           test "$(git merge-base "$BASELINE" HEAD)" = "$BASELINE"
       - name: Architecture guard
         run: python3 oag/tools/check_architecture.py
+      - name: Verify Arabic combo editor menus
+        run: node oag/tools/test_combo_editor.js
       - name: Configure host tests
         run: cmake -S oag -B build/oag-host -DCMAKE_BUILD_TYPE=Release -DOAG_BUILD_HOST_TESTS=ON
       - name: Build host tests

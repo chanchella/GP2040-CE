@@ -20,6 +20,37 @@ static void testRightStickActions() {
     static_assert(static_cast<unsigned>(DiamondLogicalControl::DpadRight) == 17);
     static_assert(static_cast<unsigned>(DiamondLogicalControl::RightStickDownLeft) == 25);
     for (unsigned direction = 0; direction < 8; ++direction) {
+        {
+            std::array<DiamondComboProgram, kDiamondComboSlots> programs {};
+            auto& p = programs[0];
+            p.enabled = true;
+            p.activation = DiamondComboActivationMode::WhileHeld;
+            p.cancelOnTriggerRelease = true;
+            p.passTriggerThrough = false;
+            p.triggers[0] = {true, DiamondComboTriggerKind::LogicalControl,
+                static_cast<std::uint16_t>(18 + direction), 0};
+            p.stepCount = 1;
+            p.steps[0].enabled = true;
+            p.steps[0].kind = DiamondComboStepKind::HoldStart;
+            p.steps[0].control = DiamondLogicalControl::South;
+            p.steps[0].durationMs = 0;
+            DiamondComboEngine engine;
+            LogicalGamepadState input {};
+            input.connected = true;
+            // Small center drift must not trigger a combo.
+            input.rx = 1000000; input.ry = -1000000;
+            auto out = engine.apply(programs, nullptr, nullptr, input, 1000);
+            assert(!engine.active());
+            input.rx = expected[direction][0]; input.ry = expected[direction][1];
+            out = engine.apply(programs, nullptr, nullptr, input, 2000);
+            assert(engine.active());
+            assert((out.buttons & ButtonSouth) != 0);
+            assert(out.rx == 0 && out.ry == 0); // trigger consumed
+            input.rx = 0; input.ry = 0;
+            out = engine.apply(programs, nullptr, nullptr, input, 3000);
+            assert(!engine.active());
+            assert((out.buttons & ButtonSouth) == 0);
+        }
         for (const bool useMask : {false, true}) {
             for (const auto kind : {DiamondComboStepKind::Press,
                     DiamondComboStepKind::HoldStart, DiamondComboStepKind::Pulse}) {
