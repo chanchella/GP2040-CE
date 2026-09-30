@@ -48,7 +48,7 @@ int main() {
     finalizeDiamondConfigRecord(wrapped);
     assert(selectNewestDiamondConfigRecord(&old, &wrapped) == &wrapped);
 
-    // V3 spans multiple flash sectors to persist OAG names and combo timing.
+    // V4 spans multiple flash sectors to persist OAG names and programmable combos.
     static_assert(sizeof(DiamondConfigRecord) <= 16384);
 
     // Named content is covered by the same CRC as runtime settings.
@@ -84,6 +84,34 @@ int main() {
     assert(validateDiamondConfigRecord(combo));
     combo.payload.names.comboTiming[3].pressMs ^= 1u;
     assert(!validateDiamondConfigRecord(combo));
+
+    // Programmable combo triggers, cancellation and millisecond steps are
+    // covered by the same CRC-protected V4 record.
+    DiamondConfigRecord program = a;
+    auto& p = program.payload.names.comboPrograms[2];
+    p.enabled = true;
+    p.activation = DiamondComboActivationMode::WhileHeld;
+    p.repeat = DiamondComboRepeatMode::AutoRepeat;
+    p.passTriggerThrough = false;
+    p.cancelOnTriggerRelease = true;
+    p.triggers[0].enabled = true;
+    p.triggers[0].kind = DiamondComboTriggerKind::LogicalControl;
+    p.triggers[0].code =
+        static_cast<std::uint16_t>(DiamondLogicalControl::West);
+    p.stepCount = 2;
+    p.steps[0].enabled = true;
+    p.steps[0].kind = DiamondComboStepKind::HoldStart;
+    p.steps[0].control = DiamondLogicalControl::LeftTrigger;
+    p.steps[1].enabled = true;
+    p.steps[1].kind = DiamondComboStepKind::Pulse;
+    p.steps[1].control = DiamondLogicalControl::South;
+    p.steps[1].durationMs = 35;
+    p.steps[1].intervalMs = 80;
+    p.steps[1].repeatCount = 0;
+    finalizeDiamondConfigRecord(program);
+    assert(validateDiamondConfigRecord(program));
+    program.payload.names.comboPrograms[2].steps[1].intervalMs ^= 1u;
+    assert(!validateDiamondConfigRecord(program));
 
     std::cout << "OAG_DIAMOND_CONFIG_RECORD_TESTS=PASS\n";
     return 0;
