@@ -93,6 +93,52 @@ int main() {
     assert(out.leftTrigger == 0);
     assert(!engine.active());
 
+    // Simple V7 editor contract:
+    // IF Circle = L2 HOLD (next action after 0.2s) + A PULSE.
+    // L2 must remain held through the delay and pulse timeline, and releasing
+    // Circle must cancel immediately and release L2.
+    engine.reset();
+    p = {};
+    p.enabled = true;
+    p.activation = DiamondComboActivationMode::WhileHeld;
+    p.cancelOnTriggerRelease = true;
+    p.triggers[0].enabled = true;
+    p.triggers[0].kind = DiamondComboTriggerKind::LogicalControl;
+    p.triggers[0].code =
+        static_cast<std::uint16_t>(DiamondLogicalControl::East);
+    p.stepCount = 2;
+    p.steps[0].enabled = true;
+    p.steps[0].kind = DiamondComboStepKind::HoldStart;
+    p.steps[0].control = DiamondLogicalControl::LeftTrigger;
+    p.steps[0].delayAfterMs = 200;
+    p.steps[1].enabled = true;
+    p.steps[1].kind = DiamondComboStepKind::Pulse;
+    p.steps[1].control = DiamondLogicalControl::South;
+    p.steps[1].durationMs = 50;
+    p.steps[1].intervalMs = 50;
+    p.steps[1].repeatCount = 3;
+
+    input = {};
+    input.connected = true;
+    input.buttons = ButtonEast;
+    out = engine.apply(programs, nullptr, nullptr, input, 400000);
+    assert(out.leftTrigger == 0xFFFFu);
+    assert((out.buttons & ButtonSouth) == 0);
+
+    out = engine.apply(programs, nullptr, nullptr, input, 500000);
+    assert(out.leftTrigger == 0xFFFFu);
+    assert((out.buttons & ButtonSouth) == 0);
+
+    out = engine.apply(programs, nullptr, nullptr, input, 600000);
+    assert(out.leftTrigger == 0xFFFFu);
+    assert((out.buttons & ButtonSouth) != 0);
+
+    input.buttons = 0;
+    out = engine.apply(programs, nullptr, nullptr, input, 610000);
+    assert(out.leftTrigger == 0);
+    assert((out.buttons & ButtonSouth) == 0);
+    assert(!engine.active());
+
     // Press-once sequence with a wait-until-release condition.
     engine.reset();
     p = {};
