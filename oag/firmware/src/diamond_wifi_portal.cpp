@@ -47,7 +47,7 @@ constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charse
 <header><h1>OAG ABO GEMI</h1><span>Controller Lab • Smart Anti-Drift • Profiles</span></header><main>
 <section class=card><h2>OAG Games & Weapons</h2><label>OAG Game</label><select id=gs></select><input id=gn maxlength=32 placeholder="Type your OAG game name"><button id=sg>ADD OAG GAME 1</button>
 <label>OAG Weapon for selected game</label><select id=ws></select><input id=wn maxlength=32 placeholder="Type your OAG weapon name"><button id=sw>ADD OAG WEAPON 1</button>
-<h3>OAG WEAPON RECOIL</h3><div class=two><div><label>Horizontal</label><input id=rh type=number min=-100 max=100 step=1 value=0></div><div><label>Vertical</label><input id=rv type=number min=-100 max=100 step=1 value=0></div></div>
+<h3>OAG WEAPON RECOIL</h3><p class=hint>Horizontal: -2.00 Left / +2.00 Right • Vertical: -2.00 Up / +2.00 Down</p><div class=two><div><label>Horizontal (-2.00 to +2.00)</label><input id=rh type=number min=-2 max=2 step=.01 value=0></div><div><label>Vertical (-2.00 to +2.00)</label><input id=rv type=number min=-2 max=2 step=.01 value=0></div></div>
 <label>Recoil Tick (ms)</label><input id=rt type=number min=1 max=1000 step=1 value=40><button id=sr>SAVE OAG WEAPON RECOIL</button><div id=nmsg class=msg></div></section>
 
 <section class=card><h2>OAG Combos</h2><label>OAG Combo</label><select id=cs></select><input id=cn maxlength=32 placeholder="Type your OAG combo name"><button id=sc>ADD OAG COMBO 1</button>
@@ -72,9 +72,9 @@ async function loadWeapons(g){weapons=(await json('/api/weapons?game='+g)).names
 
 
 
-constexpr char kGwcJs[] = R"JS(async function loadWeaponSettings(){try{let g=$('gs').value,w=$('ws').value,d=await json('/api/recoil?game='+g+'&weapon='+w);$('rh').value=d.horizontal;$('rv').value=d.vertical;$('rt').value=d.tickMs}catch(e){$('nmsg').textContent=e.message}}
+constexpr char kGwcJs[] = R"JS(async function loadWeaponSettings(){try{let g=$('gs').value,w=$('ws').value,d=await json('/api/recoil?game='+g+'&weapon='+w);$('rh').value=(d.horizontalRaw/100).toFixed(2);$('rv').value=(d.verticalRaw/100).toFixed(2);$('rt').value=d.tickMs}catch(e){$('nmsg').textContent=e.message}}
 async function loadComboTiming(){try{let d=await json('/api/combo?slot='+$('cs').value);$('cp').value=d.pressMs;$('cd').value=d.delayAfterMs;$('cr').value=d.repeatCount}catch(e){$('cmsg').textContent=e.message}}
-$('sr').onclick=async()=>{try{await post('/api/recoil',{game:$('gs').value,weapon:$('ws').value,horizontal:$('rh').value,vertical:$('rv').value,tickMs:$('rt').value});$('nmsg').textContent='OAG Weapon recoil saved to Flash';await loadWeaponSettings()}catch(e){$('nmsg').textContent=e.message}};
+$('sr').onclick=async()=>{try{let h=Math.round(Number($('rh').value)*100),v=Math.round(Number($('rv').value)*100);if(h<-200||h>200||v<-200||v>200)throw Error('Recoil must be between -2.00 and +2.00');await post('/api/recoil',{game:$('gs').value,weapon:$('ws').value,horizontal:h,vertical:v,tickMs:$('rt').value});$('nmsg').textContent='OAG Weapon recoil saved to Flash';await loadWeaponSettings()}catch(e){$('nmsg').textContent=e.message}};
 $('sct').onclick=async()=>{try{await post('/api/combo',{slot:$('cs').value,pressMs:$('cp').value,delayMs:$('cd').value,repeat:$('cr').value});$('cmsg').textContent='OAG Combo timing saved to Flash';await loadComboTiming()}catch(e){$('cmsg').textContent=e.message}};
 )JS";
 
@@ -222,8 +222,8 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
         const auto w=static_cast<std::uint32_t>(std::strtoul(wp+8,nullptr,10));
         if(g<1||g>oag::kDiamondGameSlots||w<1||w>oag::kDiamondWeaponSlotsPerGame){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG weapon");return;}
         const auto& r=runtime.games[g-1].weapons[w-1];char j[256]{};
-        std::snprintf(j,sizeof(j),"{\"horizontal\":%ld,\"vertical\":%ld,\"tickMs\":%u,\"enabled\":%s}",
-            static_cast<long>(r.horizontalHalfPermille/2),static_cast<long>(r.verticalHalfPermille/2),r.tickMs,r.enabled?"true":"false");
+        std::snprintf(j,sizeof(j),"{\"horizontalRaw\":%ld,\"verticalRaw\":%ld,\"tickMs\":%u,\"enabled\":%s}",
+            static_cast<long>(r.horizontalHalfPermille),static_cast<long>(r.verticalHalfPermille),r.tickMs,r.enabled?"true":"false");
         sendResponse(client,"200 OK","application/json",j);return;
     }
     if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combo?slot=",16)){
@@ -256,11 +256,11 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/recoil")){
         std::uint32_t g=0,w=0,tick=0;std::int32_t horizontal=0,vertical=0;
         if(!parseUnsigned(body,"game",1,oag::kDiamondGameSlots,g)||!parseUnsigned(body,"weapon",1,oag::kDiamondWeaponSlotsPerGame,w)||
-           !parseSigned(body,"horizontal",-100,100,horizontal)||!parseSigned(body,"vertical",-100,100,vertical)||!parseUnsigned(body,"tickMs",1,1000,tick)){
+           !parseSigned(body,"horizontal",-200,200,horizontal)||!parseSigned(body,"vertical",-200,200,vertical)||!parseUnsigned(body,"tickMs",1,1000,tick)){
             sendResponse(client,"400 Bad Request","text/plain","Invalid OAG recoil");return;
         }
         auto old=runtime.games[g-1].weapons[w-1];auto& r=runtime.games[g-1].weapons[w-1];
-        r.enabled=true;r.horizontalHalfPermille=horizontal*2;r.verticalHalfPermille=vertical*2;r.tickMs=static_cast<std::uint16_t>(tick);
+        r.enabled=true;r.horizontalHalfPermille=horizontal;r.verticalHalfPermille=vertical;r.tickMs=static_cast<std::uint16_t>(tick);
         if(!store_->save()){r=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}
         sendResponse(client,"200 OK","text/plain","OAG recoil saved");return;
     }
