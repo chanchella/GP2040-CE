@@ -19,6 +19,7 @@
 #include "oag/firmware/bluetooth_host_v2.h"
 #include "oag/firmware/diamond_wifi_portal.h"
 #include "oag/firmware/diamond_config_store.h"
+#include "oag/firmware/diamond_game_library_store.h"
 #include "oag/firmware/multi_profile_platform_driver.h"
 #include "oag/firmware/output_profile_selector.h"
 #include "oag/firmware/pc_native_km_output.h"
@@ -150,6 +151,9 @@ public:
         if (!configStore_.load()) {
             return false;
         }
+        if (!gameLibrary_.initialize(configStore_.config())) {
+            return false;
+        }
 
         configMode_ =
             oag::firmware::activeOutputProfile() ==
@@ -158,7 +162,7 @@ public:
         if (configMode_) {
             // Config mode owns CYW43. USB Host remains available for local
             // inputs/calibration, while Bluetooth and gaming output stay off.
-            if (!wifiPortal_.start(configStore_)) {
+            if (!wifiPortal_.start(configStore_, gameLibrary_)) {
                 return false;
             }
             bluetoothInitNotBeforeUs_ = 0;
@@ -199,6 +203,7 @@ public:
         servicePrimaryControllerChords();
         serviceOutputProfileHotkey();
         serviceKeyboardMouseModeToggle();
+        serviceOagGameWeaponHotkey();
         serviceNativeKeyboardMouseOutput();
         servicePubgTouchMaintenance();
         serviceMouseAimRelease();
@@ -1217,6 +1222,162 @@ private:
     static constexpr std::uint8_t kProfileDigit0Usage = 0x27;
     static constexpr std::uint8_t kNoOutputProfileCandidate = 0xFF;
 
+    static constexpr std::uint8_t kOagF1Usage = 0x3A;
+    static constexpr std::uint64_t kOagSelectionHoldUs = 850000ull;
+
+    std::uint16_t oagDigitMask(const oag::KeyboardState& keyboard) const {
+        std::uint16_t mask = 0;
+        for (std::uint8_t digit = 1; digit <= 9; ++digit) {
+            const std::uint8_t usage =
+                static_cast<std::uint8_t>(0x1Du + digit);
+            if (keyboard.pressed(usage)) {
+                mask |= static_cast<std::uint16_t>(1u << digit);
+            }
+        }
+        if (keyboard.pressed(0x27)) {
+            mask |= 1u;
+        }
+        return mask;
+    }
+
+    void resetOagSelectionChord() {
+        oagSelectionMode_ = 0;
+        oagSelectionValue_ = 0;
+        oagSelectionPreviousDigits_ = 0;
+        oagSelectionStartedUs_ = 0;
+        oagSelectionLatched_ = false;
+    }
+
+    void serviceOagGameWeaponHotkey() {
+        const oag::KeyboardState keyboard = combinedKeyboard();
+        const bool f1 = keyboard.pressed(kOagF1Usage);
+        const bool f4 = keyboard.pressed(kModeToggleF4Usage);
+        const bool f5 = keyboard.pressed(kModeToggleF5Usage);
+
+        const std::uint8_t wantedMode =
+            f1 && !f5 ? 1u :
+            (f5 && !f4 && !f1 ? 2u : 0u);
+
+        if (wantedMode == 0) {
+            resetOagSelectionChord();
+            return;
+        }
+
+        if (oagSelectionMode_ != wantedMode) {
+            resetOagSelectionChord();
+            oagSelectionMode_ = wantedMode;
+        }
+
+        const std::uint16_t digits = oagDigitMask(keyboard);
+        const std::uint16_t newlyPressed =
+            static_cast<std::uint16_t>(
+                digits & ~oagSelectionPreviousDigits_
+            );
+        oagSelectionPreviousDigits_ = digits;
+
+        if (newlyPressed != 0 && !oagSelectionLatched_) {
+            const auto appendDigit = [this, wantedMode](
+                std::uint8_t digit
+            ) {
+                const std::uint16_t next =
+                    static_cast<std::uint16_t>(
+                        oagSelectionValue_ * 10u + digit
+                    );
+                const std::uint16_t maximum =
+                    wantedMode == 1
+                        ? static_cast<std::uint16_t>(
+                            oag::kDiamondLibraryGameSlots
+                        )
+                        : static_cast<std::uint16_t>(
+                            oag::kDiamondWeaponSlotsPerGame
+                        );
+                if (next >= 1u && next <= maximum) {
+                    oagSelectionValue_ = next;
+                    oagSelectionStartedUs_ = time_us_64();
+                }
+            };
+
+            for (std::uint8_t digit = 1; digit <= 9; ++digit) {
+                if ((newlyPressed & (1u << digit)) != 0) {
+                    appendDigit(digit);
+                }
+            }
+            if ((newlyPressed & 1u) != 0) {
+                appendDigit(0);
+            }
+        }
+
+        if (
+            oagSelectionLatched_ ||
+            oagSelectionValue_ == 0 ||
+            oagSelectionStartedUs_ == 0 ||
+            time_us_64() - oagSelectionStartedUs_ <
+                kOagSelectionHoldUs
+        ) {
+            return;
+        }
+
+        auto& runtime = configStore_.config().runtime;
+        if (wantedMode == 1) {
+            const std::size_t gameIndex =
+                static_cast<std::size_t>(oagSelectionValue_ - 1u);
+            if (
+                gameLibrary_.activate(
+                    gameIndex,
+                    configStore_.config()
+                )
+            ) {
+                runtime.activeGame =
+                    static_cast<std::uint16_t>(gameIndex);
+                runtime.activeWeapon = oag::kDiamondNoActiveWeapon;
+
+                // A game switch is a hard context boundary. No held output,
+                // combo phase, recoil accumulator or weapon from the previous
+                // game is allowed to survive into the new game.
+                diamondCombos_.reset();
+                diamondRecoilActive_ = false;
+                nextDiamondRecoilServiceUs_ = 0;
+                nextNativeRecoilUs_ = 0;
+                nativeRecoilAccumX_ = 0;
+                nativeRecoilAccumY_ = 0;
+            }
+        } else {
+            runtime.activeWeapon =
+                static_cast<std::uint16_t>(
+                    oagSelectionValue_ - 1u
+                );
+            diamondRecoilActive_ = false;
+            nextDiamondRecoilServiceUs_ = 0;
+            nextNativeRecoilUs_ = 0;
+            nativeRecoilAccumX_ = 0;
+            nativeRecoilAccumY_ = 0;
+        }
+
+        oagSelectionLatched_ = true;
+    }
+
+    void maskOagGameWeaponHotkey(oag::KeyboardState& keyboard) const {
+        const bool f1 = keyboard.pressed(kOagF1Usage);
+        const bool f4 = keyboard.pressed(kModeToggleF4Usage);
+        const bool f5 = keyboard.pressed(kModeToggleF5Usage);
+        if (!(f1 || (f5 && !f4))) {
+            return;
+        }
+
+        const std::uint16_t digits = oagDigitMask(keyboard);
+        if (digits == 0 && oagSelectionMode_ == 0) {
+            return;
+        }
+
+        keyboard.setPressed(kOagF1Usage, false);
+        if (!f4) {
+            keyboard.setPressed(kModeToggleF5Usage, false);
+        }
+        for (std::uint8_t usage = 0x1E; usage <= 0x27; ++usage) {
+            keyboard.setPressed(usage, false);
+        }
+    }
+
     void serviceBluetoothHostV2() {
         if (
             oag::firmware::activeOutputProfile() ==
@@ -1904,13 +2065,10 @@ private:
 
     const oag::WeaponRecoilProfile* activeRecoilProfile() const {
         const auto& runtime = configStore_.config().runtime;
-        if (
-            runtime.activeGame >= oag::kDiamondGameSlots ||
-            runtime.activeWeapon >= oag::kDiamondWeaponSlotsPerGame
-        ) {
+        if (runtime.activeWeapon >= oag::kDiamondWeaponSlotsPerGame) {
             return nullptr;
         }
-        return &runtime.games[runtime.activeGame].weapons[runtime.activeWeapon];
+        return &gameLibrary_.active().weapons[runtime.activeWeapon];
     }
 
     oag::LogicalGamepadState applyDiamondLogicalRecoil(
@@ -1986,6 +2144,8 @@ private:
 
         const bool touchProfile =
             oag::firmware::mobileTouchUsbProfileActive();
+
+        maskOagGameWeaponHotkey(keyboard);
 
         // F4+F5 and F8+F9+digit remain global system chords and never leak
         // into either PUBG touch actions or the normal profiles.
@@ -2155,7 +2315,7 @@ private:
             );
             applyPubgTriangleActions(output, nowUs);
             output = diamondCombos_.apply(
-                configStore_.config().names.comboPrograms,
+                gameLibrary_.active().comboPrograms,
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
                 output,
@@ -2200,7 +2360,7 @@ private:
         ) {
             const std::uint64_t nowUs = time_us_64();
             oag::LogicalGamepadState output = diamondCombos_.apply(
-                configStore_.config().names.comboPrograms,
+                gameLibrary_.active().comboPrograms,
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
                 basePrimaryOutput(),
@@ -2236,7 +2396,7 @@ private:
 
         const std::uint64_t nowUs = time_us_64();
         output = diamondCombos_.apply(
-            configStore_.config().names.comboPrograms,
+            gameLibrary_.active().comboPrograms,
             hasKeyboard ? &keyboard : nullptr,
             hasMouse ? &mouse : nullptr,
             output,
@@ -2929,6 +3089,7 @@ private:
 
     oag::firmware::UsbPioHost usbHost_;
     oag::firmware::DiamondConfigStore configStore_;
+    oag::firmware::DiamondGameLibraryStore gameLibrary_;
     oag::firmware::DiamondWifiPortal wifiPortal_;
     bool configMode_ = false;
 
@@ -2973,6 +3134,14 @@ private:
     std::uint64_t outputProfileChordStartedUs_ = 0;
     std::uint8_t outputProfileCandidate_ = kNoOutputProfileCandidate;
     bool outputProfileChordLatched_ = false;
+
+    // OAG profile selector: F1 + 1..20 = Game, F5 + 1..24 = Weapon.
+    // Multi-digit numbers are collected while the function key remains held.
+    std::uint8_t oagSelectionMode_ = 0;
+    std::uint16_t oagSelectionValue_ = 0;
+    std::uint16_t oagSelectionPreviousDigits_ = 0;
+    std::uint64_t oagSelectionStartedUs_ = 0;
+    bool oagSelectionLatched_ = false;
 
     std::int16_t currentNativeWheel_ = 0;
     std::int16_t currentNativePan_ = 0;
