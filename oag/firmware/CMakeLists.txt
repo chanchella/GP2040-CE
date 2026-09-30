@@ -39,11 +39,13 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     src/usb_descriptors.cpp
     src/bluetooth_host_v2.cpp
     src/diamond_wifi_portal.cpp
+    src/diamond_config_store.cpp
     src/net/dhcpserver.c
     src/net/dnsserver.c
     src/bluetooth_hid_parser_v2.cpp
 
     ../src/config/controller_calibration.cpp
+    ../src/config/diamond_config_record.cpp
     ../src/device/device_registry.cpp
     ../src/device/usb_device_classifier.cpp
     ../src/protocol/xusb/xusb_input_driver.cpp
@@ -84,6 +86,8 @@ target_compile_options(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE
 target_link_libraries(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE
     pico_stdlib
     pico_unique_id
+    pico_flash
+    hardware_flash
     tinyusb_device
     tinyusb_host
     tinyusb_pico_pio_usb
