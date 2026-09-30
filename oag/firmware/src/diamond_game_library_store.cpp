@@ -106,6 +106,68 @@ bool hasText(const char* text) {
     return text != nullptr && text[0] != '\0';
 }
 
+void seedEfootballComboOne(oag::DiamondGameContent& game) {
+    // Seed only a completely unused Game 1 slot. Once the user has named the
+    // game or configured Combo 1, firmware upgrades never overwrite it.
+    if (
+        hasText(game.gameName.data()) ||
+        hasText(game.comboNames[0].data()) ||
+        game.comboPrograms[0].enabled
+    ) {
+        return;
+    }
+
+    constexpr char kGameName[] = "eFootball";
+    constexpr char kComboName[] = "L2 Toggle + X Pulse";
+    std::memcpy(game.gameName.data(), kGameName, sizeof(kGameName));
+    std::memcpy(game.comboNames[0].data(), kComboName, sizeof(kComboName));
+
+    auto& program = game.comboPrograms[0];
+    program = oag::DiamondComboProgram {};
+    program.enabled = true;
+    program.triggers[0].enabled = true;
+    program.triggers[0].kind =
+        oag::DiamondComboTriggerKind::LogicalControl;
+    program.triggers[0].code = static_cast<std::uint16_t>(
+        oag::DiamondLogicalControl::LeftTrigger
+    );
+    program.activation = oag::DiamondComboActivationMode::Toggle;
+    program.repeat = oag::DiamondComboRepeatMode::Once;
+    program.passTriggerThrough = false;
+    program.cancelOnTriggerRelease = false;
+    program.cancelOnTriggerPressAgain = false;
+    program.cancelControlEnabled = false;
+    program.stepCount = 2;
+
+    // Step 1: latch L2 until the Toggle program is stopped by the next
+    // physical L2 press.
+    auto& holdL2 = program.steps[0];
+    holdL2.enabled = true;
+    holdL2.kind = oag::DiamondComboStepKind::HoldStart;
+    holdL2.control = oag::DiamondLogicalControl::LeftTrigger;
+    holdL2.durationMs = 0;
+    holdL2.intervalMs = 0;
+    holdL2.repeatCount = 1;
+    holdL2.delayAfterMs = 0;
+
+    // Step 2: Xbox X / PlayStation Square logical West button.
+    // 200 ms down, 750 ms released, forever until Combo 1 is toggled off.
+    auto& pulseX = program.steps[1];
+    pulseX.enabled = true;
+    pulseX.kind = oag::DiamondComboStepKind::Pulse;
+    pulseX.control = oag::DiamondLogicalControl::West;
+    pulseX.durationMs = 200;
+    pulseX.intervalMs = 750;
+    pulseX.repeatCount = 0;
+    pulseX.delayAfterMs = 0;
+
+    auto& timing = game.comboTiming[0];
+    timing.enabled = true;
+    timing.pressMs = 200;
+    timing.delayAfterMs = 750;
+    timing.repeatCount = 0;
+}
+
 } // namespace
 
 namespace oag::firmware {
@@ -231,6 +293,23 @@ bool DiamondGameLibraryStore::initialize(
 ) {
     if (!firmwareLeavesLibraryFree()) {
         return false;
+    }
+
+    // Built-in starter content requested for Game 1. This also upgrades an
+    // already-flashed V13 device whose Game 1 bank is still completely empty.
+    oag::DiamondGameContent gameOne {};
+    if (!loadStored(0, gameOne)) {
+        synthesizeLegacy(0, legacy, false, gameOne);
+    }
+    const bool gameOneWasEmpty =
+        !hasText(gameOne.gameName.data()) &&
+        !hasText(gameOne.comboNames[0].data()) &&
+        !gameOne.comboPrograms[0].enabled;
+    if (gameOneWasEmpty) {
+        seedEfootballComboOne(gameOne);
+        if (!saveGame(0, gameOne)) {
+            return false;
+        }
     }
 
     const std::size_t requested =
