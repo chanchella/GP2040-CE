@@ -4,7 +4,7 @@
 
 namespace {
 
-constexpr std::uint32_t kFullTrigger = 0xFFFFu;
+constexpr std::uint32_t kFullTrigger = 0xFFFFu;\nconstexpr std::uint16_t kHoldUntilComboEndSentinel = 0xFFFFu;
 
 constexpr std::uint32_t controlBit(oag::DiamondLogicalControl control) {
     const auto raw = static_cast<std::uint8_t>(control);
@@ -169,8 +169,22 @@ bool DiamondComboEngine::triggerActive(
             if (
                 keyboard != nullptr &&
                 keyboard->connected &&
-                keyboard->pressed(static_cast<std::uint8_t>(trigger.code)) &&
-                (keyboard->modifiers & trigger.modifiers) == trigger.modifiers
+                (
+                    (
+                        trigger.code == 0 &&
+                        trigger.modifiers != 0 &&
+                        (keyboard->modifiers & trigger.modifiers) ==
+                            trigger.modifiers
+                    ) ||
+                    (
+                        trigger.code != 0 &&
+                        keyboard->pressed(
+                            static_cast<std::uint8_t>(trigger.code)
+                        ) &&
+                        (keyboard->modifiers & trigger.modifiers) ==
+                            trigger.modifiers
+                    )
+                )
             ) return true;
             break;
 
@@ -314,10 +328,34 @@ bool DiamondComboEngine::execute(
                 runtime.wheelSent = false;
                 continue;
             }
-            // HOLD actions are intentionally latched until an explicit
-            // combo cancellation condition releases them (trigger release,
-            // cancel button, toggle-off, etc.). Finishing the visible
-            // timeline must not silently release a user's HOLD action.
+            // Release only the outputs explicitly configured as
+            // "UNTIL COMBO END". Holds configured as "UNTIL RELEASE" remain
+            // latched and keep the combo alive until its trigger is lifted.
+            applyLogicalMask(runtime.endHeldControls, false, output);
+            runtime.heldControls &= ~runtime.endHeldControls;
+            runtime.heldModifiers &= static_cast<std::uint8_t>(
+                ~runtime.endHeldModifiers
+            );
+            nativeOutput_.keyboard.modifiers &= static_cast<std::uint8_t>(
+                ~runtime.endHeldModifiers
+            );
+            for (const auto key : runtime.endHeldKeys) {
+                if (key != 0) {
+                    removeKey(runtime.heldKeys, key);
+                    nativeOutput_.keyboard.setPressed(key, false);
+                }
+            }
+            runtime.heldMouseButtons &= static_cast<std::uint16_t>(
+                ~runtime.endHeldMouseButtons
+            );
+            nativeOutput_.mouse.buttons &= static_cast<std::uint16_t>(
+                ~runtime.endHeldMouseButtons
+            );
+            runtime.endHeldControls = 0;
+            runtime.endHeldModifiers = 0;
+            runtime.endHeldKeys = {};
+            runtime.endHeldMouseButtons = 0;
+
             const bool hasLatchedHold =
                 runtime.heldControls != 0 ||
                 runtime.heldModifiers != 0 ||
@@ -346,6 +384,42 @@ bool DiamondComboEngine::execute(
         case DiamondComboStepKind::HoldStart:
             holdStep(step, runtime);
             applyHeld(runtime, output);
+
+            // HOLD + N ms: keep the output down for the requested finite
+            // duration, then release it before the next visible action.
+            if (step.durationMs != 0) {
+                if (elapsedUs < durationUs) return false;
+                releaseStep(step, runtime);
+                applyLogicalMask(stepLogicalMask(step), false, output);
+                nativeOutput_.keyboard.modifiers &=
+                    static_cast<std::uint8_t>(~step.keyboardModifiers);
+                for (const auto key : step.keyboardKeys) {
+                    if (key != 0) nativeOutput_.keyboard.setPressed(key, false);
+                }
+                nativeOutput_.mouse.buttons &=
+                    static_cast<std::uint16_t>(~step.mouseButtons);
+                advance(step, runtime, nowUs);
+                continue;
+            }
+
+            // 0xFFFF in delayAfterMs is an internal persisted marker used by
+            // the mobile editor for HOLD UNTIL COMBO END. It is not a delay.
+            if (step.delayAfterMs == kHoldUntilComboEndSentinel) {
+                runtime.endHeldControls |= stepLogicalMask(step);
+                runtime.endHeldModifiers |= step.keyboardModifiers;
+                for (const auto key : step.keyboardKeys) {
+                    mergeKey(runtime.endHeldKeys, key);
+                }
+                runtime.endHeldMouseButtons |= step.mouseButtons;
+                ++runtime.stepIndex;
+                runtime.phaseStartedUs = 0;
+                runtime.wheelSent = false;
+                runtime.nextStepNotBeforeUs = 0;
+                continue;
+            }
+
+            // HOLD UNTIL RELEASE: latch until the program's normal trigger
+            // cancellation path stops the combo.
             advance(step, runtime, nowUs);
             continue;
 
