@@ -19,6 +19,13 @@ void DiamondComboEngine::reset() {
     runtime_ = {};
 }
 
+bool DiamondComboEngine::active() const {
+    for (const auto& runtime : runtime_) {
+        if (runtime.active) return true;
+    }
+    return false;
+}
+
 bool DiamondComboEngine::controlActive(
     DiamondLogicalControl control,
     const LogicalGamepadState& state
