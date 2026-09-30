@@ -158,7 +158,8 @@ void jsonString(char*& out,std::size_t& left,const char* s){
     while(*s&&left>3){unsigned char c=static_cast<unsigned char>(*s++);if(c=='"'||c=='\\'){*out++='\\';--left;}*out++=static_cast<char>(c);--left;}
     *out++='"';*out='\0';--left;
 }
-void sendNames(tcp_pcb* client,const auto& names){
+template <typename T>
+void sendNames(tcp_pcb* client,const T& names){
     char json[4096]{};char* p=json;std::size_t left=sizeof(json);int n=std::snprintf(p,left,"{\"names\":[");p+=n;left-=static_cast<std::size_t>(n);
     for(std::size_t i=0;i<names.size();++i){if(i&&left>1){*p++=',';--left;}jsonString(p,left,names[i].data());}
     if(left>3){std::snprintf(p,left,"]}");}sendResponse(client,"200 OK","application/json; charset=utf-8",json);
