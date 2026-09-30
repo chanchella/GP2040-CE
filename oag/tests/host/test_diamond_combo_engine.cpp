@@ -351,16 +351,18 @@ int main() {
 
     // Second physical L2 tap is the Toggle-off edge. The physical L2 report
     // itself is still naturally down on this frame, but the generated hold and
-    // X pulse are already gone. Releasing the tap leaves L2 fully released.
+    // Cross pulse is already gone. Releasing the tap leaves L2 fully released.
     input.leftTrigger = 0xFFFFu;
     out = engine.apply(programs, nullptr, nullptr, input, 2970000);
     assert(out.leftTrigger == 0xFFFFu);
-    assert((out.buttons & ButtonSouth) == 0);\n    assert(!engine.active());
+    assert((out.buttons & ButtonSouth) == 0);
+    assert(!engine.active());
 
     input.leftTrigger = 0;
     out = engine.apply(programs, nullptr, nullptr, input, 2980000);
     assert(out.leftTrigger == 0);
-    assert((out.buttons & ButtonSouth) == 0);\n    assert(!engine.active());
+    assert((out.buttons & ButtonSouth) == 0);
+    assert(!engine.active());
 
     std::cout << "OAG_DIAMOND_COMBO_ENGINE_TESTS=PASS\n";
     return 0;
