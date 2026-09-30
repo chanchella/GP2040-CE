@@ -738,12 +738,14 @@ void DiamondWifiPortal::handleHttpRequest(
             std::memset(confirm, 0, sizeof(confirm));
             createSession();
 
-            char cookie[160] {};
+            char cookie[320] {};
             std::snprintf(
                 cookie,
                 sizeof(cookie),
-                "Set-Cookie: OAGSESSION=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800\r\n",
-                sessionToken_
+                "Set-Cookie: OAGSESSION=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800\r\n"
+                "Set-Cookie: OAGCSRF=%s; SameSite=Strict; Path=/; Max-Age=1800\r\n",
+                sessionToken_,
+                csrfToken_
             );
             sendRedirect(client, "/", cookie);
             return;
@@ -807,12 +809,14 @@ void DiamondWifiPortal::handleHttpRequest(
         loginBlockedUntilUs_ = 0;
         createSession();
 
-        char cookie[160] {};
+        char cookie[320] {};
         std::snprintf(
             cookie,
             sizeof(cookie),
-            "Set-Cookie: OAGSESSION=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800\r\n",
-            sessionToken_
+            "Set-Cookie: OAGSESSION=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800\r\n"
+            "Set-Cookie: OAGCSRF=%s; SameSite=Strict; Path=/; Max-Age=1800\r\n",
+            sessionToken_,
+            csrfToken_
         );
         sendRedirect(client, "/", cookie);
         return;
@@ -830,13 +834,190 @@ void DiamondWifiPortal::handleHttpRequest(
 
     if (
         std::strcmp(method, "POST") == 0 &&
+        std::strcmp(path, "/system/admin") == 0
+    ) {
+        if (!csrfAuthorized(request, body)) {
+            sendResponse(client, "403 Forbidden", "text/plain", "CSRF validation failed");
+            return;
+        }
+
+        char newUsername[oag::kDiamondAdminUsernameBytes] {};
+        char currentPassword[64] {};
+        char newPassword[64] {};
+        char confirmPassword[64] {};
+        const bool parsed =
+            decodeFormValue(body, "new_username", newUsername, sizeof(newUsername)) &&
+            decodeFormValue(body, "current_password", currentPassword, sizeof(currentPassword)) &&
+            decodeFormValue(body, "new_password", newPassword, sizeof(newPassword)) &&
+            decodeFormValue(body, "confirm_password", confirmPassword, sizeof(confirmPassword));
+
+        if (
+            !parsed ||
+            !DiamondPasswordService::verify(
+                security,
+                security.adminUsername.data(),
+                currentPassword
+            )
+        ) {
+            std::memset(currentPassword, 0, sizeof(currentPassword));
+            std::memset(newPassword, 0, sizeof(newPassword));
+            std::memset(confirmPassword, 0, sizeof(confirmPassword));
+            sendResponse(client, "401 Unauthorized", "text/plain", "Current admin password is incorrect");
+            return;
+        }
+
+        const bool usernameChanged = newUsername[0] != '\0';
+        const bool passwordChanged = newPassword[0] != '\0';
+        if (!usernameChanged && !passwordChanged) {
+            std::memset(currentPassword, 0, sizeof(currentPassword));
+            sendResponse(client, "400 Bad Request", "text/plain", "Enter a new username or password");
+            return;
+        }
+
+        if (
+            passwordChanged &&
+            std::strcmp(newPassword, confirmPassword) != 0
+        ) {
+            std::memset(currentPassword, 0, sizeof(currentPassword));
+            std::memset(newPassword, 0, sizeof(newPassword));
+            std::memset(confirmPassword, 0, sizeof(confirmPassword));
+            sendResponse(client, "400 Bad Request", "text/plain", "New passwords do not match");
+            return;
+        }
+
+        const auto previous = security;
+        const char* effectiveUsername =
+            usernameChanged ? newUsername : previous.adminUsername.data();
+        const char* effectivePassword =
+            passwordChanged ? newPassword : currentPassword;
+
+        oag::DiamondSecurityConfig next {};
+        if (!DiamondPasswordService::provision(
+            next,
+            effectiveUsername,
+            effectivePassword
+        )) {
+            std::memset(currentPassword, 0, sizeof(currentPassword));
+            std::memset(newPassword, 0, sizeof(newPassword));
+            std::memset(confirmPassword, 0, sizeof(confirmPassword));
+            sendResponse(client, "400 Bad Request", "text/plain", "Admin username or password is invalid");
+            return;
+        }
+
+        next.wifiPassword = previous.wifiPassword;
+        security = next;
+        if (!store_->save()) {
+            security = previous;
+            std::memset(currentPassword, 0, sizeof(currentPassword));
+            std::memset(newPassword, 0, sizeof(newPassword));
+            std::memset(confirmPassword, 0, sizeof(confirmPassword));
+            sendResponse(client, "500 Internal Server Error", "text/plain", "Config save failed");
+            return;
+        }
+
+        std::memset(currentPassword, 0, sizeof(currentPassword));
+        std::memset(newPassword, 0, sizeof(newPassword));
+        std::memset(confirmPassword, 0, sizeof(confirmPassword));
+        createSession();
+
+        char cookie[320] {};
+        std::snprintf(
+            cookie,
+            sizeof(cookie),
+            "Set-Cookie: OAGSESSION=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800\r\n"
+            "Set-Cookie: OAGCSRF=%s; SameSite=Strict; Path=/; Max-Age=1800\r\n",
+            sessionToken_,
+            csrfToken_
+        );
+        sendRedirect(client, "/", cookie);
+        return;
+    }
+
+    if (
+        std::strcmp(method, "POST") == 0 &&
+        std::strcmp(path, "/system/wifi") == 0
+    ) {
+        if (!csrfAuthorized(request, body)) {
+            sendResponse(client, "403 Forbidden", "text/plain", "CSRF validation failed");
+            return;
+        }
+
+        char currentPassword[64] {};
+        char wifiPassword[oag::kDiamondWifiPasswordBytes] {};
+        char confirmWifi[oag::kDiamondWifiPasswordBytes] {};
+        const bool parsed =
+            decodeFormValue(body, "current_password", currentPassword, sizeof(currentPassword)) &&
+            decodeFormValue(body, "wifi_password", wifiPassword, sizeof(wifiPassword)) &&
+            decodeFormValue(body, "confirm_wifi", confirmWifi, sizeof(confirmWifi));
+
+        const std::size_t wifiLength = std::strlen(wifiPassword);
+        if (
+            !parsed ||
+            !DiamondPasswordService::verify(
+                security,
+                security.adminUsername.data(),
+                currentPassword
+            )
+        ) {
+            std::memset(currentPassword, 0, sizeof(currentPassword));
+            std::memset(wifiPassword, 0, sizeof(wifiPassword));
+            std::memset(confirmWifi, 0, sizeof(confirmWifi));
+            sendResponse(client, "401 Unauthorized", "text/plain", "Current admin password is incorrect");
+            return;
+        }
+
+        if (
+            wifiLength < 8u ||
+            wifiLength > 63u ||
+            std::strcmp(wifiPassword, confirmWifi) != 0
+        ) {
+            std::memset(currentPassword, 0, sizeof(currentPassword));
+            std::memset(wifiPassword, 0, sizeof(wifiPassword));
+            std::memset(confirmWifi, 0, sizeof(confirmWifi));
+            sendResponse(client, "400 Bad Request", "text/plain", "Wi-Fi password must be 8-63 chars and both values must match");
+            return;
+        }
+
+        const auto previous = security;
+        security.wifiPassword.fill('\0');
+        std::memcpy(
+            security.wifiPassword.data(),
+            wifiPassword,
+            wifiLength
+        );
+
+        if (!store_->save()) {
+            security = previous;
+            std::memset(currentPassword, 0, sizeof(currentPassword));
+            std::memset(wifiPassword, 0, sizeof(wifiPassword));
+            std::memset(confirmWifi, 0, sizeof(confirmWifi));
+            sendResponse(client, "500 Internal Server Error", "text/plain", "Config save failed");
+            return;
+        }
+
+        std::memset(currentPassword, 0, sizeof(currentPassword));
+        std::memset(wifiPassword, 0, sizeof(wifiPassword));
+        std::memset(confirmWifi, 0, sizeof(confirmWifi));
+        clearSession();
+        sendResponse(client, "200 OK", "text/html; charset=utf-8", kWifiRestartHtml);
+        scheduleReboot(1500);
+        return;
+    }
+
+    if (
+        std::strcmp(method, "POST") == 0 &&
         std::strcmp(path, "/logout") == 0
     ) {
+        if (!csrfAuthorized(request, body)) {
+            sendResponse(client, "403 Forbidden", "text/plain", "CSRF validation failed");
+            return;
+        }
         clearSession();
         sendRedirect(
             client,
             "/",
             "Set-Cookie: OAGSESSION=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0\r\n"
+            "Set-Cookie: OAGCSRF=; SameSite=Strict; Path=/; Max-Age=0\r\n"
         );
         return;
     }
