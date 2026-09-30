@@ -33,6 +33,70 @@ static_assert(sizeof(oag::DiamondConfigRecord) <= kSlotSize);
 
 extern "C" std::uint8_t __flash_binary_end;
 
+struct LegacyDiamondComboStepV4 {
+    bool enabled = false;
+    oag::DiamondComboStepKind kind = oag::DiamondComboStepKind::Press;
+    oag::DiamondLogicalControl control = oag::DiamondLogicalControl::None;
+    std::uint16_t durationMs = 50;
+    std::uint16_t intervalMs = 50;
+    std::uint16_t repeatCount = 1;
+};
+
+struct LegacyDiamondComboProgramV4 {
+    bool enabled = false;
+    std::array<oag::DiamondComboTrigger, oag::kDiamondComboTriggers> triggers {};
+    oag::DiamondComboActivationMode activation =
+        oag::DiamondComboActivationMode::WhileHeld;
+    oag::DiamondComboRepeatMode repeat =
+        oag::DiamondComboRepeatMode::Once;
+    bool passTriggerThrough = true;
+    bool cancelOnTriggerRelease = true;
+    bool cancelOnTriggerPressAgain = false;
+    bool cancelControlEnabled = false;
+    oag::DiamondLogicalControl cancelControl =
+        oag::DiamondLogicalControl::None;
+    std::uint8_t stepCount = 0;
+    std::array<LegacyDiamondComboStepV4, oag::kDiamondComboSteps> steps {};
+};
+
+struct LegacyContentNamesV4 {
+    std::array<std::array<char, oag::kDiamondDisplayNameBytes>, oag::kDiamondGameSlots> games {};
+    std::array<
+        std::array<
+            std::array<char, oag::kDiamondDisplayNameBytes>,
+            oag::kDiamondWeaponSlotsPerGame
+        >,
+        oag::kDiamondGameSlots
+    > weapons {};
+    std::array<std::array<char, oag::kDiamondDisplayNameBytes>, oag::kDiamondComboSlots> combos {};
+    std::array<oag::DiamondComboTiming, oag::kDiamondComboSlots> comboTiming {};
+    std::array<LegacyDiamondComboProgramV4, oag::kDiamondComboSlots> comboPrograms {};
+};
+
+struct LegacyPersistentConfigV4 {
+    static constexpr std::uint32_t kMagic = 0x4F414750u;
+    static constexpr std::uint16_t kSchemaVersion = 4;
+    std::uint32_t magic = kMagic;
+    std::uint16_t schemaVersion = kSchemaVersion;
+    std::uint16_t reserved = 0;
+    oag::DiamondRuntimeConfig runtime {};
+    oag::DiamondSecurityConfig security {};
+    LegacyContentNamesV4 names {};
+};
+
+struct LegacyConfigRecordV4 {
+    static constexpr std::uint32_t kMagic = 0x4F414743u;
+    static constexpr std::uint16_t kRecordVersion = 4;
+    std::uint32_t magic = kMagic;
+    std::uint16_t recordVersion = kRecordVersion;
+    std::uint16_t payloadLength = sizeof(LegacyPersistentConfigV4);
+    std::uint32_t generation = 0;
+    std::uint32_t payloadCrc32 = 0;
+    LegacyPersistentConfigV4 payload {};
+};
+
+static_assert(sizeof(LegacyConfigRecordV4) <= kSlotSize);
+
 struct LegacyContentNamesV3 {
     std::array<std::array<char, oag::kDiamondDisplayNameBytes>, oag::kDiamondGameSlots> games {};
     std::array<
@@ -142,6 +206,35 @@ void __not_in_flash_func(writeConfigSlot)(void* raw) {
 
 const oag::DiamondConfigRecord* recordAt(std::uint32_t offset) {
     return reinterpret_cast<const oag::DiamondConfigRecord*>(XIP_BASE + offset);
+}
+
+const LegacyConfigRecordV4* legacyV4RecordAt(std::uint32_t offset) {
+    return reinterpret_cast<const LegacyConfigRecordV4*>(XIP_BASE + offset);
+}
+
+bool validLegacyV4(const LegacyConfigRecordV4& record) {
+    return
+        record.magic == LegacyConfigRecordV4::kMagic &&
+        record.recordVersion == LegacyConfigRecordV4::kRecordVersion &&
+        record.payloadLength == sizeof(LegacyPersistentConfigV4) &&
+        record.payload.magic == LegacyPersistentConfigV4::kMagic &&
+        record.payload.schemaVersion == LegacyPersistentConfigV4::kSchemaVersion &&
+        record.payload.runtime.magic == oag::DiamondRuntimeConfig::kMagic &&
+        record.payload.runtime.schemaVersion == oag::DiamondRuntimeConfig::kSchemaVersion &&
+        record.payloadCrc32 == oag::diamondConfigCrc32(
+            &record.payload, sizeof(record.payload)
+        );
+}
+
+const LegacyConfigRecordV4* selectLegacyV4() {
+    const auto* a = legacyV4RecordAt(kSlotAOffset);
+    const auto* b = legacyV4RecordAt(kSlotBOffset);
+    const bool va = validLegacyV4(*a);
+    const bool vb = validLegacyV4(*b);
+    if (!va) return vb ? b : nullptr;
+    if (!vb) return a;
+    const auto delta = static_cast<std::int32_t>(b->generation - a->generation);
+    return delta > 0 ? b : a;
 }
 
 const LegacyConfigRecordV3* legacyV3RecordAt(std::uint32_t offset) {
@@ -256,6 +349,53 @@ bool DiamondConfigStore::load() {
         config_ = selected->payload;
         generation_ = selected->generation;
         activeSlot_ = selected == slotA ? 0u : 1u;
+        loadedFromFlash_ = true;
+        return true;
+    }
+
+    // Transparent V4 -> V5 migration. Preserve every existing OAG
+    // Game/Weapon/Combo and convert each legacy single-control step into the
+    // new multi-control chord representation.
+    if (const auto* legacyV4 = selectLegacyV4(); legacyV4 != nullptr) {
+        config_.runtime = legacyV4->payload.runtime;
+        config_.security = legacyV4->payload.security;
+        config_.names.games = legacyV4->payload.names.games;
+        config_.names.weapons = legacyV4->payload.names.weapons;
+        config_.names.combos = legacyV4->payload.names.combos;
+        config_.names.comboTiming = legacyV4->payload.names.comboTiming;
+
+        for (std::size_t i = 0; i < oag::kDiamondComboSlots; ++i) {
+            const auto& oldProgram = legacyV4->payload.names.comboPrograms[i];
+            auto& program = config_.names.comboPrograms[i];
+            program.enabled = oldProgram.enabled;
+            program.triggers = oldProgram.triggers;
+            program.activation = oldProgram.activation;
+            program.repeat = oldProgram.repeat;
+            program.passTriggerThrough = oldProgram.passTriggerThrough;
+            program.cancelOnTriggerRelease = oldProgram.cancelOnTriggerRelease;
+            program.cancelOnTriggerPressAgain = oldProgram.cancelOnTriggerPressAgain;
+            program.cancelControlEnabled = oldProgram.cancelControlEnabled;
+            program.cancelControl = oldProgram.cancelControl;
+            program.stepCount = oldProgram.stepCount;
+
+            for (std::size_t s = 0; s < oldProgram.steps.size(); ++s) {
+                const auto& oldStep = oldProgram.steps[s];
+                auto& step = program.steps[s];
+                step.enabled = oldStep.enabled;
+                step.kind = oldStep.kind;
+                step.control = oldStep.control;
+                step.durationMs = oldStep.durationMs;
+                step.intervalMs = oldStep.intervalMs;
+                step.repeatCount = oldStep.repeatCount;
+                const auto raw = static_cast<std::uint8_t>(oldStep.control);
+                if (raw > 0 && raw < 32) {
+                    step.logicalMask = 1u << raw;
+                }
+            }
+        }
+
+        generation_ = legacyV4->generation;
+        activeSlot_ = legacyV4 == legacyV4RecordAt(kSlotAOffset) ? 0u : 1u;
         loadedFromFlash_ = true;
         return true;
     }
