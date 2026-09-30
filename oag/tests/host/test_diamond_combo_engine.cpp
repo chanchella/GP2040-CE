@@ -51,6 +51,13 @@ int main() {
     assert((out.buttons & ButtonSouth) != 0);
     assert(out.leftTrigger == 0xFFFFu);
 
+    // Timeline completion must NOT release a HOLD action while the trigger
+    // is still held. This is the horizontal-editor contract: e.g. Circle/C
+    // keeps L2 held even after the last PRESS box has finished.
+    out = engine.apply(programs, nullptr, nullptr, input, 500000);
+    assert(out.leftTrigger == 0xFFFFu);
+    assert(engine.active());
+
     // Releasing Square/West cancels immediately and releases generated holds.
     input.buttons = 0;
     out = engine.apply(programs, nullptr, nullptr, input, 121000);
