@@ -118,7 +118,7 @@ void seedEfootballComboOne(oag::DiamondGameContent& game) {
     }
 
     constexpr char kGameName[] = "eFootball";
-    constexpr char kComboName[] = "L2 Toggle + X Pulse";
+    constexpr char kComboName[] = "L2 Toggle + Cross Pulse";
     std::memcpy(game.gameName.data(), kGameName, sizeof(kGameName));
     std::memcpy(game.comboNames[0].data(), kComboName, sizeof(kComboName));
 
@@ -150,12 +150,12 @@ void seedEfootballComboOne(oag::DiamondGameContent& game) {
     holdL2.repeatCount = 1;
     holdL2.delayAfterMs = 0;
 
-    // Step 2: Xbox X / PlayStation Square logical West button.
+    // Step 2: PlayStation Cross / Xbox A logical South button.
     // 200 ms down, 750 ms released, forever until Combo 1 is toggled off.
     auto& pulseX = program.steps[1];
     pulseX.enabled = true;
     pulseX.kind = oag::DiamondComboStepKind::Pulse;
-    pulseX.control = oag::DiamondLogicalControl::West;
+    pulseX.control = oag::DiamondLogicalControl::South;
     pulseX.durationMs = 200;
     pulseX.intervalMs = 750;
     pulseX.repeatCount = 0;
