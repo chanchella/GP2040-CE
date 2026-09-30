@@ -1206,11 +1206,14 @@ private:
     static constexpr std::uint8_t kPubgScrollDown = 1;
     static constexpr std::uint8_t kPubgScrollUp = 2;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
-    static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
-    static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 1000000ull;
-    // User-facing hold remains ~1 second. A small HID-report margin avoids
-    // missing the chord when the third key arrives just after the first two.
-    static constexpr std::uint64_t kOutputProfileHoldUs = 850000ull;
+
+    // All user-created OAG shortcuts use one exact hold duration. Keep every
+    // shortcut below tied to this constant so Game/Weapon/Profile/Primary/KM
+    // selection can never drift to different timings again.
+    static constexpr std::uint64_t kOagShortcutHoldUs = 1000000ull;
+    static constexpr std::uint64_t kPrimarySelectHoldUs = kOagShortcutHoldUs;
+    static constexpr std::uint64_t kKeyboardMouseModeHoldUs = kOagShortcutHoldUs;
+    static constexpr std::uint64_t kOutputProfileHoldUs = kOagShortcutHoldUs;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
     static constexpr std::uint8_t kProfileF8Usage = 0x41;
@@ -1223,7 +1226,7 @@ private:
     static constexpr std::uint8_t kNoOutputProfileCandidate = 0xFF;
 
     static constexpr std::uint8_t kOagF1Usage = 0x3A;
-    static constexpr std::uint64_t kOagSelectionHoldUs = 850000ull;
+    static constexpr std::uint64_t kOagSelectionHoldUs = kOagShortcutHoldUs;
 
     std::uint16_t oagDigitMask(const oag::KeyboardState& keyboard) const {
         std::uint16_t mask = 0;
