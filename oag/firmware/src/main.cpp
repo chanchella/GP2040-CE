@@ -2558,7 +2558,49 @@ private:
             mouseAimExpiresUs_ = 0;
         }
 
+        serviceNativeDiamondRecoil(mouse, nowUs);
         nativeKmOutput_.task(nowUs);
+    }
+
+    void serviceNativeDiamondRecoil(
+        const oag::MouseState& mouse,
+        std::uint64_t nowUs
+    ) {
+        const auto* profile = activeRecoilProfile();
+        const bool firing =
+            mouse.connected &&
+            (mouse.buttons & oag::MouseButtonLeft) != 0;
+
+        if (profile == nullptr || !profile->enabled || !firing) {
+            nextNativeRecoilUs_ = 0;
+            nativeRecoilAccumX_ = 0;
+            nativeRecoilAccumY_ = 0;
+            return;
+        }
+
+        if (nextNativeRecoilUs_ == 0) {
+            nextNativeRecoilUs_ = nowUs;
+        }
+
+        if (nowUs < nextNativeRecoilUs_) return;
+
+        nativeRecoilAccumX_ += profile->horizontalHalfPermille;
+        nativeRecoilAccumY_ += profile->verticalHalfPermille;
+
+        const std::int32_t dx = nativeRecoilAccumX_ / 100;
+        const std::int32_t dy = nativeRecoilAccumY_ / 100;
+        nativeRecoilAccumX_ -= dx * 100;
+        nativeRecoilAccumY_ -= dy * 100;
+
+        if (dx != 0 || dy != 0) {
+            nativeKmOutput_.addMouseMotion(dx, dy, 0, 0);
+        }
+
+        nextNativeRecoilUs_ =
+            nowUs +
+            static_cast<std::uint64_t>(
+                std::max<std::uint16_t>(profile->tickMs, 1u)
+            ) * 1000ull;
     }
 
     void serviceDiamondComboTimeline() {
@@ -2880,6 +2922,9 @@ private:
     std::uint64_t nextDiamondComboServiceUs_ = 0;
     bool diamondRecoilActive_ = false;
     std::uint64_t nextDiamondRecoilServiceUs_ = 0;
+    std::uint64_t nextNativeRecoilUs_ = 0;
+    std::int32_t nativeRecoilAccumX_ = 0;
+    std::int32_t nativeRecoilAccumY_ = 0;
     oag::firmware::MultiProfilePlatformDriver platformOutput_;
     oag::firmware::PcNativeKmOutput nativeKmOutput_;
 
