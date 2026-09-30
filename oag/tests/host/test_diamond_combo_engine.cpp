@@ -51,18 +51,47 @@ int main() {
     assert((out.buttons & ButtonSouth) != 0);
     assert(out.leftTrigger == 0xFFFFu);
 
-    // Timeline completion must NOT release a HOLD action while the trigger
-    // is still held. This is the horizontal-editor contract: e.g. Circle/C
-    // keeps L2 held even after the last PRESS box has finished.
-    out = engine.apply(programs, nullptr, nullptr, input, 500000);
-    assert(out.leftTrigger == 0xFFFFu);
-    assert(engine.active());
-
     // Releasing Square/West cancels immediately and releases generated holds.
     input.buttons = 0;
     out = engine.apply(programs, nullptr, nullptr, input, 121000);
     assert((out.buttons & ButtonSouth) == 0);
     assert(out.leftTrigger == 0);
+
+    // Horizontal editor contract: HOLD + finite PRESS. Once the last action
+    // finishes, the HOLD remains latched until the WhileHeld trigger is lifted.
+    engine.reset();
+    p = {};
+    p.enabled = true;
+    p.activation = DiamondComboActivationMode::WhileHeld;
+    p.cancelOnTriggerRelease = true;
+    p.triggers[0].enabled = true;
+    p.triggers[0].kind = DiamondComboTriggerKind::LogicalControl;
+    p.triggers[0].code =
+        static_cast<std::uint16_t>(DiamondLogicalControl::East);
+    p.stepCount = 2;
+    p.steps[0].enabled = true;
+    p.steps[0].kind = DiamondComboStepKind::HoldStart;
+    p.steps[0].control = DiamondLogicalControl::LeftTrigger;
+    p.steps[1].enabled = true;
+    p.steps[1].kind = DiamondComboStepKind::Press;
+    p.steps[1].control = DiamondLogicalControl::South;
+    p.steps[1].durationMs = 20;
+
+    input = {};
+    input.connected = true;
+    input.buttons = ButtonEast;
+    out = engine.apply(programs, nullptr, nullptr, input, 150000);
+    assert(out.leftTrigger == 0xFFFFu);
+    assert((out.buttons & ButtonSouth) != 0);
+    out = engine.apply(programs, nullptr, nullptr, input, 180000);
+    assert(out.leftTrigger == 0xFFFFu);
+    assert((out.buttons & ButtonSouth) == 0);
+    assert(engine.active());
+
+    input.buttons = 0;
+    out = engine.apply(programs, nullptr, nullptr, input, 190000);
+    assert(out.leftTrigger == 0);
+    assert(!engine.active());
 
     // Press-once sequence with a wait-until-release condition.
     engine.reset();
