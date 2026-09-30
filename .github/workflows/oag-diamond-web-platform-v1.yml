@@ -1,9 +1,9 @@
-name: OAG Diamond Calibration Named Content V1
+name: OAG Diamond Controller Rollback Named Content V1
 
 on:
   push:
     branches:
-      - chatgpt/diamond-calibration-named-content-v1
+      - chatgpt/diamond-controller-rollback-named-content-v1
     paths:
       - 'oag/**'
       - '.github/workflows/oag-diamond-web-platform-v1.yml'
@@ -71,10 +71,10 @@ jobs:
           mkdir -p artifacts
           UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print -quit)"
           test -n "$UF2"
-          cp "$UF2" artifacts/OAG_DIAMOND_CALIBRATION_NAMED_CONTENT_V1_Pico2W.uf2
+          cp "$UF2" artifacts/OAG_DIAMOND_CONTROLLER_ROLLBACK_NAMED_CONTENT_V1_Pico2W.uf2
           sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-DIAMOND-CALIBRATION-NAMED-CONTENT-V1
+          name: OAG-DIAMOND-CONTROLLER-ROLLBACK-NAMED-CONTENT-V1
           path: artifacts/*
           if-no-files-found: error
