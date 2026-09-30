@@ -5,6 +5,7 @@ project(OAG_Universal_Core_V1 LANGUAGES CXX)
 option(OAG_BUILD_HOST_TESTS "Build host-side OAG core tests" ON)
 
 add_library(oag_core STATIC
+    src/config/controller_calibration.cpp
     src/device/device_registry.cpp
     src/device/usb_device_classifier.cpp
     src/protocol/xusb/xusb_input_driver.cpp
@@ -59,6 +60,13 @@ if(OAG_BUILD_HOST_TESTS)
     target_compile_features(oag_core_tests PRIVATE cxx_std_17)
 
     add_test(NAME oag_core_tests COMMAND oag_core_tests)
+
+    add_executable(oag_controller_calibration_tests
+        tests/host/test_controller_calibration.cpp
+    )
+    target_link_libraries(oag_controller_calibration_tests PRIVATE oag_core)
+    target_compile_features(oag_controller_calibration_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_controller_calibration_tests COMMAND oag_controller_calibration_tests)
 
     add_executable(oag_mouse_mapping_tests
         tests/host/test_mouse_mapping.cpp
