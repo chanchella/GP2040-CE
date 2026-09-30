@@ -241,6 +241,11 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     auto* client=static_cast<tcp_pcb*>(rawClient);if(!client||!request||!store_)return;char method[8]{},path[96]{};
     if(std::sscanf(request,"%7s %95s",method,path)!=2){sendResponse(client,"400 Bad Request","text/plain","Bad request");return;}
     const char* body=std::strstr(request,"\r\n\r\n");body=body?body+4:"";auto& pc=store_->config();auto& runtime=pc.runtime;
+    if(!games_){sendResponse(client,"503 Service Unavailable","text/plain","OAG game library unavailable");return;}
+    const auto loadGame=[&](std::uint32_t oneBased)->bool{
+        return oneBased>=1&&oneBased<=oag::kDiamondLibraryGameSlots&&
+            games_->loadGame(oneBased-1,pc,scratchGame_);
+    };
 
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/")){sendResponse(client,"200 OK","text/html; charset=utf-8",kDashboardHtml);return;}
     if(!std::strcmp(method,"GET")&&staticPath(path,"/app.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kAppCss);return;}
@@ -251,26 +256,42 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     if(!std::strcmp(method,"GET")&&staticPath(path,"/gwc-editor.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcEditorJs);return;}
     if(!std::strcmp(method,"GET")&&staticPath(path,"/gwc-save.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcSaveJs);return;}
 
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/games")){sendNames(client,pc.names.games);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/combos")){sendNames(client,pc.names.combos);return;}
+    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/games")){
+        static std::array<std::array<char,oag::kDiamondDisplayNameBytes>,oag::kDiamondLibraryGameSlots> gameNames{};
+        for(std::size_t i=0;i<gameNames.size();++i){
+            if(!games_->loadGame(i,pc,scratchGame_)){sendResponse(client,"500 Internal Server Error","text/plain","Game library read failed");return;}
+            gameNames[i]=scratchGame_.gameName;
+        }
+        sendNames(client,gameNames);return;
+    }
+    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combos?game=",17)){
+        const auto g=static_cast<std::uint32_t>(std::strtoul(path+17,nullptr,10));
+        if(!loadGame(g)){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG game");return;}
+        sendNames(client,scratchGame_.comboNames);return;
+    }
     if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/weapons?game=",18)){
-        std::uint32_t g=static_cast<std::uint32_t>(std::strtoul(path+18,nullptr,10));if(g<1||g>oag::kDiamondGameSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid game");return;}sendNames(client,pc.names.weapons[g-1]);return;
+        const auto g=static_cast<std::uint32_t>(std::strtoul(path+18,nullptr,10));
+        if(!loadGame(g)){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG game");return;}
+        sendNames(client,scratchGame_.weaponNames);return;
     }
     if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/recoil?game=",17)){
         const char* wp=std::strstr(path,"&weapon=");
         if(!wp){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG weapon");return;}
         const auto g=static_cast<std::uint32_t>(std::strtoul(path+17,nullptr,10));
         const auto w=static_cast<std::uint32_t>(std::strtoul(wp+8,nullptr,10));
-        if(g<1||g>oag::kDiamondGameSlots||w<1||w>oag::kDiamondWeaponSlotsPerGame){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG weapon");return;}
-        const auto& r=runtime.games[g-1].weapons[w-1];char j[256]{};
+        if(!loadGame(g)||w<1||w>oag::kDiamondWeaponSlotsPerGame){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG weapon");return;}
+        const auto& rr=scratchGame_.weapons[w-1];char j[256]{};
         std::snprintf(j,sizeof(j),"{\"horizontalRaw\":%ld,\"verticalRaw\":%ld,\"tickMs\":%u,\"enabled\":%s}",
-            static_cast<long>(r.horizontalHalfPermille),static_cast<long>(r.verticalHalfPermille),r.tickMs,r.enabled?"true":"false");
+            static_cast<long>(rr.horizontalHalfPermille),static_cast<long>(rr.verticalHalfPermille),rr.tickMs,rr.enabled?"true":"false");
         sendResponse(client,"200 OK","application/json",j);return;
     }
-    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combo-program?slot=",24)){
-        const auto slot=static_cast<std::uint32_t>(std::strtoul(path+24,nullptr,10));
-        if(slot<1||slot>oag::kDiamondComboSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
-        const auto& p=pc.names.comboPrograms[slot-1];
+    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combo-program?game=",24)){
+        const char* sp=std::strstr(path,"&slot=");
+        if(!sp){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
+        const auto g=static_cast<std::uint32_t>(std::strtoul(path+24,nullptr,10));
+        const auto slot=static_cast<std::uint32_t>(std::strtoul(sp+6,nullptr,10));
+        if(!loadGame(g)||slot<1||slot>oag::kDiamondComboSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
+        const auto& p=scratchGame_.comboPrograms[slot-1];
         std::uint16_t logical=0,key=0,mouse=0;std::uint8_t keyMods=0;
         for(const auto& t:p.triggers){
             if(!t.enabled)continue;
@@ -284,22 +305,24 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
             static_cast<unsigned>(p.activation),static_cast<unsigned>(p.repeat),p.passTriggerThrough?"true":"false",p.cancelOnTriggerRelease?"true":"false",p.cancelOnTriggerPressAgain?"true":"false",p.cancelControlEnabled?"true":"false",static_cast<unsigned>(p.cancelControl),logical,key,keyMods,mouse);
         if(n<0||static_cast<std::size_t>(n)>=sizeof(j)){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}used=static_cast<std::size_t>(n);
         for(std::uint8_t i=0;i<p.stepCount&&i<oag::kDiamondComboSteps;i++){
-            const auto& s=p.steps[i];
+            const auto& step=p.steps[i];
             n=std::snprintf(j+used,sizeof(j)-used,"%s{\"kind\":%u,\"control\":%u,\"durationMs\":%u,\"delayAfterMs\":%u,\"intervalMs\":%u,\"repeatCount\":%u,\"logicalMask\":%lu,\"modifiers\":%u,\"mouseButtons\":%u,\"mouseWheel\":%d,\"keys\":[%u,%u,%u,%u,%u,%u]}",
-                i?",":"",static_cast<unsigned>(s.kind),static_cast<unsigned>(s.control),s.durationMs,s.delayAfterMs,s.intervalMs,s.repeatCount,
-                static_cast<unsigned long>(s.logicalMask),s.keyboardModifiers,s.mouseButtons,static_cast<int>(s.mouseWheel),
-                s.keyboardKeys[0],s.keyboardKeys[1],s.keyboardKeys[2],s.keyboardKeys[3],s.keyboardKeys[4],s.keyboardKeys[5]);
+                i?",":"",static_cast<unsigned>(step.kind),static_cast<unsigned>(step.control),step.durationMs,step.delayAfterMs,step.intervalMs,step.repeatCount,
+                static_cast<unsigned long>(step.logicalMask),step.keyboardModifiers,step.mouseButtons,static_cast<int>(step.mouseWheel),
+                step.keyboardKeys[0],step.keyboardKeys[1],step.keyboardKeys[2],step.keyboardKeys[3],step.keyboardKeys[4],step.keyboardKeys[5]);
             if(n<0||static_cast<std::size_t>(n)>=sizeof(j)-used){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}used+=static_cast<std::size_t>(n);
         }
         if(used+3>=sizeof(j)){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}
         j[used++]=']';j[used++]='}';j[used]='\0';
         sendResponse(client,"200 OK","application/json",j);return;
     }
-
-    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combo?slot=",16)){
-        const auto slot=static_cast<std::uint32_t>(std::strtoul(path+16,nullptr,10));
-        if(slot<1||slot>oag::kDiamondComboSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
-        const auto& t=pc.names.comboTiming[slot-1];char j[256]{};
+    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combo?game=",16)){
+        const char* sp=std::strstr(path,"&slot=");
+        if(!sp){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
+        const auto g=static_cast<std::uint32_t>(std::strtoul(path+16,nullptr,10));
+        const auto slot=static_cast<std::uint32_t>(std::strtoul(sp+6,nullptr,10));
+        if(!loadGame(g)||slot<1||slot>oag::kDiamondComboSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
+        const auto& t=scratchGame_.comboTiming[slot-1];char j[256]{};
         std::snprintf(j,sizeof(j),"{\"pressMs\":%u,\"delayAfterMs\":%u,\"repeatCount\":%u,\"enabled\":%s}",
             t.pressMs,t.delayAfterMs,t.repeatCount,t.enabled?"true":"false");
         sendResponse(client,"200 OK","application/json",j);return;
@@ -308,7 +331,8 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/config")){
         char j[256]{};
         std::snprintf(j,sizeof(j),"{\"generation\":%lu,\"activeGame\":%u,\"activeWeapon\":%u}",
-            static_cast<unsigned long>(store_->generation()),runtime.activeGame,runtime.activeWeapon);
+            static_cast<unsigned long>(store_->generation()),runtime.activeGame,
+            runtime.activeWeapon==oag::kDiamondNoActiveWeapon?-1:static_cast<int>(runtime.activeWeapon));
         sendResponse(client,"200 OK","application/json",j);return;
     }
 
