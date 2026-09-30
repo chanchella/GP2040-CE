@@ -48,7 +48,7 @@ int main() {
     finalizeDiamondConfigRecord(wrapped);
     assert(selectNewestDiamondConfigRecord(&old, &wrapped) == &wrapped);
 
-    // V4 spans multiple flash sectors to persist OAG names and programmable combos.
+    // V5 spans multiple flash sectors to persist OAG names and multi-input programmable combos.
     static_assert(sizeof(DiamondConfigRecord) <= 16384);
 
     // Named content is covered by the same CRC as runtime settings.
@@ -108,6 +108,14 @@ int main() {
     p.steps[1].durationMs = 35;
     p.steps[1].intervalMs = 80;
     p.steps[1].repeatCount = 0;
+    p.steps[1].logicalMask =
+        (1u << static_cast<std::uint8_t>(DiamondLogicalControl::South)) |
+        (1u << static_cast<std::uint8_t>(DiamondLogicalControl::LeftTrigger));
+    p.steps[1].keyboardKeys[0] = 0x0Du;
+    p.steps[1].keyboardModifiers = 0x02u;
+    p.steps[1].mouseButtons = MouseButtonMiddle;
+    p.steps[1].mouseWheel = -1;
+    p.steps[1].delayAfterMs = 25;
     finalizeDiamondConfigRecord(program);
     assert(validateDiamondConfigRecord(program));
     program.payload.names.comboPrograms[2].steps[1].intervalMs ^= 1u;
