@@ -48,7 +48,7 @@ int main() {
     finalizeDiamondConfigRecord(wrapped);
     assert(selectNewestDiamondConfigRecord(&old, &wrapped) == &wrapped);
 
-    // V2 intentionally spans multiple flash sectors to persist user names.
+    // V3 spans multiple flash sectors to persist OAG names and combo timing.
     static_assert(sizeof(DiamondConfigRecord) <= 16384);
 
     // Named content is covered by the same CRC as runtime settings.
@@ -62,6 +62,29 @@ int main() {
     assert(validateDiamondConfigRecord(named));
     named.payload.names.games[0][0] ^= 1;
     assert(!validateDiamondConfigRecord(named));
+
+    // OAG weapon recoil settings are protected by the same CRC.
+    DiamondConfigRecord recoil = a;
+    recoil.payload.runtime.games[1].weapons[2].enabled = true;
+    recoil.payload.runtime.games[1].weapons[2].horizontalHalfPermille = -24;
+    recoil.payload.runtime.games[1].weapons[2].verticalHalfPermille = 36;
+    recoil.payload.runtime.games[1].weapons[2].tickMs = 33;
+    finalizeDiamondConfigRecord(recoil);
+    assert(validateDiamondConfigRecord(recoil));
+    recoil.payload.runtime.games[1].weapons[2].verticalHalfPermille ^= 1;
+    assert(!validateDiamondConfigRecord(recoil));
+
+    // Millisecond OAG combo timing is persistent and CRC-protected.
+    DiamondConfigRecord combo = a;
+    combo.payload.names.comboTiming[3].enabled = true;
+    combo.payload.names.comboTiming[3].pressMs = 125;
+    combo.payload.names.comboTiming[3].delayAfterMs = 37;
+    combo.payload.names.comboTiming[3].repeatCount = 4;
+    finalizeDiamondConfigRecord(combo);
+    assert(validateDiamondConfigRecord(combo));
+    combo.payload.names.comboTiming[3].pressMs ^= 1u;
+    assert(!validateDiamondConfigRecord(combo));
+
     std::cout << "OAG_DIAMOND_CONFIG_RECORD_TESTS=PASS\n";
     return 0;
 }
