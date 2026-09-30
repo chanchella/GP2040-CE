@@ -113,7 +113,7 @@ int main() {
         (1u << static_cast<std::uint8_t>(DiamondLogicalControl::LeftTrigger));
     p.steps[1].keyboardKeys[0] = 0x0Du;
     p.steps[1].keyboardModifiers = 0x02u;
-    p.steps[1].mouseButtons = MouseButtonMiddle;
+    p.steps[1].mouseButtons = 4u; // middle / scroll click
     p.steps[1].mouseWheel = -1;
     p.steps[1].delayAfterMs = 25;
     finalizeDiamondConfigRecord(program);
