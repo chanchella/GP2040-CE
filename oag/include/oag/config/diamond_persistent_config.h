@@ -48,6 +48,7 @@ enum class DiamondComboTriggerKind : std::uint8_t {
     LogicalControl = 0,
     KeyboardUsage,
     MouseButton,
+    MouseWheel,
 };
 
 struct DiamondComboTrigger {
@@ -97,6 +98,16 @@ struct DiamondComboStep {
 
     // Pulse only. 0 means keep pulsing until the combo is cancelled.
     std::uint16_t repeatCount = 1;
+
+    // V5 OAG chord output. Multiple controller + keyboard + mouse controls
+    // can be generated together by one combo movement.
+    std::uint32_t logicalMask = 0;
+    std::uint8_t keyboardModifiers = 0;
+    std::array<std::uint8_t, 6> keyboardKeys {};
+    std::uint16_t mouseButtons = 0;
+    // +1 = scroll up, -1 = scroll down, 0 = no wheel pulse.
+    std::int8_t mouseWheel = 0;
+    std::uint16_t delayAfterMs = 0;
 };
 
 struct DiamondComboProgram {
@@ -147,7 +158,7 @@ struct DiamondContentNames {
 
 struct DiamondPersistentConfig {
     static constexpr std::uint32_t kMagic = 0x4F414750u; // OAGP
-    static constexpr std::uint16_t kSchemaVersion = 4;
+    static constexpr std::uint16_t kSchemaVersion = 5;
 
     std::uint32_t magic = kMagic;
     std::uint16_t schemaVersion = kSchemaVersion;
