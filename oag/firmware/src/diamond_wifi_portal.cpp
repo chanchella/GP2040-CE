@@ -33,7 +33,7 @@ tcp_pcb* gHttpListener = nullptr;
 DiamondWifiPortal* gPortal = nullptr;
 
 constexpr std::size_t kHttpBufferBytes = 3072;
-// Mobile browsers preload CSS/JS in parallel. Two slots caused legitimate\n// portal assets to receive HTTP 503, leaving the page half-initialized.\n// Config Mode is isolated from Gaming Mode, so reserve enough short-lived\n// request slots here without touching the frozen controller path.\nconstexpr std::size_t kHttpClientSlots = 8;
+// Mobile browsers preload CSS/JS in parallel. Two slots caused legitimate\n// portal assets to receive HTTP 503, leaving the page half-initialized.\n// Config Mode is isolated from Gaming Mode, so reserve enough short-lived\n// request slots here without touching the frozen controller path.\nconstexpr std::size_t kHttpClientSlots = 8;\nstatic_assert(kHttpClientSlots >= 6, "OAG portal must serve CSS + five JS assets without preload 503s");
 
 struct HttpClientState {
     tcp_pcb* client = nullptr;
