@@ -155,6 +155,7 @@ int main() {
     p.steps[0].kind = DiamondComboStepKind::HoldStart;
     p.steps[0].control = DiamondLogicalControl::South;
     p.steps[0].durationMs = 100;
+    p.steps[0].delayAfterMs = 450; // RELEASE / WAIT before next action.
     p.steps[0].intervalMs = 0; // V9 finite-HOLD marker.
 
     input = {};
@@ -165,6 +166,12 @@ int main() {
     out = engine.apply(programs, nullptr, nullptr, input, 750000);
     assert((out.buttons & ButtonSouth) != 0);
     out = engine.apply(programs, nullptr, nullptr, input, 810000);
+    assert((out.buttons & ButtonSouth) == 0);
+    assert(engine.active()); // still inside the 450 ms released interval.
+    out = engine.apply(programs, nullptr, nullptr, input, 1200000);
+    assert((out.buttons & ButtonSouth) == 0);
+    assert(engine.active());
+    out = engine.apply(programs, nullptr, nullptr, input, 1270000);
     assert((out.buttons & ButtonSouth) == 0);
     assert(!engine.active());
 
