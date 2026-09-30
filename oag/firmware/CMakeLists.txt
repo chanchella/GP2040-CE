@@ -59,6 +59,7 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     ../src/mapping/mouse_to_stick_mapper.cpp
     ../src/mapping/keyboard_mouse_gamepad_mapper.cpp
     ../src/mapping/native_km_combo_engine.cpp
+    ../src/mapping/diamond_combo_engine.cpp
     ../src/output/xinput/xinput_report_encoder.cpp
     ../src/output/xinput/xinput_feedback_decoder.cpp
     ../src/output/touch/mobile_touch_mapper.cpp
