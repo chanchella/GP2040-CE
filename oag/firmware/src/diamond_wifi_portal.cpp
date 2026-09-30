@@ -44,63 +44,31 @@ struct HttpClientState {
 
 std::array<HttpClientState, kHttpClientSlots> gClients {};
 
-constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charset='utf-8'>
-<meta name='viewport' content='width=device-width,initial-scale=1'><title>OAG ABO GEMI</title><style>
-*{box-sizing:border-box}body{margin:0;background:#080b12;color:#eef2ff;font-family:Arial,sans-serif}
-header{padding:24px 18px;background:#111827;border-bottom:1px solid #283247}h1{margin:0;font-size:30px}
-small,.muted{color:#94a3b8}.wrap{max-width:1040px;margin:auto;padding:18px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:14px}
-.card{background:#111827;border:1px solid #263247;border-radius:16px;padding:18px}
-.tag{display:inline-block;padding:5px 9px;border-radius:99px;background:#1f2937;margin:3px}
-h2{font-size:18px;margin:0 0 12px}.ok{color:#86efac}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-label{display:block;margin:10px 0 5px;font-size:13px;color:#cbd5e1}
-input,select{width:100%;padding:10px;border-radius:9px;border:1px solid #334155;background:#0f172a;color:#fff}
-.check{display:flex;gap:8px;align-items:center;margin-top:12px}.check input{width:auto}
-button{padding:11px 14px;border:0;border-radius:9px;font-weight:800;cursor:pointer;margin-top:12px}
-.primary{background:#e5e7eb;color:#111827}.play{width:100%;background:#86efac;color:#052e16;font-size:16px}
-.status{min-height:20px;margin-top:10px;font-size:13px}.future{opacity:.7}
-</style></head><body><header><h1>OAG ABO GEMI</h1><small>Direct Live Configuration</small></header>
-<main class='wrap'><div class='grid'>
-<section class='card'><h2>Controllers</h2>
-<label>Controller</label><select id='controllerIndex'></select>
-<label class='check'><input id='calEnabled' type='checkbox'> Enable anti-drift calibration</label>
-<div class='row'><div><label>Left Stick Deadzone</label><input id='leftDz' type='number' min='0' max='32767'></div>
-<div><label>Right Stick Deadzone</label><input id='rightDz' type='number' min='0' max='32767'></div></div>
-<button class='primary' id='saveController'>Save Controller</button><div class='status' id='controllerStatus'></div>
-<p class='muted'>Center capture/live monitor comes in the next calibration stage.</p></section>
+constexpr char kDashboardHtml[] = R"HTML(<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>OAG ABO GEMI</title><style>
+*{box-sizing:border-box}body{margin:0;background:#080b12;color:#eef2ff;font:15px Arial}header{padding:20px;background:#111827}h1{margin:0}.w{max-width:760px;margin:auto;padding:14px}.c{background:#111827;border:1px solid #263247;border-radius:14px;padding:15px;margin-bottom:12px}h2{margin:0 0 10px;font-size:18px}label{display:block;margin:9px 0 4px;color:#cbd5e1}input,select,button{width:100%;padding:11px;border-radius:9px;border:1px solid #334155;background:#0f172a;color:white}.r{display:grid;grid-template-columns:1fr 1fr;gap:9px}.ck{display:flex;gap:8px;align-items:center}.ck input{width:auto}button{margin-top:12px;background:#e5e7eb;color:#111827;font-weight:bold}.play{background:#86efac;color:#052e16}.m{color:#94a3b8;font-size:13px}.s{min-height:18px;margin-top:8px;color:#86efac}</style>
+<header><h1>OAG ABO GEMI</h1><span class=m>Direct Live Configuration</span></header><main class=w>
+<section class=c><h2>Controllers</h2><label>Controller</label><select id=ci></select><label class=ck><input id=ce type=checkbox>Enable anti-drift calibration</label><div class=r><div><label>Left Deadzone</label><input id=ld type=number min=0 max=32767></div><div><label>Right Deadzone</label><input id=rd type=number min=0 max=32767></div></div><button id=sc>Save Controller</button><div class=s id=cs></div></section>
+<section class=c><h2>Profiles</h2><div class=r><div><label>Active Game</label><select id=ag></select></div><div><label>Active Weapon</label><select id=aw></select></div></div><label class=ck><input id=ge type=checkbox>Enable selected game</label><button id=sp>Save Profile</button><div class=s id=ps></div></section>
+<section class=c><h2>Coming Next</h2><p class=m>Games · Weapons · Recoil · Combos · Input Bindings · Live Calibration</p></section>
+<section class=c><h2>System</h2><p id=gn class=m>Loading...</p><button class=play id=go>SAVE & PLAY</button><div class=s id=os></div><p class=m>Save to A/B Flash and restart into PC/Gaming mode.</p></section></main><script>
+const q=x=>document.getElementById(x);let c;
+function fs(e,n,t){for(let i=1;i<=n;i++){let o=document.createElement('option');o.value=i;o.textContent='OAG ABO GEMI '+t+' '+i;e.appendChild(o)}}
+fs(q('ci'),8,'CONTROLLER');fs(q('ag'),8,'GAME');fs(q('aw'),24,'WEAPON');
+async function load(){let r=await fetch('/api/config',{cache:'no-store'});c=await r.json();q('gn').textContent='Flash generation: '+c.generation;q('ag').value=c.activeGame+1;q('aw').value=c.activeWeapon+1;dc();dg()}
+function dc(){if(!c)return;let x=c.controllers[+q('ci').value-1];q('ce').checked=x.enabled;q('ld').value=x.leftDeadzone;q('rd').value=x.rightDeadzone}
+function dg(){if(c)q('ge').checked=c.games[+q('ag').value-1].enabled}
+async function post(p,d,s){q(s).textContent='Saving...';let r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(d)});let t=await r.text();q(s).textContent=r.ok?'Saved':t;if(r.ok)await load();return r.ok}
+q('ci').onchange=dc;q('ag').onchange=dg;
+q('sc').onclick=()=>post('/api/controller',{slot:q('ci').value,enabled:q('ce').checked?1:0,left_deadzone:q('ld').value,right_deadzone:q('rd').value},'cs');
+q('sp').onclick=()=>post('/api/profile',{game:q('ag').value,weapon:q('aw').value,enabled:q('ge').checked?1:0},'ps');
+q('go').onclick=async()=>{if(await post('/api/save-play',{},'os'))q('os').textContent='Saved. Restarting...'};
+load().catch(()=>q('gn').textContent='Config load failed');
+</script>)HTML";
 
-<section class='card'><h2>Profiles</h2>
-<div class='row'><div><label>Active Game</label><select id='activeGame'></select></div>
-<div><label>Active Weapon</label><select id='activeWeapon'></select></div></div>
-<label class='check'><input id='gameEnabled' type='checkbox'> Enable selected game profile</label>
-<button class='primary' id='saveProfile'>Save Profile</button><div class='status' id='profileStatus'></div>
-<p class='muted'>Game names stay natural. Numbered slots use OAG branding.</p></section>
-
-<section class='card future'><h2>Games</h2><p class='muted'>Game naming and per-game settings are reserved for the next stage.</p></section>
-<section class='card future'><h2>Weapons</h2><div class='tag'>OAG ABO GEMI WEAPON 1</div><p class='muted'>24 weapon slots are already reserved per game.</p></section>
-<section class='card future'><h2>Recoil</h2><p class='muted'>Per-weapon horizontal, vertical and timing controls are reserved.</p></section>
-<section class='card future'><h2>Combos</h2><div class='tag'>OAG ABO GEMI COMBO 1</div><p class='muted'>Universal action bindings and timed macros are reserved.</p></section>
-<section class='card future'><h2>Input Bindings</h2><p class='muted'>Keyboard, mouse and controller action triggers are reserved.</p></section>
-
-<section class='card'><h2>System</h2><p class='ok'>A/B persistent configuration active</p>
-<p class='muted' id='generation'>Loading configuration...</p>
-<button class='play' id='savePlay'>SAVE & PLAY</button><div class='status' id='playStatus'></div>
-<p class='muted'>Saves the current configuration, exits Config Mode and restarts into PC/Gaming mode.</p></section>
-</div></main><script>
-const $=id=>document.getElementById(id);let cfg=null;
-function fillSelect(el,count,label){el.innerHTML='';for(let i=1;i<=count;i++){const o=document.createElement('option');o.value=i;o.textContent='OAG ABO GEMI '+label+' '+i;el.appendChild(o);}}
-fillSelect($('controllerIndex'),8,'CONTROLLER');fillSelect($('activeGame'),8,'GAME');fillSelect($('activeWeapon'),24,'WEAPON');
-async function load(){const r=await fetch('/api/config',{cache:'no-store'});cfg=await r.json();$('generation').textContent='Flash generation: '+cfg.generation;
-$('activeGame').value=cfg.activeGame+1;$('activeWeapon').value=cfg.activeWeapon+1;showController();showGame();}
-function showController(){if(!cfg)return;const i=+$('controllerIndex').value-1,c=cfg.controllers[i];$('calEnabled').checked=c.enabled;$('leftDz').value=c.leftDeadzone;$('rightDz').value=c.rightDeadzone;}
-function showGame(){if(!cfg)return;const i=+$('activeGame').value-1;$('gameEnabled').checked=cfg.games[i].enabled;}
-async function post(path,data,status){$(status).textContent='Saving...';const body=new URLSearchParams(data);const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});const t=await r.text();if(!r.ok){$(status).textContent=t;return false;}$(status).textContent='Saved';await load();return true;}
-$('controllerIndex').onchange=showController;$('activeGame').onchange=showGame;
-$('saveController').onclick=()=>post('/api/controller',{slot:$('controllerIndex').value,enabled:$('calEnabled').checked?'1':'0',left_deadzone:$('leftDz').value,right_deadzone:$('rightDz').value},'controllerStatus');
-$('saveProfile').onclick=()=>post('/api/profile',{game:$('activeGame').value,weapon:$('activeWeapon').value,enabled:$('gameEnabled').checked?'1':'0'},'profileStatus');
-$('savePlay').onclick=async()=>{const ok=await post('/api/save-play',{},'playStatus');if(ok)$('playStatus').textContent='Saved. Restarting into Gaming Mode...';};
-load().catch(()=>{$('generation').textContent='Could not load configuration';});
-</script></body></html>)HTML";
+static_assert(
+    sizeof(kDashboardHtml) + 640u < TCP_SND_BUF,
+    "Dashboard plus HTTP headers must fit in TCP_SND_BUF"
+);
 
 void sendResponse(
     tcp_pcb* client,
