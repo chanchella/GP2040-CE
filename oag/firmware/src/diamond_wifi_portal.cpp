@@ -78,7 +78,8 @@ opts($('gs'),20,'ADD OAG GAME');opts($('cg'),20,'OAG COMBO GAME');opts($('ws'),2
 const enc=d=>new URLSearchParams(d);async function post(p,d){let r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:enc(d)}),t=await r.text();if(!r.ok)throw Error(t);return t}
 async function json(p){let r=await fetch(p,{cache:'no-store'});if(!r.ok)throw Error(await r.text());return r.json()}
 function names(e,a,p){e.innerHTML='';a.forEach((n,i)=>{let o=document.createElement('option');o.value=i+1;o.textContent=n||p+' '+(i+1);e.appendChild(o)})}
-async function load(){cfg=await json('/api/config');$('gen').textContent='Flash generation: '+cfg.generation;games=(await json('/api/games')).names;names($('gs'),games,'ADD OAG GAME');names($('ag'),games,'OAG GAME');names($('cg'),games,'OAG COMBO GAME');$('ag').value=cfg.activeGame+1;$('cg').value=cfg.activeGame+1;await loadWeapons($('ag').value);$('aw').value=cfg.activeWeapon>=0?cfg.activeWeapon+1:'';await loadCombos($('cg').value);showGameName();showComboName();updateAddButtons()}
+function comboGameNames(e,a){e.innerHTML='';a.forEach((n,i)=>{let o=document.createElement('option');o.value=i+1;o.textContent='OAG COMBO GAME '+(i+1)+(n?' — '+n:'');e.appendChild(o)})}
+async function load(){cfg=await json('/api/config');$('gen').textContent='Flash generation: '+cfg.generation;games=(await json('/api/games')).names;names($('gs'),games,'ADD OAG GAME');names($('ag'),games,'OAG GAME');comboGameNames($('cg'),games);$('ag').value=cfg.activeGame+1;$('cg').value=cfg.activeGame+1;await loadWeapons($('ag').value);$('aw').value=cfg.activeWeapon>=0?cfg.activeWeapon+1:'';await loadCombos($('cg').value);showGameName();showComboName();updateAddButtons()}
 async function loadCombos(g){combos=(await json('/api/combos?game='+g)).names;names($('cs'),combos,'ADD OAG COMBO');showComboName();updateAddButtons()}
 async function loadWeapons(g){weapons=(await json('/api/weapons?game='+g)).names;names($('ws'),weapons,'ADD OAG WEAPON');names($('aw'),weapons,'OAG WEAPON');showWeaponName();updateAddButtons();if(typeof loadWeaponSettings==='function')await loadWeaponSettings()}
 function recoilLive(){let h=$('rh'),v=$('rv'),hv=$('rhv'),vv=$('rvv');if(!h||!v||!hv||!vv)return;let draw=()=>{let x=Number(h.value)/100,y=Number(v.value)/100;hv.textContent=(x>=0?'+':'')+x.toFixed(2);vv.textContent=(y>=0?'+':'')+y.toFixed(2)};h.addEventListener('input',draw);v.addEventListener('input',draw);h.addEventListener('change',draw);v.addEventListener('change',draw);draw()}recoilLive();
@@ -330,7 +331,7 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
 
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/config")){
         char j[256]{};
-        std::snprintf(j,sizeof(j),"{\"generation\":%lu,\"activeGame\":%u,\"activeWeapon\":%u}",
+        std::snprintf(j,sizeof(j),"{\"generation\":%lu,\"activeGame\":%u,\"activeWeapon\":%d}",
             static_cast<unsigned long>(store_->generation()),runtime.activeGame,
             runtime.activeWeapon==oag::kDiamondNoActiveWeapon?-1:static_cast<int>(runtime.activeWeapon));
         sendResponse(client,"200 OK","application/json",j);return;
