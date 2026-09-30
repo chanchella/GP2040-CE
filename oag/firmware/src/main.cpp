@@ -1119,7 +1119,7 @@ private:
     // downward every 40 ms while LMB is held. This avoids the extreme
     // controller-stick pull from V1 and keeps K/M exposed as real HID K/M.
     static constexpr std::uint64_t kNativeAntiRecoilTickUs = 40000;
-    static constexpr std::int32_t kNativeAntiRecoilDy = 1;
+    static constexpr std::int32_t kNativeAntiRecoilDy = 2;
     static constexpr std::int32_t kNativeAntiRecoilHorizontalPermille = 80;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
