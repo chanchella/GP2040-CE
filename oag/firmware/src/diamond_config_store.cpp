@@ -12,11 +12,19 @@
 
 namespace {
 
-constexpr std::uint32_t kSlotSize = 4u * FLASH_SECTOR_SIZE; // 16 KiB
+constexpr std::uint32_t kSlotSize = 6u * FLASH_SECTOR_SIZE; // 24 KiB V5+
 constexpr std::uint32_t kSlotBOffset =
     PICO_FLASH_BANK_STORAGE_OFFSET - kSlotSize;
 constexpr std::uint32_t kSlotAOffset =
     PICO_FLASH_BANK_STORAGE_OFFSET - (2u * kSlotSize);
+
+// V2-V4 used 16 KiB slots. Keep their exact historical addresses as
+// read-only migration sources after V5 expands the record capacity.
+constexpr std::uint32_t kLegacyWideSlotSize = 4u * FLASH_SECTOR_SIZE;
+constexpr std::uint32_t kLegacyWideSlotBOffset =
+    PICO_FLASH_BANK_STORAGE_OFFSET - kLegacyWideSlotSize;
+constexpr std::uint32_t kLegacyWideSlotAOffset =
+    PICO_FLASH_BANK_STORAGE_OFFSET - (2u * kLegacyWideSlotSize);
 
 // Previous V1 records occupied the two sectors immediately before BTstack.
 // They are read-only migration sources until the first V2 saves complete.
@@ -227,8 +235,8 @@ bool validLegacyV4(const LegacyConfigRecordV4& record) {
 }
 
 const LegacyConfigRecordV4* selectLegacyV4() {
-    const auto* a = legacyV4RecordAt(kSlotAOffset);
-    const auto* b = legacyV4RecordAt(kSlotBOffset);
+    const auto* a = legacyV4RecordAt(kLegacyWideSlotAOffset);
+    const auto* b = legacyV4RecordAt(kLegacyWideSlotBOffset);
     const bool va = validLegacyV4(*a);
     const bool vb = validLegacyV4(*b);
     if (!va) return vb ? b : nullptr;
@@ -256,8 +264,8 @@ bool validLegacyV3(const LegacyConfigRecordV3& record) {
 }
 
 const LegacyConfigRecordV3* selectLegacyV3() {
-    const auto* a = legacyV3RecordAt(kSlotAOffset);
-    const auto* b = legacyV3RecordAt(kSlotBOffset);
+    const auto* a = legacyV3RecordAt(kLegacyWideSlotAOffset);
+    const auto* b = legacyV3RecordAt(kLegacyWideSlotBOffset);
     const bool va = validLegacyV3(*a);
     const bool vb = validLegacyV3(*b);
     if (!va) return vb ? b : nullptr;
@@ -289,8 +297,8 @@ bool validLegacyV2(const LegacyConfigRecordV2& record) {
 }
 
 const LegacyConfigRecordV2* selectLegacyV2() {
-    const auto* a = legacyV2RecordAt(kSlotAOffset);
-    const auto* b = legacyV2RecordAt(kSlotBOffset);
+    const auto* a = legacyV2RecordAt(kLegacyWideSlotAOffset);
+    const auto* b = legacyV2RecordAt(kLegacyWideSlotBOffset);
     const bool va = validLegacyV2(*a);
     const bool vb = validLegacyV2(*b);
     if (!va) return vb ? b : nullptr;
@@ -395,7 +403,7 @@ bool DiamondConfigStore::load() {
         }
 
         generation_ = legacyV4->generation;
-        activeSlot_ = legacyV4 == legacyV4RecordAt(kSlotAOffset) ? 0u : 1u;
+        activeSlot_ = legacyV4 == legacyV4RecordAt(kLegacyWideSlotAOffset) ? 0u : 1u;
         loadedFromFlash_ = true;
         return true;
     }
@@ -411,7 +419,7 @@ bool DiamondConfigStore::load() {
         config_.names.combos = legacyV3->payload.names.combos;
         config_.names.comboTiming = legacyV3->payload.names.comboTiming;
         generation_ = legacyV3->generation;
-        activeSlot_ = legacyV3 == legacyV3RecordAt(kSlotAOffset) ? 0u : 1u;
+        activeSlot_ = legacyV3 == legacyV3RecordAt(kLegacyWideSlotAOffset) ? 0u : 1u;
         loadedFromFlash_ = true;
         return true;
     }
@@ -426,7 +434,7 @@ bool DiamondConfigStore::load() {
         config_.names.weapons = legacyV2->payload.names.weapons;
         config_.names.combos = legacyV2->payload.names.combos;
         generation_ = legacyV2->generation;
-        activeSlot_ = legacyV2 == legacyV2RecordAt(kSlotAOffset) ? 0u : 1u;
+        activeSlot_ = legacyV2 == legacyV2RecordAt(kLegacyWideSlotAOffset) ? 0u : 1u;
         loadedFromFlash_ = true;
         return true;
     }
