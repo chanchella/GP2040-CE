@@ -52,6 +52,13 @@ private:
         std::uint8_t heldModifiers = 0;
         std::array<std::uint8_t, 6> heldKeys {};
         std::uint16_t heldMouseButtons = 0;
+
+        // Subset of held outputs whose lifetime is "UNTIL COMBO END".
+        // They are released automatically when the visible sequence finishes.
+        std::uint32_t endHeldControls = 0;
+        std::uint8_t endHeldModifiers = 0;
+        std::array<std::uint8_t, 6> endHeldKeys {};
+        std::uint16_t endHeldMouseButtons = 0;
     };
 
     static bool controlActive(
