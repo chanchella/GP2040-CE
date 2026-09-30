@@ -45,14 +45,18 @@ std::array<HttpClientState, kHttpClientSlots> gClients {};
 
 constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>OAG ABO GEMI</title><link rel=stylesheet href=/app.css></head><body>
 <header><h1>OAG ABO GEMI</h1><span>Controller Lab • Smart Anti-Drift • Profiles</span></header><main>
-<section class=card><h2>Games & Weapons</h2><label>OAG Game</label><select id=gs></select><input id=gn maxlength=32 placeholder="Type your game name"><button id=sg>ADD OAG GAME 1</button>
-<label>OAG Weapon for selected game</label><select id=ws></select><input id=wn maxlength=32 placeholder="Type your weapon name"><button id=sw>ADD OAG WEAPON 1</button><div id=nmsg class=msg></div></section>
+<section class=card><h2>OAG Games & Weapons</h2><label>OAG Game</label><select id=gs></select><input id=gn maxlength=32 placeholder="Type your OAG game name"><button id=sg>ADD OAG GAME 1</button>
+<label>OAG Weapon for selected game</label><select id=ws></select><input id=wn maxlength=32 placeholder="Type your OAG weapon name"><button id=sw>ADD OAG WEAPON 1</button>
+<h3>OAG WEAPON RECOIL</h3><div class=two><div><label>Horizontal</label><input id=rh type=number min=-100 max=100 step=1 value=0></div><div><label>Vertical</label><input id=rv type=number min=-100 max=100 step=1 value=0></div></div>
+<label>Recoil Tick (ms)</label><input id=rt type=number min=1 max=1000 step=1 value=40><button id=sr>SAVE OAG WEAPON RECOIL</button><div id=nmsg class=msg></div></section>
 
-<section class=card><h2>Combos</h2><label>OAG Combo</label><select id=cs></select><input id=cn maxlength=32 placeholder="Type your combo name"><button id=sc>ADD OAG COMBO 1</button></section>
+<section class=card><h2>OAG Combos</h2><label>OAG Combo</label><select id=cs></select><input id=cn maxlength=32 placeholder="Type your OAG combo name"><button id=sc>ADD OAG COMBO 1</button>
+<h3>OAG COMBO TIMING</h3><div class=two><div><label>Press / Hold (ms)</label><input id=cp type=number min=1 max=60000 step=1 value=50></div><div><label>Delay After (ms)</label><input id=cd type=number min=0 max=60000 step=1 value=50></div></div>
+<label>Repeat Count</label><input id=cr type=number min=1 max=1000 step=1 value=1><button id=sct>SAVE OAG COMBO TIMING</button><div id=cmsg class=msg></div></section>
 
 <section class=card><h2>Active Profile</h2><div class=two><div><label>Game</label><select id=ag></select></div><div><label>Weapon</label><select id=aw></select></div></div><button id=sp>SAVE ACTIVE PROFILE</button></section>
 <section class=card><h2>System</h2><p id=gen class=hint>Loading...</p><button id=play class=play>SAVE & PLAY</button><div id=pmsg class=msg></div></section>
-</main><script src=/app.js></script><script src=/cal.js></script><script src=/names.js></script></body></html>)HTML";
+</main><script src=/app.js></script><script src=/gwc.js></script><script src=/names.js></script></body></html>)HTML";
 
 constexpr char kAppCss[] = R"CSS(*{box-sizing:border-box}body{margin:0;background:#070b12;color:#eef2ff;font:15px Arial,sans-serif}header{padding:20px;background:#111827;border-bottom:1px solid #263247}h1{margin:0;font-size:30px}header span,.hint{color:#94a3b8}main{max-width:900px;margin:auto;padding:14px}.card{background:#111827;border:1px solid #263247;border-radius:15px;padding:16px;margin-bottom:13px}h2{margin:0 0 12px}h3{text-align:center;font-size:13px;color:#cbd5e1;letter-spacing:.5px}label{display:block;margin:10px 0 5px;color:#cbd5e1}input,select,button{width:100%;padding:11px;border-radius:9px;border:1px solid #334155;background:#0f172a;color:white}input[type=range]{padding:0;accent-color:#86efac}button{margin-top:10px;background:#e5e7eb;color:#111827;font-weight:800}.accent,.play{background:#86efac;color:#052e16}.ghost{background:#1f2937;color:#e5e7eb}.two,.pads{display:grid;grid-template-columns:1fr 1fr;gap:14px}.gamepad{padding:12px;border:1px solid #29364b;border-radius:24px;background:#0b1220}.pad{width:min(36vw,230px);height:min(36vw,230px);margin:auto;border:2px solid #475569;border-radius:50%;position:relative;background:radial-gradient(circle,#172033 0,#0b1220 70%);overflow:hidden}.pad:before,.pad:after{content:"";position:absolute;background:#334155;z-index:0}.pad:before{width:1px;height:100%;left:50%}.pad:after{height:1px;width:100%;top:50%}.pad i{position:absolute;border-radius:50%;transform:translate(-50%,-50%);z-index:4}.pad .raw{width:18px;height:18px;background:#86efac;box-shadow:0 0 12px #86efac}.pad .filtered{width:10px;height:10px;background:#60a5fa;box-shadow:0 0 8px #60a5fa}.center{position:absolute;width:12px;height:12px;border:2px solid #f8fafc;border-radius:50%;transform:translate(-50%,-50%);z-index:3}.dzring{position:absolute;border:2px dashed #fbbf24;border-radius:50%;transform:translate(-50%,-50%);z-index:2;pointer-events:none}.mono{font:12px monospace;color:#94a3b8;text-align:center;margin:7px}.metric{text-align:center}.metric b{font-size:18px;color:#86efac}.metric small{display:block;color:#64748b}.legend{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin:12px 0;color:#94a3b8;font-size:11px}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}.rawkey{background:#86efac}.filterkey{background:#60a5fa}.centerkey{border:2px solid #f8fafc}.shoulders,.face,.systembuttons{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin:8px}.shoulders{justify-content:space-between}.shoulders span,.face span,.systembuttons span{min-width:38px;text-align:center;padding:7px 9px;border-radius:9px;border:1px solid #334155;background:#111827;color:#64748b;font-weight:800}.on{background:#86efac!important;color:#052e16!important;border-color:#86efac!important;box-shadow:0 0 10px #86ef9666}.trigs{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:12px}.trigs em{display:block;height:7px;background:#1e293b;border-radius:5px;overflow:hidden}.trigs em i{display:block;height:100%;width:0;background:#86efac}.wizard{margin-top:15px;padding-top:8px;border-top:1px solid #263247}.status,.msg{margin:9px 0;color:#86efac}.bad{color:#fca5a5}@media(max-width:560px){.card{padding:12px}.pad{width:40vw;height:40vw}.two{grid-template-columns:1fr 1fr}.trigs{margin:10px 0}})CSS";
 
@@ -63,26 +67,33 @@ const enc=d=>new URLSearchParams(d);async function post(p,d){let r=await fetch(p
 async function json(p){let r=await fetch(p,{cache:'no-store'});if(!r.ok)throw Error(await r.text());return r.json()}
 function names(e,a,p){e.innerHTML='';a.forEach((n,i)=>{let o=document.createElement('option');o.value=i+1;o.textContent=n||p+' '+(i+1);e.appendChild(o)})}
 async function load(){cfg=await json('/api/config');$('gen').textContent='Flash generation: '+cfg.generation;games=(await json('/api/games')).names;combos=(await json('/api/combos')).names;names($('gs'),games,'ADD OAG GAME');names($('ag'),games,'OAG GAME');names($('cs'),combos,'ADD OAG COMBO');$('ag').value=cfg.activeGame+1;await loadWeapons($('ag').value);$('aw').value=cfg.activeWeapon+1;showGameName();showComboName();updateAddButtons()}
-async function loadWeapons(g){weapons=(await json('/api/weapons?game='+g)).names;names($('ws'),weapons,'ADD OAG WEAPON');names($('aw'),weapons,'OAG WEAPON');showWeaponName();updateAddButtons()}
+async function loadWeapons(g){weapons=(await json('/api/weapons?game='+g)).names;names($('ws'),weapons,'ADD OAG WEAPON');names($('aw'),weapons,'OAG WEAPON');showWeaponName();updateAddButtons();if(typeof loadWeaponSettings==='function')await loadWeaponSettings()}
 )JS";
 
 
 
+constexpr char kGwcJs[] = R"JS(async function loadWeaponSettings(){try{let g=$('gs').value,w=$('ws').value,d=await json('/api/recoil?game='+g+'&weapon='+w);$('rh').value=d.horizontal;$('rv').value=d.vertical;$('rt').value=d.tickMs}catch(e){$('nmsg').textContent=e.message}}
+async function loadComboTiming(){try{let d=await json('/api/combo?slot='+$('cs').value);$('cp').value=d.pressMs;$('cd').value=d.delayAfterMs;$('cr').value=d.repeatCount}catch(e){$('cmsg').textContent=e.message}}
+$('sr').onclick=async()=>{try{await post('/api/recoil',{game:$('gs').value,weapon:$('ws').value,horizontal:$('rh').value,vertical:$('rv').value,tickMs:$('rt').value});$('nmsg').textContent='OAG Weapon recoil saved to Flash';await loadWeaponSettings()}catch(e){$('nmsg').textContent=e.message}};
+$('sct').onclick=async()=>{try{await post('/api/combo',{slot:$('cs').value,pressMs:$('cp').value,delayMs:$('cd').value,repeat:$('cr').value});$('cmsg').textContent='OAG Combo timing saved to Flash';await loadComboTiming()}catch(e){$('cmsg').textContent=e.message}};
+)JS";
+
 constexpr char kNamesJs[] = R"JS(function showGameName(){$('gn').value=games[+$('gs').value-1]||'';updateAddButtons()}function showWeaponName(){$('wn').value=weapons[+$('ws').value-1]||'';updateAddButtons()}function showComboName(){$('cn').value=combos[+$('cs').value-1]||'';updateAddButtons()}
 function updateAddButtons(){let g=+$('gs').value||1,w=+$('ws').value||1,c=+$('cs').value||1;$('sg').textContent=games[g-1]?'UPDATE '+games[g-1]:'ADD OAG GAME '+g;$('sw').textContent=weapons[w-1]?'UPDATE '+weapons[w-1]:'ADD OAG WEAPON '+w;$('sc').textContent=combos[c-1]?'UPDATE '+combos[c-1]:'ADD OAG COMBO '+c}
-$('gs').onchange=async()=>{showGameName();await loadWeapons($('gs').value)};$('ws').onchange=showWeaponName;$('cs').onchange=showComboName;$('ag').onchange=async()=>{await loadWeapons($('ag').value)};
+$('gs').onchange=async()=>{showGameName();await loadWeapons($('gs').value)};$('ws').onchange=()=>{showWeaponName();loadWeaponSettings()};$('cs').onchange=()=>{showComboName();loadComboTiming()};$('ag').onchange=async()=>{await loadWeapons($('ag').value)};
 $('sg').onclick=async()=>{try{let slot=$('gs').value;await post('/api/name',{type:'game',slot,name:$('gn').value});games=(await json('/api/games')).names;names($('gs'),games,'ADD OAG GAME');names($('ag'),games,'OAG GAME');$('gs').value=slot;showGameName();$('nmsg').textContent='OAG Game saved'}catch(e){$('nmsg').textContent=e.message}};
 $('sw').onclick=async()=>{try{let slot=$('ws').value;await post('/api/name',{type:'weapon',game:$('gs').value,slot,name:$('wn').value});await loadWeapons($('gs').value);$('ws').value=slot;showWeaponName();$('nmsg').textContent='OAG Weapon saved'}catch(e){$('nmsg').textContent=e.message}};
 $('sc').onclick=async()=>{try{let slot=$('cs').value;await post('/api/name',{type:'combo',slot,name:$('cn').value});combos=(await json('/api/combos')).names;names($('cs'),combos,'ADD OAG COMBO');$('cs').value=slot;showComboName();$('nmsg').textContent='OAG Combo saved'}catch(e){$('nmsg').textContent=e.message}};
 $('sp').onclick=async()=>{try{await post('/api/profile',{game:$('ag').value,weapon:$('aw').value,enabled:1});$('nmsg').textContent='Active profile saved';await load()}catch(e){$('nmsg').textContent=e.message}};
 $('play').onclick=async()=>{try{await post('/api/save-play',{});$('pmsg').textContent='Saved. Restarting into Gaming Mode...'}catch(e){$('pmsg').textContent=e.message}};
-load().then(live).catch(e=>$('gen').textContent=e.message);
+load().then(()=>loadComboTiming()).catch(e=>$('gen').textContent=e.message);
 )JS";
 
 static_assert(sizeof(kDashboardHtml) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kAppCss) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kAppJs) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kNamesJs) + 640u < TCP_SND_BUF);
+static_assert(sizeof(kGwcJs) + 640u < TCP_SND_BUF);
 
 void sendResponse(tcp_pcb* client,const char* status,const char* contentType,const char* body) {
     if (!client || !body) return;
@@ -197,12 +208,33 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kAppCss);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kAppJs);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/names.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kNamesJs);return;}
+    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/gwc.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kGwcJs);return;}
 
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/games")){sendNames(client,pc.names.games);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/combos")){sendNames(client,pc.names.combos);return;}
     if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/weapons?game=",18)){
         std::uint32_t g=static_cast<std::uint32_t>(std::strtoul(path+18,nullptr,10));if(g<1||g>oag::kDiamondGameSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid game");return;}sendNames(client,pc.names.weapons[g-1]);return;
     }
+    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/recoil?game=",17)){
+        const char* wp=std::strstr(path,"&weapon=");
+        if(!wp){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG weapon");return;}
+        const auto g=static_cast<std::uint32_t>(std::strtoul(path+17,nullptr,10));
+        const auto w=static_cast<std::uint32_t>(std::strtoul(wp+8,nullptr,10));
+        if(g<1||g>oag::kDiamondGameSlots||w<1||w>oag::kDiamondWeaponSlotsPerGame){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG weapon");return;}
+        const auto& r=runtime.games[g-1].weapons[w-1];char j[256]{};
+        std::snprintf(j,sizeof(j),"{\"horizontal\":%ld,\"vertical\":%ld,\"tickMs\":%u,\"enabled\":%s}",
+            static_cast<long>(r.horizontalHalfPermille/2),static_cast<long>(r.verticalHalfPermille/2),r.tickMs,r.enabled?"true":"false");
+        sendResponse(client,"200 OK","application/json",j);return;
+    }
+    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combo?slot=",16)){
+        const auto slot=static_cast<std::uint32_t>(std::strtoul(path+16,nullptr,10));
+        if(slot<1||slot>oag::kDiamondComboSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
+        const auto& t=pc.names.comboTiming[slot-1];char j[256]{};
+        std::snprintf(j,sizeof(j),"{\"pressMs\":%u,\"delayAfterMs\":%u,\"repeatCount\":%u,\"enabled\":%s}",
+            t.pressMs,t.delayAfterMs,t.repeatCount,t.enabled?"true":"false");
+        sendResponse(client,"200 OK","application/json",j);return;
+    }
+
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/config")){
         char j[256]{};
         std::snprintf(j,sizeof(j),"{\"generation\":%lu,\"activeGame\":%u,\"activeWeapon\":%u}",
@@ -219,6 +251,29 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
         else if(!std::strcmp(type,"weapon")&&parseUnsigned(body,"game",1,oag::kDiamondGameSlots,game)&&slot<=oag::kDiamondWeaponSlotsPerGame)target=pc.names.weapons[game-1][slot-1].data();
         if(!target){sendResponse(client,"400 Bad Request","text/plain","Invalid name target");return;}std::memset(target,0,oag::kDiamondDisplayNameBytes);std::memcpy(target,name,std::strlen(name));
         if(!store_->save()){sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}sendResponse(client,"200 OK","text/plain","Name saved");return;
+    }
+
+    if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/recoil")){
+        std::uint32_t g=0,w=0,tick=0;std::int32_t horizontal=0,vertical=0;
+        if(!parseUnsigned(body,"game",1,oag::kDiamondGameSlots,g)||!parseUnsigned(body,"weapon",1,oag::kDiamondWeaponSlotsPerGame,w)||
+           !parseSigned(body,"horizontal",-100,100,horizontal)||!parseSigned(body,"vertical",-100,100,vertical)||!parseUnsigned(body,"tickMs",1,1000,tick)){
+            sendResponse(client,"400 Bad Request","text/plain","Invalid OAG recoil");return;
+        }
+        auto old=runtime.games[g-1].weapons[w-1];auto& r=runtime.games[g-1].weapons[w-1];
+        r.enabled=true;r.horizontalHalfPermille=horizontal*2;r.verticalHalfPermille=vertical*2;r.tickMs=static_cast<std::uint16_t>(tick);
+        if(!store_->save()){r=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}
+        sendResponse(client,"200 OK","text/plain","OAG recoil saved");return;
+    }
+    if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/combo")){
+        std::uint32_t slot=0,press=0,delay=0,repeat=0;
+        if(!parseUnsigned(body,"slot",1,oag::kDiamondComboSlots,slot)||!parseUnsigned(body,"pressMs",1,60000,press)||
+           !parseUnsigned(body,"delayMs",0,60000,delay)||!parseUnsigned(body,"repeat",1,1000,repeat)){
+            sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo timing");return;
+        }
+        auto old=pc.names.comboTiming[slot-1];auto& t=pc.names.comboTiming[slot-1];
+        t.enabled=true;t.pressMs=static_cast<std::uint16_t>(press);t.delayAfterMs=static_cast<std::uint16_t>(delay);t.repeatCount=static_cast<std::uint16_t>(repeat);
+        if(!store_->save()){t=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}
+        sendResponse(client,"200 OK","text/plain","OAG combo timing saved");return;
     }
 
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/profile")){
