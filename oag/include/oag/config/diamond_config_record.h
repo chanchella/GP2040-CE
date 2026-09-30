@@ -9,7 +9,7 @@ namespace oag {
 
 struct DiamondConfigRecord {
     static constexpr std::uint32_t kMagic = 0x4F414743u; // OAGC
-    static constexpr std::uint16_t kRecordVersion = 1;
+    static constexpr std::uint16_t kRecordVersion = 2;
 
     std::uint32_t magic = kMagic;
     std::uint16_t recordVersion = kRecordVersion;
@@ -20,8 +20,8 @@ struct DiamondConfigRecord {
 };
 
 static_assert(
-    sizeof(DiamondConfigRecord) <= 4096,
-    "Diamond config record must fit in one flash sector"
+    sizeof(DiamondConfigRecord) <= 16384,
+    "Diamond config record must fit in the 16 KiB Diamond slot"
 );
 
 std::uint32_t diamondConfigCrc32(const void* data, std::size_t size);
