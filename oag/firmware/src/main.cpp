@@ -11,7 +11,6 @@
 #include "tusb.h"
 #include "host/usbh_pvt.h"
 
-#include "oag/config/controller_calibration.h"
 #include "oag/device/device_registry.h"
 #include "oag/device/usb_device_classifier.h"
 #include "oag/feedback/rumble_command.h"
@@ -145,12 +144,6 @@ public:
             return false;
         }
 
-        // Load persisted runtime settings in every output profile. Defaults
-        // preserve Golden behavior when no config has been saved.
-        if (!configStore_.load()) {
-            return false;
-        }
-
         configMode_ =
             oag::firmware::activeOutputProfile() ==
             oag::firmware::OutputProfileId::OagConfig;
@@ -158,7 +151,7 @@ public:
         if (configMode_) {
             // Config mode owns CYW43. USB Host remains available for local
             // inputs/calibration, while Bluetooth and gaming output stay off.
-            if (!wifiPortal_.start(configStore_, states_.data(), states_.size())) {
+            if (!wifiPortal_.start(configStore_)) {
                 return false;
             }
             bluetoothInitNotBeforeUs_ = 0;
@@ -182,16 +175,9 @@ public:
         usbHost_.task();
 
         if (configMode_) {
-            // Config Mode still needs the complete wired INPUT transport:
-            // keep XUSB IN endpoints armed and complete the minimum XGIP
-            // handshake required for controllers to emit reports. Output to
-            // the PC remains disabled by the configMode_ guards below.
-            maintainXinputTransport();
-            serviceXgipInit();
+            // Preserve the Diamond controller/gameplay paths exactly. The
+            // config portal only services its own deferred Save & Play action.
             wifiPortal_.task();
-
-            // Keep the exit hotkey alive in config mode without enabling
-            // Bluetooth or any gaming USB output persona.
             serviceOutputProfileHotkey();
             return;
         }
@@ -1685,31 +1671,7 @@ private:
         }
     }
 
-    oag::LogicalGamepadState mapConfiguredState(
-        oag::LogicalSlotId slot
-    ) const {
-        if (slot >= states_.size()) {
-            return {};
-        }
-
-        const auto& runtime = configStore_.config().runtime;
-        if (slot >= runtime.controllers.size()) {
-            return mapConfiguredState(slot);
-        }
-
-        const oag::UniversalGamepadState calibrated =
-            oag::ControllerCalibrationFilter::apply(
-                states_[slot],
-                runtime.controllers[slot]
-            );
-        return mapping_.process(calibrated);
-    }
-
     void rebuildPcOutputRouting() {
-        if (configMode_) {
-            return;
-        }
-
         std::array<
             std::optional<oag::LogicalSlotId>,
             oag::firmware::MultiProfilePlatformDriver::kOutputSlots
@@ -1868,7 +1830,7 @@ private:
                     internalSlot < states_.size() &&
                     states_[internalSlot].connected
                 ) {
-                    output = mapConfiguredState(internalSlot);
+                    output = mapping_.process(states_[internalSlot]);
                 }
             }
 
@@ -1894,14 +1856,10 @@ private:
             return {};
         }
 
-        return mapConfiguredState(slot);
+        return mapping_.process(states_[slot]);
     }
 
     void sendSlotOutput(oag::LogicalSlotId slot) {
-        if (configMode_) {
-            return;
-        }
-
         if (slot >= states_.size()) {
             return;
         }
@@ -1924,7 +1882,7 @@ private:
             oag::LogicalGamepadState output {};
 
             if (states_[slot].connected) {
-                output = mapConfiguredState(slot);
+                output = mapping_.process(states_[slot]);
             }
 
             platformOutput_.submit(
@@ -1936,10 +1894,6 @@ private:
     }
 
     void sendComposedOutput() {
-        if (configMode_) {
-            return;
-        }
-
         oag::KeyboardState keyboard = combinedKeyboard();
         const oag::MouseState mouse = combinedMouse();
 
