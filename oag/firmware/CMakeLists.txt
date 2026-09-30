@@ -38,6 +38,9 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     src/pc_native_km_output.cpp
     src/usb_descriptors.cpp
     src/bluetooth_host_v2.cpp
+    src/diamond_wifi_portal.cpp
+    src/net/dhcpserver.c
+    src/net/dnsserver.c
     src/bluetooth_hid_parser_v2.cpp
 
     ../src/config/controller_calibration.cpp
@@ -70,7 +73,6 @@ target_include_directories(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE
 target_compile_definitions(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE
     PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64
     PICO_STACK_SIZE=0x1000
-    CYW43_LWIP=0
 )
 
 target_compile_options(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE
@@ -85,7 +87,7 @@ target_link_libraries(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE
     tinyusb_device
     tinyusb_host
     tinyusb_pico_pio_usb
-    pico_cyw43_arch_none
+    pico_cyw43_arch_lwip_threadsafe_background
     pico_btstack_cyw43
     pico_btstack_ble
     pico_btstack_classic
