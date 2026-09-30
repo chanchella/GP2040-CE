@@ -262,6 +262,118 @@ std::size_t contentLength(const char* request) {
     return static_cast<std::size_t>(std::strtoul(header, nullptr, 10));
 }
 
+bool requestCookieEquals(
+    const char* request,
+    const char* name,
+    const char* value
+) {
+    if (request == nullptr || name == nullptr || value == nullptr) {
+        return false;
+    }
+
+    const char* headerEnd = std::strstr(request, "\r\n\r\n");
+    if (headerEnd == nullptr) {
+        return false;
+    }
+
+    char expected[96] {};
+    const int expectedLength = std::snprintf(
+        expected,
+        sizeof(expected),
+        "%s=%s",
+        name,
+        value
+    );
+    if (
+        expectedLength <= 0 ||
+        static_cast<std::size_t>(expectedLength) >= sizeof(expected)
+    ) {
+        return false;
+    }
+
+    const char* line = request;
+    while (line < headerEnd) {
+        const char* lineEnd = std::strstr(line, "\r\n");
+        if (lineEnd == nullptr || lineEnd > headerEnd) {
+            lineEnd = headerEnd;
+        }
+
+        static constexpr char kCookieHeader[] = "Cookie:";
+        if (
+            static_cast<std::size_t>(lineEnd - line) >=
+                sizeof(kCookieHeader) - 1u &&
+            std::strncmp(
+                line,
+                kCookieHeader,
+                sizeof(kCookieHeader) - 1u
+            ) == 0
+        ) {
+            const char* cursor = line + sizeof(kCookieHeader) - 1u;
+            while (cursor < lineEnd) {
+                while (
+                    cursor < lineEnd &&
+                    (*cursor == ' ' || *cursor == ';')
+                ) {
+                    ++cursor;
+                }
+
+                const std::size_t remaining =
+                    static_cast<std::size_t>(lineEnd - cursor);
+                if (
+                    remaining >= static_cast<std::size_t>(expectedLength) &&
+                    std::strncmp(
+                        cursor,
+                        expected,
+                        static_cast<std::size_t>(expectedLength)
+                    ) == 0
+                ) {
+                    const char* after = cursor + expectedLength;
+                    if (
+                        after == lineEnd ||
+                        *after == ';' ||
+                        *after == ' '
+                    ) {
+                        return true;
+                    }
+                }
+
+                const char* separator =
+                    static_cast<const char*>(
+                        std::memchr(
+                            cursor,
+                            ';',
+                            static_cast<std::size_t>(lineEnd - cursor)
+                        )
+                    );
+                if (separator == nullptr) {
+                    break;
+                }
+                cursor = separator + 1;
+            }
+        }
+
+        if (lineEnd == headerEnd) {
+            break;
+        }
+        line = lineEnd + 2;
+    }
+
+    return false;
+}
+
+void randomHex128(char output[33]) {
+    rng_128_t random {};
+    get_rand_128(&random);
+    const auto* bytes =
+        reinterpret_cast<const std::uint8_t*>(&random);
+    static constexpr char hex[] = "0123456789abcdef";
+    for (std::size_t i = 0; i < 16; ++i) {
+        output[i * 2u] = hex[(bytes[i] >> 4u) & 0x0Fu];
+        output[i * 2u + 1u] = hex[bytes[i] & 0x0Fu];
+    }
+    output[32] = '\0';
+}
+
 void releaseClient(HttpClientState* state) {
     if (state == nullptr) {
         return;
@@ -462,44 +574,74 @@ bool DiamondWifiPortal::start(DiamondConfigStore& store) {
 }
 
 bool DiamondWifiPortal::authorized(const char* request) const {
-    if (
-        !sessionActive_ ||
-        request == nullptr ||
-        time_us_64() >= sessionExpiresUs_
-    ) {
+    return
+        sessionActive_ &&
+        request != nullptr &&
+        time_us_64() < sessionExpiresUs_ &&
+        requestCookieEquals(
+            request,
+            "OAGSESSION",
+            sessionToken_
+        );
+}
+
+bool DiamondWifiPortal::csrfAuthorized(
+    const char* request,
+    const char* body
+) const {
+    if (!authorized(request) || body == nullptr) {
         return false;
     }
 
-    char expected[64] {};
-    std::snprintf(
-        expected,
-        sizeof(expected),
-        "OAGSESSION=%s",
-        sessionToken_
-    );
-    return std::strstr(request, expected) != nullptr;
+    char submitted[33] {};
+    if (!decodeFormValue(
+        body,
+        "_csrf",
+        submitted,
+        sizeof(submitted)
+    )) {
+        return false;
+    }
+
+    return
+        std::strlen(submitted) == 32u &&
+        std::strcmp(submitted, csrfToken_) == 0 &&
+        requestCookieEquals(
+            request,
+            "OAGCSRF",
+            csrfToken_
+        );
 }
 
 void DiamondWifiPortal::createSession() {
-    rng_128_t random {};
-    get_rand_128(&random);
-
-    const auto* bytes =
-        reinterpret_cast<const std::uint8_t*>(&random);
-    static constexpr char hex[] = "0123456789abcdef";
-    for (std::size_t i = 0; i < 16; ++i) {
-        sessionToken_[i * 2u] = hex[(bytes[i] >> 4u) & 0x0Fu];
-        sessionToken_[i * 2u + 1u] = hex[bytes[i] & 0x0Fu];
-    }
-    sessionToken_[32] = '\0';
+    randomHex128(sessionToken_);
+    randomHex128(csrfToken_);
     sessionExpiresUs_ = time_us_64() + kSessionLifetimeUs;
     sessionActive_ = true;
 }
 
 void DiamondWifiPortal::clearSession() {
     std::memset(sessionToken_, 0, sizeof(sessionToken_));
+    std::memset(csrfToken_, 0, sizeof(csrfToken_));
     sessionExpiresUs_ = 0;
     sessionActive_ = false;
+}
+
+void DiamondWifiPortal::scheduleReboot(std::uint32_t delayMs) {
+    rebootAtUs_ =
+        time_us_64() +
+        static_cast<std::uint64_t>(delayMs) * 1000ull;
+    rebootPending_ = true;
+}
+
+void DiamondWifiPortal::task() {
+    if (
+        rebootPending_ &&
+        time_us_64() >= rebootAtUs_
+    ) {
+        rebootPending_ = false;
+        watchdog_reboot(0, 0, 0);
+    }
 }
 
 void DiamondWifiPortal::handleHttpRequest(
