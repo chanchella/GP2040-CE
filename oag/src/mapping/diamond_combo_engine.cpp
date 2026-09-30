@@ -314,7 +314,21 @@ bool DiamondComboEngine::execute(
                 runtime.wheelSent = false;
                 continue;
             }
-            return true;
+            // HOLD actions are intentionally latched until an explicit
+            // combo cancellation condition releases them (trigger release,
+            // cancel button, toggle-off, etc.). Finishing the visible
+            // timeline must not silently release a user's HOLD action.
+            const bool hasLatchedHold =
+                runtime.heldControls != 0 ||
+                runtime.heldModifiers != 0 ||
+                runtime.heldMouseButtons != 0 ||
+                runtime.heldKeys[0] != 0 ||
+                runtime.heldKeys[1] != 0 ||
+                runtime.heldKeys[2] != 0 ||
+                runtime.heldKeys[3] != 0 ||
+                runtime.heldKeys[4] != 0 ||
+                runtime.heldKeys[5] != 0;
+            return !hasLatchedHold;
         }
 
         const auto& step = program.steps[runtime.stepIndex];
