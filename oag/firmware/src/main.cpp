@@ -1114,6 +1114,13 @@ public:
 private:
     static constexpr std::uint8_t kRootCount = 3;
     static constexpr std::uint64_t kMouseAimHoldUs = 10000;
+    // Blood Strike Native HID anti-recoil V2.
+    // Intentionally conservative first calibration: one native mouse count
+    // downward every 40 ms while LMB is held. This avoids the extreme
+    // controller-stick pull from V1 and keeps K/M exposed as real HID K/M.
+    static constexpr std::uint64_t kNativeAntiRecoilTickUs = 40000;
+    static constexpr std::int32_t kNativeAntiRecoilDy = 1;
+    static constexpr std::int32_t kNativeAntiRecoilHorizontalPermille = 80;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -2056,6 +2063,52 @@ private:
             mouseAimExpiresUs_ = 0;
         }
 
+        const bool firing =
+            mouse.connected &&
+            (mouse.buttons & oag::MouseButtonLeft) != 0;
+
+        if (!firing) {
+            nativeAntiRecoilNextUs_ = 0;
+            nativeAntiRecoilHorizontalMilli_ = 0;
+        } else if (
+            nativeAntiRecoilNextUs_ == 0 ||
+            nowUs >= nativeAntiRecoilNextUs_
+        ) {
+            nativeAntiRecoilNextUs_ =
+                nowUs + kNativeAntiRecoilTickUs;
+
+            // Downward relative HID movement counters upward weapon climb.
+            // Horizontal correction is deliberately only +/-8% and alternates
+            // pseudo-randomly around zero. A fixed-point accumulator preserves
+            // sub-count movement without forcing a 1-count horizontal jump
+            // on every tick.
+            nativeAntiRecoilPrng_ =
+                nativeAntiRecoilPrng_ * 1664525u + 1013904223u;
+
+            const std::int32_t horizontalMilli =
+                ((nativeAntiRecoilPrng_ >> 31) != 0 ? 1 : -1) *
+                kNativeAntiRecoilDy *
+                kNativeAntiRecoilHorizontalPermille;
+
+            nativeAntiRecoilHorizontalMilli_ += horizontalMilli;
+
+            std::int32_t dx = 0;
+            if (nativeAntiRecoilHorizontalMilli_ >= 1000) {
+                dx = 1;
+                nativeAntiRecoilHorizontalMilli_ -= 1000;
+            } else if (nativeAntiRecoilHorizontalMilli_ <= -1000) {
+                dx = -1;
+                nativeAntiRecoilHorizontalMilli_ += 1000;
+            }
+
+            nativeKmOutput_.addMouseMotion(
+                dx,
+                kNativeAntiRecoilDy,
+                0,
+                0
+            );
+        }
+
         nativeKmOutput_.task(nowUs);
     }
 
@@ -2394,6 +2447,10 @@ private:
     oag::MouseMotion currentMouseMotion_ {};
     std::uint64_t mouseAimExpiresUs_ = 0;
     bool mouseAimActive_ = false;
+
+    std::uint64_t nativeAntiRecoilNextUs_ = 0;
+    std::int32_t nativeAntiRecoilHorizontalMilli_ = 0;
+    std::uint32_t nativeAntiRecoilPrng_ = 0xB100D5A2u;
 
     std::array<
         XgipInitPhase,
