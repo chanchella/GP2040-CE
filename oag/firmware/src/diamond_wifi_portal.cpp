@@ -37,9 +37,9 @@ constexpr char kPortalHtml[] =
 "<section class='card'><h2>Controllers</h2><div class='tag' data-oag-controller='Controller'>Controller</div>"
 "<p class='muted'>Live stick monitor, center calibration and anti-drift.</p></section>"
 "<section class='card'><h2>Games</h2><p class='muted'>Add and manage game profiles.</p></section>"
-"<section class='card'><h2>Weapons</h2><div class='tag' data-oag-number='1' data-oag-name='Weapon'>Weapon</div><p class='muted'>Weapon names stay unchanged; every displayed weapon number is OAG ABO GEMI branded.</p></section>"
+"<section class='card'><h2>Weapons</h2><div class='tag' data-oag-number='1' data-oag-type='WEAPON'>OAG ABO GEMI WEAPON 1</div><p class='muted'>Weapon names stay unchanged; every displayed weapon number uses OAG ABO GEMI WEAPON.</p></section>"
 "<section class='card'><h2>Recoil</h2><p class='muted'>Vertical, horizontal and timing configuration.</p></section>"
-"<section class='card'><h2>Combos</h2><div class='tag' data-oag-number='1' data-oag-name='Combo'>Combo</div><p class='muted'>Universal actions for keyboard, mouse and controller triggers.</p></section>"
+"<section class='card'><h2>Combos</h2><div class='tag' data-oag-number='1' data-oag-type='COMBO'>OAG ABO GEMI COMBO 1</div><p class='muted'>Universal actions for keyboard, mouse and controller triggers.</p></section>"
 "<section class='card'><h2>Input Bindings</h2><p class='muted'>Native K/M, controller and touch bindings.</p></section>"
 "<section class='card'><h2>Profiles</h2><div class='tag' data-oag-number='1'></div><div class='tag' data-oag-number='2'></div>"
 "<div class='tag' data-oag-number='3'></div><p class='muted'>Game and weapon names remain original; OAG ABO GEMI is applied to their displayed numbers.</p></section>"
@@ -49,9 +49,9 @@ constexpr char kPortalHtml[] =
 "const OAG_BRAND='OAG ABO GEMI';"
 "function oagNumber(n){return OAG_BRAND+' '+String(n);}"
 "function oagController(name){return OAG_BRAND+' '+String(name||'Controller');}"
-"function oagNumberedItem(n,name){const id=oagNumber(n);return name?String(name)+' - '+id:id;}"
+"function oagNumberedItem(n,type){return OAG_BRAND+(type?' '+String(type).toUpperCase():'')+' '+String(n);}"
 "document.querySelectorAll('[data-oag-controller]').forEach(el=>{el.textContent=oagController(el.dataset.oagController);});"
-"document.querySelectorAll('[data-oag-number]').forEach(el=>{el.textContent=oagNumberedItem(el.dataset.oagNumber,el.dataset.oagName||'');});"
+"document.querySelectorAll('[data-oag-number]').forEach(el=>{el.textContent=oagNumberedItem(el.dataset.oagNumber,el.dataset.oagType||'');});"
 "window.OAG_UI={brand:OAG_BRAND,number:oagNumber,controller:oagController,numberedItem:oagNumberedItem};"
 "</script></body></html>";
 
