@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 namespace oag::firmware {
 
@@ -9,6 +10,7 @@ class DiamondConfigStore;
 class DiamondWifiPortal {
 public:
     bool start(DiamondConfigStore& store);
+    void task();
     bool started() const { return started_; }
 
     void handleHttpRequest(
@@ -18,7 +20,11 @@ public:
     );
 
 private:
+    void schedulePlayReboot(std::uint32_t delayMs);
+
     DiamondConfigStore* store_ = nullptr;
+    std::uint64_t playRebootAtUs_ = 0;
+    bool playRebootPending_ = false;
     bool started_ = false;
 };
 
