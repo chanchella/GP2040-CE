@@ -27,6 +27,7 @@
 #include "oag/input/gamepad_state.h"
 #include "oag/input/keyboard_state.h"
 #include "oag/input/mouse_state.h"
+#include "oag/mapping/diamond_combo_engine.h"
 #include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/native_km_combo_engine.h"
@@ -144,6 +145,12 @@ public:
             return false;
         }
 
+        // Gameplay effects are data-driven. Load the persisted OAG profile
+        // without changing any controller transport/parser/calibration path.
+        if (!configStore_.load()) {
+            return false;
+        }
+
         configMode_ =
             oag::firmware::activeOutputProfile() ==
             oag::firmware::OutputProfileId::OagConfig;
@@ -195,6 +202,7 @@ public:
         serviceNativeKeyboardMouseOutput();
         servicePubgTouchMaintenance();
         serviceMouseAimRelease();
+        serviceDiamondComboTimeline();
         servicePlatformFeedback();
     }
 
@@ -2070,6 +2078,13 @@ private:
                 nowUs
             );
             applyPubgTriangleActions(output, nowUs);
+            output = diamondCombos_.apply(
+                configStore_.config().names.comboPrograms,
+                hasKeyboard ? &keyboard : nullptr,
+                hasMouse ? &mouse : nullptr,
+                output,
+                nowUs
+            );
             output.timestampUs = nowUs;
 
             if (!output.connected) {
@@ -2101,9 +2116,16 @@ private:
         if (
             keyboardMouseMode_ == KeyboardMouseOutputMode::Native
         ) {
+            oag::LogicalGamepadState output = diamondCombos_.apply(
+                configStore_.config().names.comboPrograms,
+                hasKeyboard ? &keyboard : nullptr,
+                hasMouse ? &mouse : nullptr,
+                basePrimaryOutput(),
+                time_us_64()
+            );
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
-                basePrimaryOutput()
+                output
             );
             return;
         }
@@ -2120,6 +2142,14 @@ private:
                 mappedMouseMotion,
                 basePrimaryOutput()
             );
+
+        output = diamondCombos_.apply(
+            configStore_.config().names.comboPrograms,
+            hasKeyboard ? &keyboard : nullptr,
+            hasMouse ? &mouse : nullptr,
+            output,
+            time_us_64()
+        );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
             platformOutput_.submit(
@@ -2433,6 +2463,24 @@ private:
         nativeKmOutput_.task(nowUs);
     }
 
+    void serviceDiamondComboTimeline() {
+        if (!diamondCombos_.active()) {
+            nextDiamondComboServiceUs_ = 0;
+            return;
+        }
+
+        const std::uint64_t nowUs = time_us_64();
+        if (
+            nextDiamondComboServiceUs_ != 0 &&
+            nowUs < nextDiamondComboServiceUs_
+        ) {
+            return;
+        }
+
+        nextDiamondComboServiceUs_ = nowUs + 1000ull;
+        sendComposedOutput();
+    }
+
     void updateMouseAimFromCurrentMotion(
         std::uint64_t nowUs
     ) {
@@ -2730,6 +2778,8 @@ private:
     oag::PassThroughMapping mapping_;
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
     oag::NativeKmComboEngine nativeKmCombos_;
+    oag::DiamondComboEngine diamondCombos_;
+    std::uint64_t nextDiamondComboServiceUs_ = 0;
     oag::firmware::MultiProfilePlatformDriver platformOutput_;
     oag::firmware::PcNativeKmOutput nativeKmOutput_;
 
