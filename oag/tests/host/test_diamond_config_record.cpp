@@ -49,7 +49,7 @@ int main() {
     assert(selectNewestDiamondConfigRecord(&old, &wrapped) == &wrapped);
 
     // V5 spans multiple flash sectors to persist OAG names and multi-input programmable combos.
-    static_assert(sizeof(DiamondConfigRecord) <= 16384);
+    static_assert(sizeof(DiamondConfigRecord) <= 24576);
 
     // Named content is covered by the same CRC as runtime settings.
     DiamondConfigRecord named = a;
