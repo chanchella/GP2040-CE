@@ -143,22 +143,24 @@ public:
             return false;
         }
 
-        if (
+        configMode_ =
             oag::firmware::activeOutputProfile() ==
-            oag::firmware::OutputProfileId::OagConfig
-        ) {
-            // Configuration mode owns CYW43 for the OAG Wi-Fi portal.
-            // Bluetooth is intentionally not initialized in this mode.
+            oag::firmware::OutputProfileId::OagConfig;
+
+        if (configMode_) {
+            // Config mode owns CYW43. USB Host remains available for local
+            // inputs/calibration, while Bluetooth and gaming output stay off.
             if (!wifiPortal_.start()) {
                 return false;
             }
             bluetoothInitNotBeforeUs_ = 0;
-        } else {
-            // Golden G2E3 invariant: give PIO USB 100 ms to settle before
-            // CYW43/BTstack is initialized. Bluetooth is fail-soft.
-            bluetoothInitNotBeforeUs_ =
-                time_us_64() + 100000ull;
+            return true;
         }
+
+        // Golden G2E3 invariant: give PIO USB 100 ms to settle before
+        // CYW43/BTstack is initialized. Bluetooth is fail-soft.
+        bluetoothInitNotBeforeUs_ =
+            time_us_64() + 100000ull;
 
         if (!platformOutput_.initialize()) {
             return false;
@@ -169,10 +171,17 @@ public:
 
     void task() {
         tud_task();
+        usbHost_.task();
+
+        if (configMode_) {
+            // Keep the exit hotkey alive in config mode without touching the
+            // proven Bluetooth/XInput/touch gaming paths.
+            serviceOutputProfileHotkey();
+            return;
+        }
+
         platformOutput_.poll();
         servicePlatformPlayerAssignments();
-
-        usbHost_.task();
         serviceBluetoothHostV2();
 
         serviceKeyboardLeds();
@@ -2685,7 +2694,7 @@ private:
     }
 
     oag::firmware::UsbPioHost usbHost_;
-    oag::firmware::DiamondWifiPortal wifiPortal_;
+    oag::firmware::DiamondWifiPortal wifiPortal_;\n    bool configMode_ = false;
 
     oag::firmware::BluetoothHostV2 bluetoothHost_;
     oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
