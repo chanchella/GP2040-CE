@@ -16,6 +16,7 @@ extern "C" {
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
 #include "pico/cyw43_arch.h"
+#include "hardware/watchdog.h"
 #include "pico/rand.h"
 #include "pico/time.h"
 
@@ -84,6 +85,8 @@ constexpr char kLoginHtml[] = R"HTML(<!doctype html><html><head><meta charset='u
 <label>Password</label><input name='password' type='password' maxlength='63' required autocomplete='current-password'>
 <button type='submit'>Login</button></form></section></main></body></html>)HTML";
 
+constexpr char kWifiRestartHtml[] = R"HTML(<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>OAG ABO GEMI Wi-Fi Updated</title><style>body{margin:0;background:#080b12;color:#eef2ff;font-family:Arial,sans-serif}.wrap{max-width:560px;margin:55px auto;padding:20px}.card{background:#111827;border:1px solid #263247;border-radius:18px;padding:22px}.ok{color:#86efac}.muted{color:#94a3b8}</style></head><body><main class='wrap'><section class='card'><h1>OAG ABO GEMI</h1><h2 class='ok'>Wi-Fi password saved</h2><p>The Pico will restart now.</p><p class='muted'>Reconnect to OAG ABO GEMI using the new Wi-Fi password, then open 192.168.4.1 and log in again.</p></section></main></body></html>)HTML";
+
 constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'><title>OAG ABO GEMI</title><style>)HTML"
     R"HTML(*{box-sizing:border-box}body{margin:0;background:#080b12;color:#eef2ff;font-family:Arial,sans-serif}header{padding:28px 20px;background:#111827;border-bottom:1px solid #283247}h1{margin:0;font-size:30px}small{color:#94a3b8}.wrap{max-width:980px;margin:auto;padding:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}.card{background:#111827;border:1px solid #263247;border-radius:16px;padding:18px}.tag{display:inline-block;padding:5px 9px;border-radius:99px;background:#1f2937;margin:3px 3px 3px 0}h2{font-size:18px;margin:0 0 12px}.ok{color:#86efac}.muted{color:#94a3b8}button{padding:10px 14px;border:0;border-radius:9px;font-weight:700})HTML"
@@ -96,9 +99,21 @@ constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charse
 <section class='card'><h2>Combos</h2><div class='tag' data-oag-number='1' data-oag-type='COMBO'>OAG ABO GEMI COMBO 1</div><p class='muted'>Universal actions for keyboard, mouse and controller triggers.</p></section>
 <section class='card'><h2>Input Bindings</h2><p class='muted'>Native K/M, controller and touch bindings.</p></section>
 <section class='card'><h2>Profiles</h2><div class='tag' data-oag-number='1'></div><div class='tag' data-oag-number='2'></div><div class='tag' data-oag-number='3'></div><p class='muted'>Game and weapon names stay natural; displayed slot numbers use OAG branding.</p></section>
-<section class='card'><h2>System / Security</h2><p class='ok'>Persistent secure config online</p><p class='muted'>A/B flash storage, admin authentication and session protection are active.</p>
-<form method='post' action='/logout'><button type='submit'>Logout</button></form></section>
-</div></main><script>const OAG_BRAND='OAG ABO GEMI';function oagController(n){return OAG_BRAND+' '+String(n||'Controller');}function oagNumberedItem(n,t){return OAG_BRAND+(t?' '+String(t).toUpperCase():'')+' '+String(n);}document.querySelectorAll('[data-oag-controller]').forEach(e=>e.textContent=oagController(e.dataset.oagController));document.querySelectorAll('[data-oag-number]').forEach(e=>e.textContent=oagNumberedItem(e.dataset.oagNumber,e.dataset.oagType||''));</script></body></html>)HTML";
+<section class='card'><h2>System / Security</h2><p class='ok'>Persistent secure config online</p><p class='muted'>A/B flash storage, admin authentication, CSRF protection and session protection are active.</p>
+<form method='post' action='/system/admin'><input type='hidden' name='_csrf'>
+<label>New admin username (optional)</label><input name='new_username' minlength='3' maxlength='24' autocomplete='username'>
+<label>Current admin password</label><input name='current_password' type='password' minlength='8' maxlength='63' required autocomplete='current-password'>
+<label>New admin password (optional)</label><input name='new_password' type='password' minlength='8' maxlength='63' autocomplete='new-password'>
+<label>Confirm new admin password</label><input name='confirm_password' type='password' maxlength='63' autocomplete='new-password'>
+<button type='submit'>Update Admin Login</button></form>
+<hr style='border:0;border-top:1px solid #263247;margin:20px 0'>
+<form method='post' action='/system/wifi'><input type='hidden' name='_csrf'>
+<label>Current admin password</label><input name='current_password' type='password' minlength='8' maxlength='63' required autocomplete='current-password'>
+<label>New Wi-Fi password</label><input name='wifi_password' type='password' minlength='8' maxlength='63' required autocomplete='new-password'>
+<label>Confirm Wi-Fi password</label><input name='confirm_wifi' type='password' minlength='8' maxlength='63' required autocomplete='new-password'>
+<button type='submit'>Save Wi-Fi & Restart</button></form>
+<form method='post' action='/logout'><input type='hidden' name='_csrf'><button type='submit'>Logout</button></form></section>
+</div></main><script>const OAG_BRAND='OAG ABO GEMI';function oagController(n){return OAG_BRAND+' '+String(n||'Controller');}function oagNumberedItem(n,t){return OAG_BRAND+(t?' '+String(t).toUpperCase():'')+' '+String(n);}document.querySelectorAll('[data-oag-controller]').forEach(e=>e.textContent=oagController(e.dataset.oagController));document.querySelectorAll('[data-oag-number]').forEach(e=>e.textContent=oagNumberedItem(e.dataset.oagNumber,e.dataset.oagType||''));function readCookie(n){const p=document.cookie.split(';').map(v=>v.trim()).find(v=>v.startsWith(n+'='));return p?decodeURIComponent(p.substring(n.length+1)):'';}const csrf=readCookie('OAGCSRF');document.querySelectorAll("input[name='_csrf']").forEach(e=>e.value=csrf);</script></body></html>)HTML";
 
 int hexValue(char c) {
     if (c >= '0' && c <= '9') return c - '0';
