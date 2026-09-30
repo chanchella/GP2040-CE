@@ -40,6 +40,7 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     src/bluetooth_host_v2.cpp
     src/bluetooth_hid_parser_v2.cpp
 
+    ../src/config/controller_calibration.cpp
     ../src/device/device_registry.cpp
     ../src/device/usb_device_classifier.cpp
     ../src/protocol/xusb/xusb_input_driver.cpp
