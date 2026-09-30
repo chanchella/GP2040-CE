@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <limits>
 
 extern "C" {
 #include "dhcpserver.h"
@@ -20,7 +19,6 @@ extern "C" {
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
 
-#include "oag/config/controller_calibration.h"
 #include "oag/config/diamond_config.h"
 #include "oag/firmware/diamond_config_store.h"
 #include "oag/firmware/output_profile_selector.h"
@@ -47,24 +45,6 @@ std::array<HttpClientState, kHttpClientSlots> gClients {};
 
 constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>OAG ABO GEMI</title><link rel=stylesheet href=/app.css></head><body>
 <header><h1>OAG ABO GEMI</h1><span>Controller Lab • Smart Anti-Drift • Profiles</span></header><main>
-<section class=card><h2>Controller Tester & Smart Anti-Drift</h2><label>Controller</label><select id=ci></select><div id=conn class=status>Waiting for controller...</div>
-<div class=gamepad>
-<div class=shoulders><span id=lb>LB</span><span id=rb>RB</span></div>
-<div class=pads>
-<div><h3>LEFT STICK</h3><div class=pad id=lpad><span class=dzring id=lring></span><span class=center id=lcenter></span><i class=raw id=ldot></i><i class=filtered id=lfdot></i></div><div id=lraw class=mono></div><div class=metric><b id=ldrift>0.0%</b><small>LIVE DRIFT</small></div></div>
-<div><h3>RIGHT STICK</h3><div class=pad id=rpad><span class=dzring id=rring></span><span class=center id=rcenter></span><i class=raw id=rdot></i><i class=filtered id=rfdot></i></div><div id=rraw class=mono></div><div class=metric><b id=rdrift>0.0%</b><small>LIVE DRIFT</small></div></div>
-</div>
-<div class=legend><span><i class=rawkey></i>RAW STICK</span><span><i class=filterkey></i>CORRECTED OUTPUT</span><span><i class=centerkey></i>SAVED CENTER</span></div>
-<div class=face><span id=du>↑</span><span id=dl>←</span><span id=dd>↓</span><span id=dr>→</span><span id=b2>X</span><span id=b3>Y</span><span id=b0>A</span><span id=b1>B</span></div>
-<div class=systembuttons><span id=b8>BACK</span><span id=b10>GUIDE</span><span id=b9>START</span><span id=b11>SHARE</span><span id=b6>L3</span><span id=b7>R3</span></div>
-<div class=trigs><div>LT <b id=lt>0%</b><em><i id=ltbar></i></em></div><div>RT <b id=rt>0%</b><em><i id=rtbar></i></em></div></div><div id=mask class=mono>BUTTON MASK 0x0 • DPAD 0</div>
-</div>
-<div class=wizard><h3>MANUAL + SMART DRIFT CALIBRATION</h3><p class=hint>The GREEN dot is the real stick position. The BLUE dot is what the game will receive. Move each Deadzone slider yourself until the BLUE dot stays centered while the stick is untouched, then Save. Smart Calibrate is optional and can capture the physical center automatically.</p>
-<button id=auto class=accent>SMART CALIBRATE CENTER & DRIFT</button><div id=calmsg class=msg></div>
-<div class=two><div><label>Left Deadzone <b id=ldv></b></label><input id=ld type=range min=0 max=20 step=.1></div><div><label>Right Deadzone <b id=rdv></b></label><input id=rd type=range min=0 max=20 step=.1></div></div>
-<button id=range>TEST FULL STICK RANGE</button><div id=rangemsg class=msg></div>
-<button id=savecal>SAVE & VERIFY DRIFT CALIBRATION</button><button id=disable class=ghost>DISABLE ANTI-DRIFT</button></div></section>
-
 <section class=card><h2>Games & Weapons</h2><label>OAG Game</label><select id=gs></select><input id=gn maxlength=32 placeholder="Type your game name"><button id=sg>ADD OAG GAME 1</button>
 <label>OAG Weapon for selected game</label><select id=ws></select><input id=wn maxlength=32 placeholder="Type your weapon name"><button id=sw>ADD OAG WEAPON 1</button><div id=nmsg class=msg></div></section>
 
@@ -76,35 +56,17 @@ constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charse
 
 constexpr char kAppCss[] = R"CSS(*{box-sizing:border-box}body{margin:0;background:#070b12;color:#eef2ff;font:15px Arial,sans-serif}header{padding:20px;background:#111827;border-bottom:1px solid #263247}h1{margin:0;font-size:30px}header span,.hint{color:#94a3b8}main{max-width:900px;margin:auto;padding:14px}.card{background:#111827;border:1px solid #263247;border-radius:15px;padding:16px;margin-bottom:13px}h2{margin:0 0 12px}h3{text-align:center;font-size:13px;color:#cbd5e1;letter-spacing:.5px}label{display:block;margin:10px 0 5px;color:#cbd5e1}input,select,button{width:100%;padding:11px;border-radius:9px;border:1px solid #334155;background:#0f172a;color:white}input[type=range]{padding:0;accent-color:#86efac}button{margin-top:10px;background:#e5e7eb;color:#111827;font-weight:800}.accent,.play{background:#86efac;color:#052e16}.ghost{background:#1f2937;color:#e5e7eb}.two,.pads{display:grid;grid-template-columns:1fr 1fr;gap:14px}.gamepad{padding:12px;border:1px solid #29364b;border-radius:24px;background:#0b1220}.pad{width:min(36vw,230px);height:min(36vw,230px);margin:auto;border:2px solid #475569;border-radius:50%;position:relative;background:radial-gradient(circle,#172033 0,#0b1220 70%);overflow:hidden}.pad:before,.pad:after{content:"";position:absolute;background:#334155;z-index:0}.pad:before{width:1px;height:100%;left:50%}.pad:after{height:1px;width:100%;top:50%}.pad i{position:absolute;border-radius:50%;transform:translate(-50%,-50%);z-index:4}.pad .raw{width:18px;height:18px;background:#86efac;box-shadow:0 0 12px #86efac}.pad .filtered{width:10px;height:10px;background:#60a5fa;box-shadow:0 0 8px #60a5fa}.center{position:absolute;width:12px;height:12px;border:2px solid #f8fafc;border-radius:50%;transform:translate(-50%,-50%);z-index:3}.dzring{position:absolute;border:2px dashed #fbbf24;border-radius:50%;transform:translate(-50%,-50%);z-index:2;pointer-events:none}.mono{font:12px monospace;color:#94a3b8;text-align:center;margin:7px}.metric{text-align:center}.metric b{font-size:18px;color:#86efac}.metric small{display:block;color:#64748b}.legend{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin:12px 0;color:#94a3b8;font-size:11px}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}.rawkey{background:#86efac}.filterkey{background:#60a5fa}.centerkey{border:2px solid #f8fafc}.shoulders,.face,.systembuttons{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin:8px}.shoulders{justify-content:space-between}.shoulders span,.face span,.systembuttons span{min-width:38px;text-align:center;padding:7px 9px;border-radius:9px;border:1px solid #334155;background:#111827;color:#64748b;font-weight:800}.on{background:#86efac!important;color:#052e16!important;border-color:#86efac!important;box-shadow:0 0 10px #86ef9666}.trigs{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:12px}.trigs em{display:block;height:7px;background:#1e293b;border-radius:5px;overflow:hidden}.trigs em i{display:block;height:100%;width:0;background:#86efac}.wizard{margin-top:15px;padding-top:8px;border-top:1px solid #263247}.status,.msg{margin:9px 0;color:#86efac}.bad{color:#fca5a5}@media(max-width:560px){.card{padding:12px}.pad{width:40vw;height:40vw}.two{grid-template-columns:1fr 1fr}.trigs{margin:10px 0}})CSS";
 
-constexpr char kAppJs[] = R"JS(const $=x=>document.getElementById(x);let cfg,games=[],weapons=[],combos=[],last=null,pcal=null,calBusy=false,rangeBusy=false;
+constexpr char kAppJs[] = R"JS(const $=x=>document.getElementById(x);let cfg,games=[],weapons=[],combos=[];
 function opts(e,n,p){e.innerHTML='';for(let i=1;i<=n;i++){let o=document.createElement('option');o.value=i;o.textContent=p+' '+i;e.appendChild(o)}}
-opts($('ci'),8,'OAG ABO GEMI CONTROLLER');opts($('gs'),8,'ADD OAG GAME');opts($('ws'),24,'ADD OAG WEAPON');opts($('cs'),16,'ADD OAG COMBO');
+opts($('gs'),8,'ADD OAG GAME');opts($('ws'),24,'ADD OAG WEAPON');opts($('cs'),16,'ADD OAG COMBO');
 const enc=d=>new URLSearchParams(d);async function post(p,d){let r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:enc(d)}),t=await r.text();if(!r.ok)throw Error(t);return t}
 async function json(p){let r=await fetch(p,{cache:'no-store'});if(!r.ok)throw Error(await r.text());return r.json()}
-const AX=2147483647,TR=4294967295;const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),pctRaw=v=>v/AX*100,rawPct=p=>Math.round(clamp(+p,0,99)*AX/100);
-function pos(id,x,y){let e=$(id);e.style.left=(50+clamp(x/AX,-1,1)*45)+'%';e.style.top=(50+clamp(y/AX,-1,1)*45)+'%'}
-function ring(id,cid,cx,cy,p){pos(cid,cx,cy);let e=$(id);e.style.left=(50+clamp(cx/AX,-1,1)*45)+'%';e.style.top=(50+clamp(cy/AX,-1,1)*45)+'%';let d=clamp(+p,0,20)*.9;e.style.width=d+'%';e.style.height=d+'%'}
-function axis(v,c,d){let q=v-c,m=Math.abs(q),dz=rawPct(d);if(m<=dz)return 0;let a=AX-dz;if(a<=0)return 0;return Math.round(clamp(Math.sign(q)*(m-dz)*AX/a,-AX,AX))}
-function preview(){if(!last)return;let c=pcal||currentCal();let ld=+$('ld').value,rd=+$('rd').value;pos('lfdot',axis(last.lx,c.lx,ld),axis(last.ly,c.ly,ld));pos('rfdot',axis(last.rx,c.rx,rd),axis(last.ry,c.ry,rd));ring('lring','lcenter',c.lx,c.ly,ld);ring('rring','rcenter',c.rx,c.ry,rd);$('ldrift').textContent=(Math.hypot(last.lx-c.lx,last.ly-c.ly)/AX*100).toFixed(1)+'%';$('rdrift').textContent=(Math.hypot(last.rx-c.rx,last.ry-c.ry)/AX*100).toFixed(1)+'%'}
-function currentCal(){let c=cfg.controllers[+$('ci').value-1];return{lx:c.lx||0,ly:c.ly||0,rx:c.rx||0,ry:c.ry||0}}
 function names(e,a,p){e.innerHTML='';a.forEach((n,i)=>{let o=document.createElement('option');o.value=i+1;o.textContent=n||p+' '+(i+1);e.appendChild(o)})}
-function dz(){$('ldv').textContent=(+$('ld').value).toFixed(1)+'%';$('rdv').textContent=(+$('rd').value).toFixed(1)+'%';preview()}
-function active(id,on){let e=$(id);if(e)e.classList.toggle('on',!!on)}
-function buttons(v){for(let i=0;i<12;i++)active('b'+i,(v.buttons&(1<<i))!==0);active('lb',(v.buttons&(1<<4))!==0);active('rb',(v.buttons&(1<<5))!==0);active('du',(v.dpad&1)!==0);active('dd',(v.dpad&2)!==0);active('dl',(v.dpad&4)!==0);active('dr',(v.dpad&8)!==0)}
-async function load(){cfg=await json('/api/config');$('gen').textContent='Flash generation: '+cfg.generation;let c=cfg.controllers[+$('ci').value-1];$('ld').value=pctRaw(c.leftDeadzone).toFixed(1);$('rd').value=pctRaw(c.rightDeadzone).toFixed(1);pcal={lx:c.lx||0,ly:c.ly||0,rx:c.rx||0,ry:c.ry||0};dz();games=(await json('/api/games')).names;combos=(await json('/api/combos')).names;names($('gs'),games,'ADD OAG GAME');names($('ag'),games,'OAG GAME');names($('cs'),combos,'ADD OAG COMBO');$('ag').value=cfg.activeGame+1;await loadWeapons($('ag').value);$('aw').value=cfg.activeWeapon+1;showGameName();showComboName();updateAddButtons()}
+async function load(){cfg=await json('/api/config');$('gen').textContent='Flash generation: '+cfg.generation;games=(await json('/api/games')).names;combos=(await json('/api/combos')).names;names($('gs'),games,'ADD OAG GAME');names($('ag'),games,'OAG GAME');names($('cs'),combos,'ADD OAG COMBO');$('ag').value=cfg.activeGame+1;await loadWeapons($('ag').value);$('aw').value=cfg.activeWeapon+1;showGameName();showComboName();updateAddButtons()}
 async function loadWeapons(g){weapons=(await json('/api/weapons?game='+g)).names;names($('ws'),weapons,'ADD OAG WEAPON');names($('aw'),weapons,'OAG WEAPON');showWeaponName();updateAddButtons()}
-async function live(){try{last=await json('/api/live?slot='+$('ci').value);$('conn').textContent=last.connected?'CONNECTED • LIVE INPUT':'No controller in this slot';$('conn').className=last.connected?'status':'status bad';pos('ldot',last.lx,last.ly);pos('rdot',last.rx,last.ry);$('lraw').textContent='RAW X '+last.lx+' • Y '+last.ly;$('rraw').textContent='RAW X '+last.rx+' • Y '+last.ry;let ltp=clamp(last.lt/TR*100,0,100),rtp=clamp(last.rt/TR*100,0,100);$('lt').textContent=ltp.toFixed(0)+'%';$('rt').textContent=rtp.toFixed(0)+'%';$('ltbar').style.width=ltp+'%';$('rtbar').style.width=rtp+'%';$('mask').textContent='BUTTON MASK 0x'+Number(last.buttons).toString(16).toUpperCase()+' • DPAD '+last.dpad;buttons(last);preview()}catch(e){}setTimeout(live,80)}
-$('ld').oninput=$('rd').oninput=dz;$('ci').onchange=()=>{pcal=null;let c=cfg.controllers[+$('ci').value-1];$('ld').value=pctRaw(c.leftDeadzone).toFixed(1);$('rd').value=pctRaw(c.rightDeadzone).toFixed(1);pcal={lx:c.lx||0,ly:c.ly||0,rx:c.rx||0,ry:c.ry||0};$('calmsg').textContent='';$('rangemsg').textContent='';dz()};
 )JS";
 
-constexpr char kCalJs[] = R"JS(function median(a){let b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:Math.round((b[m-1]+b[m])/2)}
-function percentile(a,p){let b=[...a].sort((x,y)=>x-y);return b[Math.min(b.length-1,Math.floor((b.length-1)*p))]}
-async function samples(n,delay,msg){let a=[];for(let i=0;i<n;i++){let v=await json('/api/live?slot='+$('ci').value);if(v.connected)a.push(v);$(msg).textContent='Sampling '+Math.round((i+1)/n*100)+'%';await new Promise(r=>setTimeout(r,delay))}return a}
-$('auto').onclick=async()=>{if(calBusy)return;calBusy=true;$('auto').disabled=true;$('calmsg').textContent='Release both sticks completely...';await new Promise(r=>setTimeout(r,800));try{let a=await samples(50,40,'calmsg');if(a.length<35)throw Error('Controller signal was not stable. Keep it connected and try again.');let lx=median(a.map(v=>v.lx)),ly=median(a.map(v=>v.ly)),rx=median(a.map(v=>v.rx)),ry=median(a.map(v=>v.ry));let lr=a.map(v=>Math.hypot(v.lx-lx,v.ly-ly)),rr=a.map(v=>Math.hypot(v.rx-rx,v.ry-ry));let lp=percentile(lr,.95),rp=percentile(rr,.95);let ldz=clamp((lp+Math.max(250,lp*.30))/AX*100,.8,12),rdz=clamp((rp+Math.max(250,rp*.30))/AX*100,.8,12);pcal={lx,ly,rx,ry};$('ld').value=ldz.toFixed(1);$('rd').value=rdz.toFixed(1);dz();$('calmsg').textContent='Smart center captured • Recommended L '+ldz.toFixed(1)+'% • R '+rdz.toFixed(1)+'%. Move the sticks now and watch RAW vs corrected dots.'}catch(e){$('calmsg').textContent=e.message}finally{calBusy=false;$('auto').disabled=false}};
-$('range').onclick=async()=>{if(rangeBusy)return;rangeBusy=true;$('range').disabled=true;let c=pcal||currentCal(),end=Date.now()+6000,l={px:0,nx:0,py:0,ny:0},r={px:0,nx:0,py:0,ny:0};$('rangemsg').textContent='Rotate BOTH sticks around the full edge for 6 seconds...';try{while(Date.now()<end){let v=await json('/api/live?slot='+$('ci').value);if(v.connected){let lx=v.lx-c.lx,ly=v.ly-c.ly,rx=v.rx-c.rx,ry=v.ry-c.ry;l.px=Math.max(l.px,lx);l.nx=Math.max(l.nx,-lx);l.py=Math.max(l.py,ly);l.ny=Math.max(l.ny,-ly);r.px=Math.max(r.px,rx);r.nx=Math.max(r.nx,-rx);r.py=Math.max(r.py,ry);r.ny=Math.max(r.ny,-ry)}await new Promise(q=>setTimeout(q,45))}let cov=o=>clamp((o.px+o.nx+o.py+o.ny)/(4*AX)*100,0,100);$('rangemsg').textContent='Range coverage • LEFT '+cov(l).toFixed(0)+'% • RIGHT '+cov(r).toFixed(0)+'% • This test diagnoses stick travel; it does not fake or stretch the hardware range.'}catch(e){$('rangemsg').textContent=e.message}finally{rangeBusy=false;$('range').disabled=false}};
-$('savecal').onclick=async()=>{if(!pcal)pcal=currentCal();let slot=+$('ci').value,want={lx:Math.round(pcal.lx),ly:Math.round(pcal.ly),rx:Math.round(pcal.rx),ry:Math.round(pcal.ry),ld:rawPct($('ld').value),rd:rawPct($('rd').value)};try{$('calmsg').textContent='Saving to Pico flash...';await post('/api/calibration',{slot,enabled:1,lx:want.lx,ly:want.ly,rx:want.rx,ry:want.ry,ld:want.ld,rd:want.rd});let verify=await json('/api/config'),c=verify.controllers[slot-1],ok=c.enabled&&c.lx===want.lx&&c.ly===want.ly&&c.rx===want.rx&&c.ry===want.ry&&c.leftDeadzone===want.ld&&c.rightDeadzone===want.rd;if(!ok)throw Error('VERIFY FAILED - saved values do not match');$('calmsg').textContent='SAVED + FLASH VERIFIED • Generation '+verify.generation+' • L '+pctRaw(c.leftDeadzone).toFixed(1)+'% • R '+pctRaw(c.rightDeadzone).toFixed(1)+'%';cfg=verify;pcal={lx:c.lx,ly:c.ly,rx:c.rx,ry:c.ry};dz()}catch(e){$('calmsg').textContent=e.message}};
-$('disable').onclick=async()=>{try{await post('/api/calibration',{slot:$('ci').value,enabled:0,lx:0,ly:0,rx:0,ry:0,ld:0,rd:0});pcal={lx:0,ly:0,rx:0,ry:0};$('calmsg').textContent='Anti-drift disabled';await load()}catch(e){$('calmsg').textContent=e.message}};
-)JS";
+
 
 constexpr char kNamesJs[] = R"JS(function showGameName(){$('gn').value=games[+$('gs').value-1]||'';updateAddButtons()}function showWeaponName(){$('wn').value=weapons[+$('ws').value-1]||'';updateAddButtons()}function showComboName(){$('cn').value=combos[+$('cs').value-1]||'';updateAddButtons()}
 function updateAddButtons(){let g=+$('gs').value||1,w=+$('ws').value||1,c=+$('cs').value||1;$('sg').textContent=games[g-1]?'UPDATE '+games[g-1]:'ADD OAG GAME '+g;$('sw').textContent=weapons[w-1]?'UPDATE '+weapons[w-1]:'ADD OAG WEAPON '+w;$('sc').textContent=combos[c-1]?'UPDATE '+combos[c-1]:'ADD OAG COMBO '+c}
@@ -120,7 +82,6 @@ load().then(live).catch(e=>$('gen').textContent=e.message);
 static_assert(sizeof(kDashboardHtml) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kAppCss) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kAppJs) + 640u < TCP_SND_BUF);
-static_assert(sizeof(kCalJs) + 640u < TCP_SND_BUF);
 static_assert(sizeof(kNamesJs) + 640u < TCP_SND_BUF);
 
 void sendResponse(tcp_pcb* client,const char* status,const char* contentType,const char* body) {
@@ -210,8 +171,8 @@ err_t httpAccept(void*,tcp_pcb* client,err_t error){
 
 namespace oag::firmware {
 
-bool DiamondWifiPortal::start(DiamondConfigStore& store,const oag::UniversalGamepadState* states,std::size_t count){
-    if(started_)return true;store_=&store;liveStates_=states;liveStateCount_=count;if(!store_->load())return false;if(cyw43_arch_init()!=0)return false;
+bool DiamondWifiPortal::start(DiamondConfigStore& store){
+    if(started_)return true;store_=&store;if(!store_->load())return false;if(cyw43_arch_init()!=0)return false;
     cyw43_arch_enable_ap_mode("OAG ABO GEMI",nullptr,CYW43_AUTH_OPEN);
     ip_addr_t gateway{},mask{};
 #if LWIP_IPV6
@@ -235,29 +196,18 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/")){sendResponse(client,"200 OK","text/html; charset=utf-8",kDashboardHtml);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kAppCss);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/app.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kAppJs);return;}
-    if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/cal.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kCalJs);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/names.js")){sendResponse(client,"200 OK","application/javascript; charset=utf-8",kNamesJs);return;}
 
-    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/live?slot=",15)){
-        std::uint32_t slot=static_cast<std::uint32_t>(std::strtoul(path+15,nullptr,10));if(slot<1||slot>liveStateCount_){sendResponse(client,"400 Bad Request","text/plain","Invalid slot");return;}
-        const auto& s=liveStates_[slot-1];char j[384]{};std::snprintf(j,sizeof(j),"{\"connected\":%s,\"lx\":%ld,\"ly\":%ld,\"rx\":%ld,\"ry\":%ld,\"lt\":%lu,\"rt\":%lu,\"buttons\":%llu,\"dpad\":%u}",s.connected?"true":"false",static_cast<long>(s.lx),static_cast<long>(s.ly),static_cast<long>(s.rx),static_cast<long>(s.ry),static_cast<unsigned long>(s.leftTrigger),static_cast<unsigned long>(s.rightTrigger),static_cast<unsigned long long>(s.buttons),static_cast<unsigned>(s.dpad));sendResponse(client,"200 OK","application/json",j);return;
-    }
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/games")){sendNames(client,pc.names.games);return;}
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/combos")){sendNames(client,pc.names.combos);return;}
     if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/weapons?game=",18)){
         std::uint32_t g=static_cast<std::uint32_t>(std::strtoul(path+18,nullptr,10));if(g<1||g>oag::kDiamondGameSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid game");return;}sendNames(client,pc.names.weapons[g-1]);return;
     }
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/api/config")){
-        char j[2048]{};int used=std::snprintf(j,sizeof(j),"{\"generation\":%lu,\"activeGame\":%u,\"activeWeapon\":%u,\"controllers\":[",static_cast<unsigned long>(store_->generation()),runtime.activeGame,runtime.activeWeapon);
-        for(std::size_t i=0;i<runtime.controllers.size();++i){const auto& c=runtime.controllers[i];used+=std::snprintf(j+used,sizeof(j)-static_cast<std::size_t>(used),"%s{\"enabled\":%s,\"leftDeadzone\":%lu,\"rightDeadzone\":%lu,\"lx\":%ld,\"ly\":%ld,\"rx\":%ld,\"ry\":%ld}",i?",":"",c.enabled?"true":"false",static_cast<unsigned long>(c.left.deadzone),static_cast<unsigned long>(c.right.deadzone),static_cast<long>(c.left.centerX),static_cast<long>(c.left.centerY),static_cast<long>(c.right.centerX),static_cast<long>(c.right.centerY));}
-        std::snprintf(j+used,sizeof(j)-static_cast<std::size_t>(used),"]}");sendResponse(client,"200 OK","application/json",j);return;
-    }
-
-    if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/calibration")){
-        std::uint32_t slot=0,en=0,ld=0,rd=0;std::int32_t lx=0,ly=0,rx=0,ry=0;
-        if(!parseUnsigned(body,"slot",1,oag::kDiamondControllerSlots,slot)||!parseUnsigned(body,"enabled",0,1,en)||!parseSigned(body,"lx",std::numeric_limits<std::int32_t>::min(),std::numeric_limits<std::int32_t>::max(),lx)||!parseSigned(body,"ly",std::numeric_limits<std::int32_t>::min(),std::numeric_limits<std::int32_t>::max(),ly)||!parseSigned(body,"rx",std::numeric_limits<std::int32_t>::min(),std::numeric_limits<std::int32_t>::max(),rx)||!parseSigned(body,"ry",std::numeric_limits<std::int32_t>::min(),std::numeric_limits<std::int32_t>::max(),ry)||!parseUnsigned(body,"ld",0,static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max()),ld)||!parseUnsigned(body,"rd",0,static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max()),rd)){sendResponse(client,"400 Bad Request","text/plain","Invalid calibration");return;}
-        auto old=runtime.controllers[slot-1];auto& c=runtime.controllers[slot-1];c.enabled=en!=0;c.left.centerX=lx;c.left.centerY=ly;c.right.centerX=rx;c.right.centerY=ry;c.left.deadzone=ld;c.right.deadzone=rd;
-        if(!store_->save()){c=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}sendResponse(client,"200 OK","text/plain","Calibration saved and flash verified");return;
+        char j[256]{};
+        std::snprintf(j,sizeof(j),"{\"generation\":%lu,\"activeGame\":%u,\"activeWeapon\":%u}",
+            static_cast<unsigned long>(store_->generation()),runtime.activeGame,runtime.activeWeapon);
+        sendResponse(client,"200 OK","application/json",j);return;
     }
 
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/name")){
