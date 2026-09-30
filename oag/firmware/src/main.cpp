@@ -17,6 +17,7 @@
 #include "oag/feedback/keyboard_led_state.h"
 #include "oag/firmware/bluetooth_hid_parser_v2.h"
 #include "oag/firmware/bluetooth_host_v2.h"
+#include "oag/firmware/diamond_wifi_portal.h"
 #include "oag/firmware/multi_profile_platform_driver.h"
 #include "oag/firmware/output_profile_selector.h"
 #include "oag/firmware/pc_native_km_output.h"
@@ -142,10 +143,22 @@ public:
             return false;
         }
 
-        // Golden G2E3 invariant: give PIO USB 100 ms to settle before
-        // CYW43/BTstack is initialized. Bluetooth is fail-soft.
-        bluetoothInitNotBeforeUs_ =
-            time_us_64() + 100000ull;
+        if (
+            oag::firmware::activeOutputProfile() ==
+            oag::firmware::OutputProfileId::OagConfig
+        ) {
+            // Configuration mode owns CYW43 for the OAG Wi-Fi portal.
+            // Bluetooth is intentionally not initialized in this mode.
+            if (!wifiPortal_.start()) {
+                return false;
+            }
+            bluetoothInitNotBeforeUs_ = 0;
+        } else {
+            // Golden G2E3 invariant: give PIO USB 100 ms to settle before
+            // CYW43/BTstack is initialized. Bluetooth is fail-soft.
+            bluetoothInitNotBeforeUs_ =
+                time_us_64() + 100000ull;
+        }
 
         if (!platformOutput_.initialize()) {
             return false;
@@ -1177,10 +1190,18 @@ private:
     static constexpr std::uint8_t kProfileF9Usage = 0x42;
     static constexpr std::uint8_t kProfileDigit1Usage = 0x1E;
     static constexpr std::uint8_t kProfileDigit7Usage = 0x24;
+    static constexpr std::uint8_t kProfileDigit8Usage = 0x25;
     static constexpr std::uint8_t kProfileDigit0Usage = 0x27;
     static constexpr std::uint8_t kNoOutputProfileCandidate = 0xFF;
 
     void serviceBluetoothHostV2() {
+        if (
+            oag::firmware::activeOutputProfile() ==
+            oag::firmware::OutputProfileId::OagConfig
+        ) {
+            return;
+        }
+
         const std::uint64_t nowUs =
             time_us_64();
 
@@ -2185,7 +2206,7 @@ private:
 
         for (
             std::uint8_t usage = kProfileDigit1Usage;
-            usage <= kProfileDigit7Usage;
+            usage <= kProfileDigit8Usage;
             ++usage
         ) {
             keyboard.setPressed(usage, false);
@@ -2218,7 +2239,7 @@ private:
 
         for (
             std::uint8_t usage = kProfileDigit1Usage;
-            usage <= kProfileDigit7Usage;
+            usage <= kProfileDigit8Usage;
             ++usage
         ) {
             if (!keyboard.pressed(usage)) {
@@ -2664,6 +2685,7 @@ private:
     }
 
     oag::firmware::UsbPioHost usbHost_;
+    oag::firmware::DiamondWifiPortal wifiPortal_;
 
     oag::firmware::BluetoothHostV2 bluetoothHost_;
     oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
