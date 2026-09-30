@@ -203,6 +203,7 @@ public:
         servicePubgTouchMaintenance();
         serviceMouseAimRelease();
         serviceDiamondComboTimeline();
+        serviceDiamondRecoilTimeline();
         servicePlatformFeedback();
     }
 
@@ -1901,6 +1902,81 @@ private:
         }
     }
 
+    const oag::WeaponRecoilProfile* activeRecoilProfile() const {
+        const auto& runtime = configStore_.config().runtime;
+        if (
+            runtime.activeGame >= oag::kDiamondGameSlots ||
+            runtime.activeWeapon >= oag::kDiamondWeaponSlotsPerGame
+        ) {
+            return nullptr;
+        }
+        return &runtime.games[runtime.activeGame].weapons[runtime.activeWeapon];
+    }
+
+    oag::LogicalGamepadState applyDiamondLogicalRecoil(
+        oag::LogicalGamepadState output,
+        bool mouseFire,
+        std::uint64_t nowUs
+    ) {
+        const auto* profile = activeRecoilProfile();
+        const bool firing =
+            output.rightTrigger != 0 ||
+            mouseFire;
+
+        if (profile == nullptr || !profile->enabled || !firing) {
+            diamondRecoilActive_ = false;
+            nextDiamondRecoilServiceUs_ = 0;
+            return output;
+        }
+
+        diamondRecoilActive_ = true;
+        nextDiamondRecoilServiceUs_ =
+            nowUs +
+            static_cast<std::uint64_t>(
+                std::max<std::uint16_t>(profile->tickMs, 1u)
+            ) * 1000ull;
+
+        const auto addAxis = [](std::int32_t value, std::int32_t raw) {
+            const std::int64_t delta =
+                (
+                    static_cast<std::int64_t>(
+                        std::numeric_limits<std::int32_t>::max()
+                    ) *
+                    static_cast<std::int64_t>(raw)
+                ) /
+                2000ll;
+
+            return static_cast<std::int32_t>(
+                std::clamp<std::int64_t>(
+                    static_cast<std::int64_t>(value) + delta,
+                    std::numeric_limits<std::int32_t>::min(),
+                    std::numeric_limits<std::int32_t>::max()
+                )
+            );
+        };
+
+        output.rx = addAxis(
+            output.rx,
+            profile->horizontalHalfPermille
+        );
+        output.ry = addAxis(
+            output.ry,
+            profile->verticalHalfPermille
+        );
+        return output;
+    }
+
+    void serviceDiamondRecoilTimeline() {
+        if (!diamondRecoilActive_) return;
+        const std::uint64_t nowUs = time_us_64();
+        if (
+            nextDiamondRecoilServiceUs_ != 0 &&
+            nowUs >= nextDiamondRecoilServiceUs_
+        ) {
+            sendComposedOutput();
+        }
+    }
+
     void sendComposedOutput() {
         oag::KeyboardState keyboard = combinedKeyboard();
         const oag::MouseState mouse = combinedMouse();
@@ -2085,6 +2161,12 @@ private:
                 output,
                 nowUs
             );
+            output = applyDiamondLogicalRecoil(
+                output,
+                hasMouse &&
+                    (mouse.buttons & oag::MouseButtonLeft) != 0,
+                nowUs
+            );
             output.timestampUs = nowUs;
 
             if (!output.connected) {
@@ -2116,12 +2198,21 @@ private:
         if (
             keyboardMouseMode_ == KeyboardMouseOutputMode::Native
         ) {
+            const std::uint64_t nowUs = time_us_64();
             oag::LogicalGamepadState output = diamondCombos_.apply(
                 configStore_.config().names.comboPrograms,
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
                 basePrimaryOutput(),
-                time_us_64()
+                nowUs
+            );
+            // Native keyboard/mouse recoil is injected into the native mouse
+            // report path. Only a real controller RT activates logical recoil
+            // while Native KM mode is selected.
+            output = applyDiamondLogicalRecoil(
+                output,
+                false,
+                nowUs
             );
             platformOutput_.submit(
                 hostPrimaryOutputSlot_,
@@ -2143,12 +2234,19 @@ private:
                 basePrimaryOutput()
             );
 
+        const std::uint64_t nowUs = time_us_64();
         output = diamondCombos_.apply(
             configStore_.config().names.comboPrograms,
             hasKeyboard ? &keyboard : nullptr,
             hasMouse ? &mouse : nullptr,
             output,
-            time_us_64()
+            nowUs
+        );
+        output = applyDiamondLogicalRecoil(
+            output,
+            hasMouse &&
+                (mouse.buttons & oag::MouseButtonLeft) != 0,
+            nowUs
         );
 
         if (!output.connected && !hasKeyboard && !hasMouse) {
@@ -2780,6 +2878,8 @@ private:
     oag::NativeKmComboEngine nativeKmCombos_;
     oag::DiamondComboEngine diamondCombos_;
     std::uint64_t nextDiamondComboServiceUs_ = 0;
+    bool diamondRecoilActive_ = false;
+    std::uint64_t nextDiamondRecoilServiceUs_ = 0;
     oag::firmware::MultiProfilePlatformDriver platformOutput_;
     oag::firmware::PcNativeKmOutput nativeKmOutput_;
 
