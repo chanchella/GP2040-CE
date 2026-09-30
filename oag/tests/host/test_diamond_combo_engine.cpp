@@ -349,9 +349,17 @@ int main() {
     assert((out.buttons & ButtonWest) != 0);
     assert(engine.active());
 
-    // Second physical L2 tap is the Toggle-off edge.
+    // Second physical L2 tap is the Toggle-off edge. The physical L2 report
+    // itself is still naturally down on this frame, but the generated hold and
+    // X pulse are already gone. Releasing the tap leaves L2 fully released.
     input.leftTrigger = 0xFFFFu;
     out = engine.apply(programs, nullptr, nullptr, input, 2970000);
+    assert(out.leftTrigger == 0xFFFFu);
+    assert((out.buttons & ButtonWest) == 0);
+    assert(!engine.active());
+
+    input.leftTrigger = 0;
+    out = engine.apply(programs, nullptr, nullptr, input, 2980000);
     assert(out.leftTrigger == 0);
     assert((out.buttons & ButtonWest) == 0);
     assert(!engine.active());
