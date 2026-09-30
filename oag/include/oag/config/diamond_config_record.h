@@ -9,7 +9,7 @@ namespace oag {
 
 struct DiamondConfigRecord {
     static constexpr std::uint32_t kMagic = 0x4F414743u; // OAGC
-    static constexpr std::uint16_t kRecordVersion = 3;
+    static constexpr std::uint16_t kRecordVersion = 4;
 
     std::uint32_t magic = kMagic;
     std::uint16_t recordVersion = kRecordVersion;
