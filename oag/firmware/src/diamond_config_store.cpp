@@ -13,18 +13,21 @@
 namespace {
 
 constexpr std::uint32_t kSlotSize = 6u * FLASH_SECTOR_SIZE; // 24 KiB V5+
-constexpr std::uint32_t kSlotBOffset =
-    PICO_FLASH_BANK_STORAGE_OFFSET - kSlotSize;
-constexpr std::uint32_t kSlotAOffset =
-    PICO_FLASH_BANK_STORAGE_OFFSET - (2u * kSlotSize);
 
-// V2-V4 used 16 KiB slots. Keep their exact historical addresses as
-// read-only migration sources after V5 expands the record capacity.
+// V2-V4 used the final 32 KiB before BTstack. V5 slots live entirely before
+// that legacy area so the first V5 save cannot erase the only migration
+// source if power is lost during the write.
 constexpr std::uint32_t kLegacyWideSlotSize = 4u * FLASH_SECTOR_SIZE;
 constexpr std::uint32_t kLegacyWideSlotBOffset =
     PICO_FLASH_BANK_STORAGE_OFFSET - kLegacyWideSlotSize;
 constexpr std::uint32_t kLegacyWideSlotAOffset =
     PICO_FLASH_BANK_STORAGE_OFFSET - (2u * kLegacyWideSlotSize);
+constexpr std::uint32_t kLegacyWideAreaStart = kLegacyWideSlotAOffset;
+
+constexpr std::uint32_t kSlotBOffset =
+    kLegacyWideAreaStart - kSlotSize;
+constexpr std::uint32_t kSlotAOffset =
+    kLegacyWideAreaStart - (2u * kSlotSize);
 
 // Previous V1 records occupied the two sectors immediately before BTstack.
 // They are read-only migration sources until the first V2 saves complete.
@@ -33,10 +36,10 @@ constexpr std::uint32_t kLegacySlotBOffset =
 constexpr std::uint32_t kLegacySlotAOffset =
     PICO_FLASH_BANK_STORAGE_OFFSET - (2u * FLASH_SECTOR_SIZE);
 
-static_assert(PICO_FLASH_BANK_STORAGE_OFFSET >= (2u * kSlotSize));
+static_assert(kLegacyWideAreaStart >= (2u * kSlotSize));
 static_assert((kSlotAOffset % FLASH_SECTOR_SIZE) == 0);
 static_assert((kSlotBOffset % FLASH_SECTOR_SIZE) == 0);
-static_assert(kSlotBOffset + kSlotSize <= PICO_FLASH_BANK_STORAGE_OFFSET);
+static_assert(kSlotBOffset + kSlotSize <= kLegacyWideAreaStart);
 static_assert(sizeof(oag::DiamondConfigRecord) <= kSlotSize);
 
 extern "C" std::uint8_t __flash_binary_end;
