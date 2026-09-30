@@ -2,16 +2,20 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 
 namespace oag {
 namespace {
 
-constexpr std::int32_t kAxisMin = -32768;
-constexpr std::int32_t kAxisMax = 32767;
+constexpr std::int64_t kAxisMagnitude =
+    static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max());
 
 std::int32_t clampAxis(std::int64_t value) {
-    return static_cast<std::int32_t>(
-        std::clamp<std::int64_t>(value, kAxisMin, kAxisMax));
+    return static_cast<std::int32_t>(std::clamp<std::int64_t>(
+        value,
+        std::numeric_limits<std::int32_t>::min(),
+        std::numeric_limits<std::int32_t>::max()
+    ));
 }
 
 } // namespace
@@ -20,22 +24,29 @@ std::int32_t ControllerCalibrationFilter::applyAxis(
     std::int32_t value,
     std::int32_t center,
     std::uint32_t deadzone) {
+    // UniversalGamepadState is normalized to the FULL signed 32-bit axis
+    // range by XUSB/XGIP/Generic HID. Calibration must use that same scale.
     const std::int64_t shifted =
         static_cast<std::int64_t>(value) - static_cast<std::int64_t>(center);
     const std::int64_t magnitude = shifted < 0 ? -shifted : shifted;
-    const std::int64_t dz = std::min<std::int64_t>(deadzone, kAxisMax);
+    const std::int64_t dz = std::min<std::int64_t>(deadzone, kAxisMagnitude);
 
     if (magnitude <= dz) {
         return 0;
     }
 
-    const std::int64_t available = static_cast<std::int64_t>(kAxisMax) - dz;
+    const std::int64_t available = kAxisMagnitude - dz;
     if (available <= 0) {
         return 0;
     }
 
     const std::int64_t remaining = magnitude - dz;
-    const std::int64_t scaled = (remaining * kAxisMax) / available;
+    const std::int64_t scaled =
+        std::min<std::int64_t>(
+            kAxisMagnitude,
+            (remaining * kAxisMagnitude) / available
+        );
+
     return clampAxis(shifted < 0 ? -scaled : scaled);
 }
 
