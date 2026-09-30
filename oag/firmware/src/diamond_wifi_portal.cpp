@@ -74,7 +74,7 @@ function recoilLive(){let h=$('rh'),v=$('rv'),hv=$('rhv'),vv=$('rvv');if(!h||!v|
 )JS";
 
 
-constexpr char kGwcJs[] = R"JS(const controls=[['None',0],['South (A / Cross)',1],['East (B / Circle)',2],['West (X / Square)',3],['North (Y / Triangle)',4],['LB / L1',5],['RB / R1',6],['LT / L2',7],['RT / R2',8],['Left Stick Click',9],['Right Stick Click',10],['Back / View',11],['Start / Menu',12],['Guide',13],['D-Pad Up',14],['D-Pad Down',15],['D-Pad Left',16],['D-Pad Right',17]];
+constexpr char kGwcJs[] = R"JS(const controls=[['None',0],['South (A / Cross)',1],['East (B / Circle)',2],['West (X / Square)',3],['North (Y / Triangle)',4],['LB / L1',5],['RB / R1',6],['LT / L2',7],['RT / R2',8],['Left Stick Click',9],['Right Stick Click',10],['Back / View / Select / Share / Create',11],['Start / Menu',12],['Guide',13],['D-Pad Up',14],['D-Pad Down',15],['D-Pad Left',16],['D-Pad Right',17]];
 const kinds=[['PRESS FOR ms',0],['HOLD UNTIL COMBO ENDS',1],['RELEASE HELD BUTTONS',2]];
 function fillCtl(e){e.innerHTML='';controls.forEach(x=>e.add(new Option(x[0],x[1])))}
 fillCtl($('ctl'));fillCtl($('cc'));$('cc').insertAdjacentHTML('afterbegin','<option value="-1">None</option>');$('cc').value=-1;
