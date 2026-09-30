@@ -387,7 +387,7 @@ bool DiamondComboEngine::execute(
 
             // HOLD + N ms: keep the output down for the requested finite
             // duration, then release it before the next visible action.
-            if (step.durationMs != 0) {
+            if (step.durationMs != 0 && step.intervalMs == 0) {
                 if (elapsedUs < durationUs) return false;
                 releaseStep(step, runtime);
                 applyLogicalMask(stepLogicalMask(step), false, output);
