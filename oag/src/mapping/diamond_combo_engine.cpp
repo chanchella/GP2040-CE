@@ -17,6 +17,7 @@ namespace oag {
 
 void DiamondComboEngine::reset() {
     runtime_ = {};
+    nativeOutput_ = {};
 }
 
 bool DiamondComboEngine::active() const {
@@ -53,8 +54,7 @@ bool DiamondComboEngine::controlActive(
     case DiamondLogicalControl::DpadRight:
         return (state.dpad & static_cast<std::uint8_t>(DpadBits::Right)) != 0;
     case DiamondLogicalControl::None:
-    default:
-        return false;
+    default: return false;
     }
 }
 
@@ -92,8 +92,54 @@ void DiamondComboEngine::setControl(
     case DiamondLogicalControl::DpadLeft: setDpad(DpadBits::Left); break;
     case DiamondLogicalControl::DpadRight: setDpad(DpadBits::Right); break;
     case DiamondLogicalControl::None:
-    default:
-        break;
+    default: break;
+    }
+}
+
+std::uint32_t DiamondComboEngine::stepLogicalMask(
+    const DiamondComboStep& step
+) {
+    return step.logicalMask != 0
+        ? step.logicalMask
+        : controlBit(step.control);
+}
+
+void DiamondComboEngine::applyLogicalMask(
+    std::uint32_t mask,
+    bool down,
+    LogicalGamepadState& state
+) {
+    for (
+        std::uint8_t raw = 1;
+        raw <= static_cast<std::uint8_t>(DiamondLogicalControl::DpadRight);
+        ++raw
+    ) {
+        if ((mask & (1u << raw)) != 0) {
+            setControl(static_cast<DiamondLogicalControl>(raw), down, state);
+        }
+    }
+}
+
+void DiamondComboEngine::mergeKey(
+    std::array<std::uint8_t, 6>& keys,
+    std::uint8_t usage
+) {
+    if (usage == 0) return;
+    for (const auto key : keys) if (key == usage) return;
+    for (auto& key : keys) {
+        if (key == 0) {
+            key = usage;
+            return;
+        }
+    }
+}
+
+void DiamondComboEngine::removeKey(
+    std::array<std::uint8_t, 6>& keys,
+    std::uint8_t usage
+) {
+    for (auto& key : keys) {
+        if (key == usage) key = 0;
     }
 }
 
@@ -116,9 +162,7 @@ bool DiamondComboEngine::triggerActive(
                     static_cast<DiamondLogicalControl>(trigger.code),
                     state
                 )
-            ) {
-                return true;
-            }
+            ) return true;
             break;
 
         case DiamondComboTriggerKind::KeyboardUsage:
@@ -127,9 +171,7 @@ bool DiamondComboEngine::triggerActive(
                 keyboard->connected &&
                 keyboard->pressed(static_cast<std::uint8_t>(trigger.code)) &&
                 (keyboard->modifiers & trigger.modifiers) == trigger.modifiers
-            ) {
-                return true;
-            }
+            ) return true;
             break;
 
         case DiamondComboTriggerKind::MouseButton:
@@ -137,13 +179,21 @@ bool DiamondComboEngine::triggerActive(
                 mouse != nullptr &&
                 mouse->connected &&
                 (mouse->buttons & trigger.code) != 0
-            ) {
-                return true;
-            }
+            ) return true;
+            break;
+
+        case DiamondComboTriggerKind::MouseWheel:
+            if (
+                mouse != nullptr &&
+                mouse->connected &&
+                (
+                    (trigger.code == 1 && mouse->wheel > 0) ||
+                    (trigger.code == 2 && mouse->wheel < 0)
+                )
+            ) return true;
             break;
         }
     }
-
     return false;
 }
 
@@ -168,13 +218,74 @@ void DiamondComboEngine::clearLogicalTriggers(
     }
 }
 
-void DiamondComboEngine::stop(Runtime& runtime) {
-    runtime.active = false;
-    runtime.stepIndex = 0;
+void DiamondComboEngine::applyHeld(
+    const Runtime& runtime,
+    LogicalGamepadState& output
+) {
+    applyLogicalMask(runtime.heldControls, true, output);
+    nativeOutput_.keyboard.modifiers |= runtime.heldModifiers;
+    for (const auto key : runtime.heldKeys) {
+        if (key != 0) nativeOutput_.keyboard.setPressed(key, true);
+    }
+    nativeOutput_.mouse.buttons |= runtime.heldMouseButtons;
+}
+
+void DiamondComboEngine::applyStepChord(
+    const DiamondComboStep& step,
+    Runtime& runtime,
+    LogicalGamepadState& output,
+    bool includeWheel
+) {
+    applyLogicalMask(stepLogicalMask(step), true, output);
+    nativeOutput_.keyboard.modifiers |= step.keyboardModifiers;
+    for (const auto key : step.keyboardKeys) {
+        if (key != 0) nativeOutput_.keyboard.setPressed(key, true);
+    }
+    nativeOutput_.mouse.buttons |= step.mouseButtons;
+
+    if (includeWheel && !runtime.wheelSent && step.mouseWheel != 0) {
+        nativeOutput_.mouse.wheel += step.mouseWheel;
+        runtime.wheelSent = true;
+    }
+}
+
+void DiamondComboEngine::holdStep(
+    const DiamondComboStep& step,
+    Runtime& runtime
+) {
+    runtime.heldControls |= stepLogicalMask(step);
+    runtime.heldModifiers |= step.keyboardModifiers;
+    for (const auto key : step.keyboardKeys) mergeKey(runtime.heldKeys, key);
+    runtime.heldMouseButtons |= step.mouseButtons;
+}
+
+void DiamondComboEngine::releaseStep(
+    const DiamondComboStep& step,
+    Runtime& runtime
+) {
+    runtime.heldControls &= ~stepLogicalMask(step);
+    runtime.heldModifiers &= static_cast<std::uint8_t>(~step.keyboardModifiers);
+    for (const auto key : step.keyboardKeys) removeKey(runtime.heldKeys, key);
+    runtime.heldMouseButtons &= static_cast<std::uint16_t>(~step.mouseButtons);
+}
+
+void DiamondComboEngine::advance(
+    const DiamondComboStep& step,
+    Runtime& runtime,
+    std::uint64_t nowUs
+) {
+    ++runtime.stepIndex;
     runtime.phaseStartedUs = 0;
-    runtime.pulseDown = true;
-    runtime.pulseCount = 0;
-    runtime.heldControls = 0;
+    runtime.wheelSent = false;
+    runtime.nextStepNotBeforeUs =
+        step.delayAfterMs == 0
+            ? 0
+            : nowUs +
+                static_cast<std::uint64_t>(step.delayAfterMs) * 1000ull;
+}
+
+void DiamondComboEngine::stop(Runtime& runtime) {
+    runtime = {};
 }
 
 bool DiamondComboEngine::execute(
@@ -184,21 +295,23 @@ bool DiamondComboEngine::execute(
     LogicalGamepadState& output,
     std::uint64_t nowUs
 ) {
-    for (std::uint8_t raw = 1;
-         raw <= static_cast<std::uint8_t>(DiamondLogicalControl::DpadRight);
-         ++raw) {
-        if ((runtime.heldControls & (1u << raw)) != 0) {
-            setControl(static_cast<DiamondLogicalControl>(raw), true, output);
-        }
-    }
+    applyHeld(runtime, output);
+
+    if (
+        runtime.nextStepNotBeforeUs != 0 &&
+        nowUs < runtime.nextStepNotBeforeUs
+    ) return false;
+    runtime.nextStepNotBeforeUs = 0;
 
     for (unsigned guard = 0; guard < kDiamondComboSteps + 2; ++guard) {
         if (runtime.stepIndex >= program.stepCount) {
             if (program.repeat == DiamondComboRepeatMode::AutoRepeat) {
                 runtime.stepIndex = 0;
-                runtime.phaseStartedUs = nowUs;
+                runtime.phaseStartedUs = 0;
+                runtime.nextStepNotBeforeUs = 0;
                 runtime.pulseDown = true;
                 runtime.pulseCount = 0;
+                runtime.wheelSent = false;
                 continue;
             }
             return true;
@@ -206,8 +319,7 @@ bool DiamondComboEngine::execute(
 
         const auto& step = program.steps[runtime.stepIndex];
         if (!step.enabled) {
-            ++runtime.stepIndex;
-            runtime.phaseStartedUs = nowUs;
+            advance(step, runtime, nowUs);
             continue;
         }
 
@@ -218,77 +330,71 @@ bool DiamondComboEngine::execute(
 
         switch (step.kind) {
         case DiamondComboStepKind::HoldStart:
-            runtime.heldControls |= controlBit(step.control);
-            setControl(step.control, true, output);
-            ++runtime.stepIndex;
-            runtime.phaseStartedUs = nowUs;
+            holdStep(step, runtime);
+            applyHeld(runtime, output);
+            advance(step, runtime, nowUs);
             continue;
 
         case DiamondComboStepKind::HoldEnd:
-            runtime.heldControls &= ~controlBit(step.control);
-            setControl(step.control, false, output);
-            ++runtime.stepIndex;
-            runtime.phaseStartedUs = nowUs;
+            releaseStep(step, runtime);
+            advance(step, runtime, nowUs);
             continue;
 
         case DiamondComboStepKind::Wait:
             if (elapsedUs < durationUs) return false;
-            ++runtime.stepIndex;
-            runtime.phaseStartedUs = nowUs;
+            advance(step, runtime, nowUs);
             continue;
 
         case DiamondComboStepKind::WaitUntilPressed:
             if (!controlActive(step.control, input)) return false;
-            ++runtime.stepIndex;
-            runtime.phaseStartedUs = nowUs;
+            advance(step, runtime, nowUs);
             continue;
 
         case DiamondComboStepKind::WaitUntilReleased:
             if (controlActive(step.control, input)) return false;
-            ++runtime.stepIndex;
-            runtime.phaseStartedUs = nowUs;
+            advance(step, runtime, nowUs);
             continue;
 
         case DiamondComboStepKind::Press:
             if (elapsedUs < durationUs) {
-                setControl(step.control, true, output);
+                applyStepChord(step, runtime, output, true);
                 return false;
             }
-            ++runtime.stepIndex;
-            runtime.phaseStartedUs = nowUs;
+            advance(step, runtime, nowUs);
             continue;
 
-        case DiamondComboStepKind::Pulse: {
+        case DiamondComboStepKind::Pulse:
             if (runtime.pulseDown) {
                 if (elapsedUs < durationUs) {
-                    setControl(step.control, true, output);
+                    applyStepChord(step, runtime, output, true);
                     return false;
                 }
                 runtime.pulseDown = false;
                 runtime.phaseStartedUs = nowUs;
+                runtime.wheelSent = false;
                 ++runtime.pulseCount;
                 return false;
             }
 
-            const std::uint64_t intervalUs =
-                static_cast<std::uint64_t>(step.intervalMs) * 1000ull;
-            if (elapsedUs < intervalUs) return false;
+            if (
+                elapsedUs <
+                static_cast<std::uint64_t>(step.intervalMs) * 1000ull
+            ) return false;
 
             if (
                 step.repeatCount != 0 &&
                 runtime.pulseCount >= step.repeatCount
             ) {
-                ++runtime.stepIndex;
-                runtime.phaseStartedUs = nowUs;
                 runtime.pulseDown = true;
                 runtime.pulseCount = 0;
+                advance(step, runtime, nowUs);
                 continue;
             }
 
             runtime.pulseDown = true;
             runtime.phaseStartedUs = nowUs;
+            runtime.wheelSent = false;
             continue;
-        }
         }
     }
 
@@ -303,6 +409,9 @@ LogicalGamepadState DiamondComboEngine::apply(
     std::uint64_t nowUs
 ) {
     const LogicalGamepadState input = base;
+    nativeOutput_ = {};
+    nativeOutput_.keyboard.connected = true;
+    nativeOutput_.mouse.connected = true;
 
     for (std::size_t i = 0; i < programs.size(); ++i) {
         const auto& program = programs[i];
@@ -338,26 +447,20 @@ LogicalGamepadState DiamondComboEngine::apply(
             runtime.active &&
             program.cancelOnTriggerPressAgain &&
             rising
-        ) {
-            stop(runtime);
-        }
+        ) stop(runtime);
 
         if (
             runtime.active &&
             program.cancelOnTriggerRelease &&
             !trigger &&
             runtime.previousTrigger
-        ) {
-            stop(runtime);
-        }
+        ) stop(runtime);
 
         if (
             runtime.active &&
             program.cancelControlEnabled &&
             controlActive(program.cancelControl, input)
-        ) {
-            stop(runtime);
-        }
+        ) stop(runtime);
 
         if (start) {
             stop(runtime);
