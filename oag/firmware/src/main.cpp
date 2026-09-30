@@ -158,7 +158,7 @@ public:
         if (configMode_) {
             // Config mode owns CYW43. USB Host remains available for local
             // inputs/calibration, while Bluetooth and gaming output stay off.
-            if (!wifiPortal_.start(configStore_)) {
+            if (!wifiPortal_.start(configStore_, states_.data(), states_.size())) {
                 return false;
             }
             bluetoothInitNotBeforeUs_ = 0;
