@@ -131,7 +131,7 @@ const std::uint8_t kPcConfigurationDescriptor[] = {
     // Native keyboard — interface 8 — EP 89
     TUD_HID_DESCRIPTOR(
         0x08,
-        0,
+        4,
         HID_ITF_PROTOCOL_KEYBOARD,
         sizeof(kPcKeyboardReportDescriptor),
         0x89,
@@ -142,7 +142,7 @@ const std::uint8_t kPcConfigurationDescriptor[] = {
     // Native mouse — interface 9 — EP 8A
     TUD_HID_DESCRIPTOR(
         0x09,
-        0,
+        4,
         HID_ITF_PROTOCOL_MOUSE,
         sizeof(kPcMouseReportDescriptor),
         0x8A,
@@ -357,7 +357,7 @@ const std::uint8_t kMobileConfigurationDescriptor[] = {
     // Native keyboard — HID instance 4 — interface 4 — EP 85
     TUD_HID_DESCRIPTOR(
         4,
-        0,
+        4,
         HID_ITF_PROTOCOL_KEYBOARD,
         sizeof(kMobileKeyboardReportDescriptor),
         0x85,
@@ -368,7 +368,7 @@ const std::uint8_t kMobileConfigurationDescriptor[] = {
     // Native mouse — HID instance 5 — interface 5 — EP 86
     TUD_HID_DESCRIPTOR(
         5,
-        0,
+        4,
         HID_ITF_PROTOCOL_MOUSE,
         sizeof(kMobileMouseReportDescriptor),
         0x86,
@@ -543,6 +543,11 @@ const char* stringValue(std::uint8_t index) {
             // VID/PID, interfaces, endpoints and compatibility descriptors
             // untouched; this changes only the USB device Product String.
             return "OAG ABO GEMI ULTRA GAMING";
+
+        case 4:
+            // Interface-only identity for native keyboard and mouse.
+            // OAG composite/gamepad/touch product identities stay unchanged.
+            return "Razer BlackWidow V4 Pro";
 
         case 3: {
             pico_unique_board_id_t id {};
