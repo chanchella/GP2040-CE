@@ -1120,7 +1120,7 @@ private:
     // controller-stick pull from V1 and keeps K/M exposed as real HID K/M.
     static constexpr std::uint64_t kNativeAntiRecoilTickUs = 40000;
     static constexpr std::int32_t kNativeAntiRecoilDy = 2;
-    static constexpr std::int32_t kNativeAntiRecoilHorizontalPermille = 80;
+    static constexpr std::int32_t kNativeAntiRecoilHorizontalPermille = -250;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -2078,15 +2078,12 @@ private:
                 nowUs + kNativeAntiRecoilTickUs;
 
             // Downward relative HID movement counters upward weapon climb.
-            // Horizontal correction is deliberately only +/-8% and alternates
-            // pseudo-randomly around zero. A fixed-point accumulator preserves
-            // sub-count movement without forcing a 1-count horizontal jump
-            // on every tick.
-            nativeAntiRecoilPrng_ =
-                nativeAntiRecoilPrng_ * 1664525u + 1013904223u;
-
+            // V3's symmetric horizontal jitter is removed: the measured wall
+            // pattern now walks consistently to the right. Apply a small,
+            // deterministic left correction instead. Fixed-point accumulation
+            // gives us half a native mouse count per tick (-1 every 2 ticks)
+            // without introducing right/left randomness.
             const std::int32_t horizontalMilli =
-                ((nativeAntiRecoilPrng_ >> 31) != 0 ? 1 : -1) *
                 kNativeAntiRecoilDy *
                 kNativeAntiRecoilHorizontalPermille;
 
@@ -2450,8 +2447,6 @@ private:
 
     std::uint64_t nativeAntiRecoilNextUs_ = 0;
     std::int32_t nativeAntiRecoilHorizontalMilli_ = 0;
-    std::uint32_t nativeAntiRecoilPrng_ = 0xB100D5A2u;
-
     std::array<
         XgipInitPhase,
         oag::LogicalSlotManager::kGamepadSlots
