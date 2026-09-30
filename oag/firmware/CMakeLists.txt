@@ -40,6 +40,7 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     src/bluetooth_host_v2.cpp
     src/diamond_wifi_portal.cpp
     src/diamond_config_store.cpp
+    src/diamond_game_library_store.cpp
     src/net/dhcpserver.c
     src/net/dnsserver.c
     src/bluetooth_hid_parser_v2.cpp
