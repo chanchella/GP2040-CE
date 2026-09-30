@@ -33,8 +33,8 @@ tcp_pcb* gHttpListener = nullptr;
 DiamondWifiPortal* gPortal = nullptr;
 
 constexpr std::size_t kHttpBufferBytes = 3072;
-// Mobile browsers preload CSS/JS in parallel. Two slots caused legitimate
-// portal assets to receive HTTP 503, leaving the page half-initialized.
+// Mobile browsers may preload assets in parallel. OAG V11 also loads the
+// dependent combo modules sequentially with retry so the editor is atomic.
 // Config Mode is isolated from Gaming Mode, so reserve enough short-lived
 // request slots here without touching the frozen controller path.
 constexpr std::size_t kHttpClientSlots = 12;
