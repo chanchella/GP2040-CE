@@ -1120,7 +1120,7 @@ private:
     // controller-stick pull from V1 and keeps K/M exposed as real HID K/M.
     static constexpr std::uint64_t kNativeAntiRecoilTickUs = 40000;
     static constexpr std::int32_t kNativeAntiRecoilDy = 2;
-    static constexpr std::int32_t kNativeAntiRecoilHorizontalPermille = -250;
+    static constexpr std::int32_t kNativeAntiRecoilHorizontalPermille = -500;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
