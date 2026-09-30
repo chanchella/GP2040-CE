@@ -6,6 +6,7 @@ option(OAG_BUILD_HOST_TESTS "Build host-side OAG core tests" ON)
 
 add_library(oag_core STATIC
     src/config/controller_calibration.cpp
+    src/config/diamond_config_record.cpp
     src/device/device_registry.cpp
     src/device/usb_device_classifier.cpp
     src/protocol/xusb/xusb_input_driver.cpp
@@ -61,6 +62,13 @@ if(OAG_BUILD_HOST_TESTS)
     target_compile_features(oag_core_tests PRIVATE cxx_std_17)
 
     add_test(NAME oag_core_tests COMMAND oag_core_tests)
+
+    add_executable(oag_diamond_config_record_tests
+        tests/host/test_diamond_config_record.cpp
+    )
+    target_link_libraries(oag_diamond_config_record_tests PRIVATE oag_core)
+    target_compile_features(oag_diamond_config_record_tests PRIVATE cxx_std_17)
+    add_test(NAME oag_diamond_config_record_tests COMMAND oag_diamond_config_record_tests)
 
     add_executable(oag_controller_calibration_tests
         tests/host/test_controller_calibration.cpp
