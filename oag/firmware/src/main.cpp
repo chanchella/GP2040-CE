@@ -11,6 +11,7 @@
 #include "tusb.h"
 #include "host/usbh_pvt.h"
 
+#include "oag/config/controller_calibration.h"
 #include "oag/device/device_registry.h"
 #include "oag/device/usb_device_classifier.h"
 #include "oag/feedback/rumble_command.h"
@@ -141,6 +142,12 @@ public:
 
         // Hardware-verified invariant: PIO USB Host owns the board first.
         if (!usbHost_.start()) {
+            return false;
+        }
+
+        // Load persisted runtime settings in every output profile. Defaults
+        // preserve Golden behavior when no config has been saved.
+        if (!configStore_.load()) {
             return false;
         }
 
@@ -1671,6 +1678,26 @@ private:
         }
     }
 
+    oag::LogicalGamepadState mapConfiguredState(
+        oag::LogicalSlotId slot
+    ) const {
+        if (slot >= states_.size()) {
+            return {};
+        }
+
+        const auto& runtime = configStore_.config().runtime;
+        if (slot >= runtime.controllers.size()) {
+            return mapConfiguredState(slot);
+        }
+
+        const oag::UniversalGamepadState calibrated =
+            oag::ControllerCalibrationFilter::apply(
+                states_[slot],
+                runtime.controllers[slot]
+            );
+        return mapping_.process(calibrated);
+    }
+
     void rebuildPcOutputRouting() {
         std::array<
             std::optional<oag::LogicalSlotId>,
@@ -1830,7 +1857,7 @@ private:
                     internalSlot < states_.size() &&
                     states_[internalSlot].connected
                 ) {
-                    output = mapping_.process(states_[internalSlot]);
+                    output = mapConfiguredState(internalSlot);
                 }
             }
 
@@ -1856,7 +1883,7 @@ private:
             return {};
         }
 
-        return mapping_.process(states_[slot]);
+        return mapConfiguredState(slot);
     }
 
     void sendSlotOutput(oag::LogicalSlotId slot) {
@@ -1882,7 +1909,7 @@ private:
             oag::LogicalGamepadState output {};
 
             if (states_[slot].connected) {
-                output = mapping_.process(states_[slot]);
+                output = mapConfiguredState(slot);
             }
 
             platformOutput_.submit(
