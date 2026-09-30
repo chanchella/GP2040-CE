@@ -4,8 +4,10 @@
 #include <cstdio>
 #include <cstring>
 
+extern "C" {
 #include "dhcpserver.h"
 #include "dnsserver.h"
+}
 #include "lwip/ip4_addr.h"
 #include "lwip/netif.h"
 #include "lwip/pbuf.h"
