@@ -2694,7 +2694,8 @@ private:
     }
 
     oag::firmware::UsbPioHost usbHost_;
-    oag::firmware::DiamondWifiPortal wifiPortal_;\n    bool configMode_ = false;
+    oag::firmware::DiamondWifiPortal wifiPortal_;
+    bool configMode_ = false;
 
     oag::firmware::BluetoothHostV2 bluetoothHost_;
     oag::firmware::BluetoothHidParserV2 bluetoothHidParser_;
