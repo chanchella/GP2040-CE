@@ -27,7 +27,9 @@ struct ControllerCalibration {
 struct WeaponRecoilProfile {
     bool enabled = false;
     std::uint16_t tickMs = 40;
-    // Half-permille preserves .5 values exactly without floating point.
+    // Internal fixed-point strength. The Wi-Fi UI exposes -2.00..+2.00;
+    // one UI 0.01 step maps to one stored unit. Existing V3 values remain
+    // binary-compatible, so old recoil data migrates without a rewrite.
     std::int32_t horizontalHalfPermille = 0;
     std::int32_t verticalHalfPermille = 0;
 };
@@ -40,6 +42,7 @@ struct GameProfile {
 enum class DiamondActionId : std::uint8_t {
     None = 0,
     Combo1, Combo2, Combo3, Combo4, Combo5, Combo6, Combo7, Combo8,
+    Combo9, Combo10, Combo11, Combo12, Combo13, Combo14, Combo15, Combo16,
     Weapon1, Weapon2, Weapon3, Weapon4, Weapon5, Weapon6, Weapon7, Weapon8,
 };
 
