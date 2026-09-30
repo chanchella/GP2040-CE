@@ -14,6 +14,13 @@ constexpr std::size_t kDiamondPasswordSaltBytes = 16;
 constexpr std::size_t kDiamondPasswordVerifierBytes = 32;
 constexpr std::size_t kDiamondDisplayNameBytes = 33; // 32 chars + NUL
 
+struct DiamondComboTiming {
+    bool enabled = false;
+    std::uint16_t pressMs = 50;
+    std::uint16_t delayAfterMs = 50;
+    std::uint16_t repeatCount = 1;
+};
+
 struct DiamondSecurityConfig {
     bool provisioned = false;
     std::array<char, kDiamondAdminUsernameBytes> adminUsername {};
@@ -33,11 +40,12 @@ struct DiamondContentNames {
         kDiamondGameSlots
     > weapons {};
     std::array<std::array<char, kDiamondDisplayNameBytes>, kDiamondComboSlots> combos {};
+    std::array<DiamondComboTiming, kDiamondComboSlots> comboTiming {};
 };
 
 struct DiamondPersistentConfig {
     static constexpr std::uint32_t kMagic = 0x4F414750u; // OAGP
-    static constexpr std::uint16_t kSchemaVersion = 2;
+    static constexpr std::uint16_t kSchemaVersion = 3;
 
     std::uint32_t magic = kMagic;
     std::uint16_t schemaVersion = kSchemaVersion;
