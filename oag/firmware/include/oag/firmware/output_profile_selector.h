@@ -13,6 +13,7 @@ enum class OutputProfileId : std::uint8_t {
     Playstation5 = 5,
     Nintendo = 6,
     MobileTouch = 7,
+    OagConfig = 8,
 };
 
 OutputProfileId activeOutputProfile();
