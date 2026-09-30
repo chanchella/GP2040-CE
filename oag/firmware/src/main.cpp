@@ -182,9 +182,16 @@ public:
         usbHost_.task();
 
         if (configMode_) {
+            // Config Mode still needs the complete wired INPUT transport:
+            // keep XUSB IN endpoints armed and complete the minimum XGIP
+            // handshake required for controllers to emit reports. Output to
+            // the PC remains disabled by the configMode_ guards below.
+            maintainXinputTransport();
+            serviceXgipInit();
             wifiPortal_.task();
-            // Keep the exit hotkey alive in config mode without touching the
-            // proven Bluetooth/XInput/touch gaming paths.
+
+            // Keep the exit hotkey alive in config mode without enabling
+            // Bluetooth or any gaming USB output persona.
             serviceOutputProfileHotkey();
             return;
         }
@@ -1699,6 +1706,10 @@ private:
     }
 
     void rebuildPcOutputRouting() {
+        if (configMode_) {
+            return;
+        }
+
         std::array<
             std::optional<oag::LogicalSlotId>,
             oag::firmware::MultiProfilePlatformDriver::kOutputSlots
@@ -1887,6 +1898,10 @@ private:
     }
 
     void sendSlotOutput(oag::LogicalSlotId slot) {
+        if (configMode_) {
+            return;
+        }
+
         if (slot >= states_.size()) {
             return;
         }
@@ -1921,6 +1936,10 @@ private:
     }
 
     void sendComposedOutput() {
+        if (configMode_) {
+            return;
+        }
+
         oag::KeyboardState keyboard = combinedKeyboard();
         const oag::MouseState mouse = combinedMouse();
 
