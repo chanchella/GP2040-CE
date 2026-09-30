@@ -251,15 +251,18 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
             if(t.kind==oag::DiamondComboTriggerKind::LogicalControl&&!logical)logical=t.code;
             else if(t.kind==oag::DiamondComboTriggerKind::KeyboardUsage&&!key)key=t.code;
             else if(t.kind==oag::DiamondComboTriggerKind::MouseButton&&!mouse)mouse=t.code;
+            else if(t.kind==oag::DiamondComboTriggerKind::MouseWheel&&!mouse)mouse=t.code==1?32:64;
         }
-        static char j[3072];std::size_t used=0;
+        static char j[6144];std::size_t used=0;
         int n=std::snprintf(j,sizeof(j),"{\"activation\":%u,\"repeat\":%u,\"passTrigger\":%s,\"cancelRelease\":%s,\"cancelAgain\":%s,\"cancelEnabled\":%s,\"cancelControl\":%u,\"logicalTrigger\":%u,\"keyboardTrigger\":%u,\"mouseTrigger\":%u,\"steps\":[",
             static_cast<unsigned>(p.activation),static_cast<unsigned>(p.repeat),p.passTriggerThrough?"true":"false",p.cancelOnTriggerRelease?"true":"false",p.cancelOnTriggerPressAgain?"true":"false",p.cancelControlEnabled?"true":"false",static_cast<unsigned>(p.cancelControl),logical,key,mouse);
         if(n<0||static_cast<std::size_t>(n)>=sizeof(j)){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}used=static_cast<std::size_t>(n);
         for(std::uint8_t i=0;i<p.stepCount&&i<oag::kDiamondComboSteps;i++){
             const auto& s=p.steps[i];
-            n=std::snprintf(j+used,sizeof(j)-used,"%s{\"kind\":%u,\"control\":%u,\"durationMs\":%u,\"intervalMs\":%u,\"repeatCount\":%u}",
-                i?",":"",static_cast<unsigned>(s.kind),static_cast<unsigned>(s.control),s.durationMs,s.intervalMs,s.repeatCount);
+            n=std::snprintf(j+used,sizeof(j)-used,"%s{\"kind\":%u,\"control\":%u,\"durationMs\":%u,\"delayAfterMs\":%u,\"intervalMs\":%u,\"repeatCount\":%u,\"logicalMask\":%lu,\"modifiers\":%u,\"mouseButtons\":%u,\"mouseWheel\":%d,\"keys\":[%u,%u,%u,%u,%u,%u]}",
+                i?",":"",static_cast<unsigned>(s.kind),static_cast<unsigned>(s.control),s.durationMs,s.delayAfterMs,s.intervalMs,s.repeatCount,
+                static_cast<unsigned long>(s.logicalMask),s.keyboardModifiers,s.mouseButtons,static_cast<int>(s.mouseWheel),
+                s.keyboardKeys[0],s.keyboardKeys[1],s.keyboardKeys[2],s.keyboardKeys[3],s.keyboardKeys[4],s.keyboardKeys[5]);
             if(n<0||static_cast<std::size_t>(n)>=sizeof(j)-used){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}used+=static_cast<std::size_t>(n);
         }
         if(used+3>=sizeof(j)){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}
@@ -313,7 +316,7 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
            !parseUnsigned(body,"pass",0,1,pass)||!parseUnsigned(body,"cancelRelease",0,1,cancelRelease)||
            !parseUnsigned(body,"cancelAgain",0,1,cancelAgain)||!parseUnsigned(body,"cancelEnabled",0,1,cancelEnabled)||
            !parseUnsigned(body,"cancelControl",0,17,cancelControl)||!parseUnsigned(body,"logicalTrigger",0,17,logicalTrigger)||
-           !parseUnsigned(body,"keyboardTrigger",0,255,keyboardTrigger)||!parseUnsigned(body,"mouseTrigger",0,31,mouseTrigger)||
+           !parseUnsigned(body,"keyboardTrigger",0,255,keyboardTrigger)||!parseUnsigned(body,"mouseTrigger",0,64,mouseTrigger)||
            !parseUnsigned(body,"stepCount",0,oag::kDiamondComboSteps,stepCount)){
             sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo program");return;
         }
@@ -327,20 +330,30 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
         std::size_t ti=0;
         if(logicalTrigger&&ti<p.triggers.size())p.triggers[ti++]={true,oag::DiamondComboTriggerKind::LogicalControl,static_cast<std::uint16_t>(logicalTrigger),0};
         if(keyboardTrigger&&ti<p.triggers.size())p.triggers[ti++]={true,oag::DiamondComboTriggerKind::KeyboardUsage,static_cast<std::uint16_t>(keyboardTrigger),0};
-        if(mouseTrigger&&ti<p.triggers.size())p.triggers[ti++]={true,oag::DiamondComboTriggerKind::MouseButton,static_cast<std::uint16_t>(mouseTrigger),0};
+        if(mouseTrigger&&ti<p.triggers.size()){
+            if(mouseTrigger<=16)p.triggers[ti++]={true,oag::DiamondComboTriggerKind::MouseButton,static_cast<std::uint16_t>(mouseTrigger),0};
+            else p.triggers[ti++]={true,oag::DiamondComboTriggerKind::MouseWheel,static_cast<std::uint16_t>(mouseTrigger==32?1:2),0};
+        }
 
         p.stepCount=static_cast<std::uint8_t>(stepCount);
         for(std::uint32_t i=0;i<stepCount;i++){
-            char kk[8]{},kc[8]{},kd[8]{},ki[8]{},kr[8]{};
+            char kk[10]{},kc[10]{},kd[10]{},kw[10]{},ki[10]{},kr[10]{},klm[10]{},kmd[10]{},kmb[10]{},kmw[10]{};
             std::snprintf(kk,sizeof(kk),"s%luk",static_cast<unsigned long>(i));std::snprintf(kc,sizeof(kc),"s%luc",static_cast<unsigned long>(i));
-            std::snprintf(kd,sizeof(kd),"s%lud",static_cast<unsigned long>(i));std::snprintf(ki,sizeof(ki),"s%lui",static_cast<unsigned long>(i));std::snprintf(kr,sizeof(kr),"s%lur",static_cast<unsigned long>(i));
-            std::uint32_t kind=0,control=0,duration=0,interval=0,repeats=0;
+            std::snprintf(kd,sizeof(kd),"s%lud",static_cast<unsigned long>(i));std::snprintf(kw,sizeof(kw),"s%luw",static_cast<unsigned long>(i));
+            std::snprintf(ki,sizeof(ki),"s%lui",static_cast<unsigned long>(i));std::snprintf(kr,sizeof(kr),"s%lur",static_cast<unsigned long>(i));
+            std::snprintf(klm,sizeof(klm),"s%lulm",static_cast<unsigned long>(i));std::snprintf(kmd,sizeof(kmd),"s%lumd",static_cast<unsigned long>(i));
+            std::snprintf(kmb,sizeof(kmb),"s%lumb",static_cast<unsigned long>(i));std::snprintf(kmw,sizeof(kmw),"s%lumw",static_cast<unsigned long>(i));
+            std::uint32_t kind=0,control=0,duration=0,delay=0,interval=0,repeats=0,lmask=0,mods=0,mb=0;std::int32_t mw=0;
             if(!parseUnsigned(body,kk,0,6,kind)||!parseUnsigned(body,kc,0,17,control)||!parseUnsigned(body,kd,0,60000,duration)||
-               !parseUnsigned(body,ki,0,60000,interval)||!parseUnsigned(body,kr,0,1000,repeats)){
+               !parseUnsigned(body,kw,0,60000,delay)||!parseUnsigned(body,ki,0,60000,interval)||!parseUnsigned(body,kr,0,1000,repeats)||
+               !parseUnsigned(body,klm,0,262143,lmask)||!parseUnsigned(body,kmd,0,255,mods)||!parseUnsigned(body,kmb,0,31,mb)||
+               !parseSigned(body,kmw,-1,1,mw)){
                 sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo step");return;
             }
             auto& s=p.steps[i];s.enabled=true;s.kind=static_cast<oag::DiamondComboStepKind>(kind);s.control=static_cast<oag::DiamondLogicalControl>(control);
-            s.durationMs=static_cast<std::uint16_t>(duration);s.intervalMs=static_cast<std::uint16_t>(interval);s.repeatCount=static_cast<std::uint16_t>(repeats);
+            s.durationMs=static_cast<std::uint16_t>(duration);s.delayAfterMs=static_cast<std::uint16_t>(delay);s.intervalMs=static_cast<std::uint16_t>(interval);s.repeatCount=static_cast<std::uint16_t>(repeats);
+            s.logicalMask=lmask;s.keyboardModifiers=static_cast<std::uint8_t>(mods);s.mouseButtons=static_cast<std::uint16_t>(mb);s.mouseWheel=static_cast<std::int8_t>(mw);
+            for(std::uint32_t q=0;q<6;q++){char kq[12]{};std::snprintf(kq,sizeof(kq),"s%luq%lu",static_cast<unsigned long>(i),static_cast<unsigned long>(q));std::uint32_t usage=0;if(!parseUnsigned(body,kq,0,255,usage)){sendResponse(client,"400 Bad Request","text/plain","Invalid keyboard chord");return;}s.keyboardKeys[q]=static_cast<std::uint8_t>(usage);}
         }
         p.enabled=ti>0&&p.stepCount>0;
         pc.names.comboPrograms[slot-1]=p;
