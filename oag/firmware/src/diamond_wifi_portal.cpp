@@ -339,29 +339,39 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/name")){
         char type[12]{},name[oag::kDiamondDisplayNameBytes]{};std::uint32_t slot=0,game=0;
         if(!formValue(body,"type",type,sizeof(type))||!formValue(body,"name",name,sizeof(name))||!safeName(name)||!parseUnsigned(body,"slot",1,24,slot)){sendResponse(client,"400 Bad Request","text/plain","Invalid name");return;}
-        char* target=nullptr;
-        if(!std::strcmp(type,"game")&&slot<=oag::kDiamondGameSlots)target=pc.names.games[slot-1].data();
-        else if(!std::strcmp(type,"combo")&&slot<=oag::kDiamondComboSlots)target=pc.names.combos[slot-1].data();
-        else if(!std::strcmp(type,"weapon")&&parseUnsigned(body,"game",1,oag::kDiamondGameSlots,game)&&slot<=oag::kDiamondWeaponSlotsPerGame)target=pc.names.weapons[game-1][slot-1].data();
-        if(!target){sendResponse(client,"400 Bad Request","text/plain","Invalid name target");return;}std::memset(target,0,oag::kDiamondDisplayNameBytes);std::memcpy(target,name,std::strlen(name));
-        if(!store_->save()){sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}sendResponse(client,"200 OK","text/plain","Name saved");return;
+
+        if(!std::strcmp(type,"game")){
+            game=slot;
+            if(game<1||game>oag::kDiamondLibraryGameSlots||!loadGame(game)){sendResponse(client,"400 Bad Request","text/plain","Invalid game");return;}
+            std::memset(scratchGame_.gameName.data(),0,oag::kDiamondDisplayNameBytes);
+            std::memcpy(scratchGame_.gameName.data(),name,std::strlen(name));
+        }else{
+            if(!parseUnsigned(body,"game",1,oag::kDiamondLibraryGameSlots,game)||!loadGame(game)){sendResponse(client,"400 Bad Request","text/plain","Invalid game");return;}
+            char* target=nullptr;
+            if(!std::strcmp(type,"combo")&&slot<=oag::kDiamondComboSlots)target=scratchGame_.comboNames[slot-1].data();
+            else if(!std::strcmp(type,"weapon")&&slot<=oag::kDiamondWeaponSlotsPerGame)target=scratchGame_.weaponNames[slot-1].data();
+            if(!target){sendResponse(client,"400 Bad Request","text/plain","Invalid name target");return;}
+            std::memset(target,0,oag::kDiamondDisplayNameBytes);std::memcpy(target,name,std::strlen(name));
+        }
+        if(!games_->saveGame(game-1,scratchGame_)){sendResponse(client,"500 Internal Server Error","text/plain","OAG game Flash save failed");return;}
+        sendResponse(client,"200 OK","text/plain","Name saved");return;
     }
 
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/recoil")){
         std::uint32_t g=0,w=0,tick=0;std::int32_t horizontal=0,vertical=0;
-        if(!parseUnsigned(body,"game",1,oag::kDiamondGameSlots,g)||!parseUnsigned(body,"weapon",1,oag::kDiamondWeaponSlotsPerGame,w)||
-           !parseSigned(body,"horizontal",-200,200,horizontal)||!parseSigned(body,"vertical",-200,200,vertical)||!parseUnsigned(body,"tickMs",1,1000,tick)){
+        if(!parseUnsigned(body,"game",1,oag::kDiamondLibraryGameSlots,g)||!parseUnsigned(body,"weapon",1,oag::kDiamondWeaponSlotsPerGame,w)||
+           !parseSigned(body,"horizontal",-200,200,horizontal)||!parseSigned(body,"vertical",-200,200,vertical)||!parseUnsigned(body,"tickMs",1,1000,tick)||!loadGame(g)){
             sendResponse(client,"400 Bad Request","text/plain","Invalid OAG recoil");return;
         }
-        auto old=runtime.games[g-1].weapons[w-1];auto& r=runtime.games[g-1].weapons[w-1];
-        r.enabled=true;r.horizontalHalfPermille=horizontal;r.verticalHalfPermille=vertical;r.tickMs=static_cast<std::uint16_t>(tick);
-        if(!store_->save()){r=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}
+        auto& rr=scratchGame_.weapons[w-1];
+        rr.enabled=true;rr.horizontalHalfPermille=horizontal;rr.verticalHalfPermille=vertical;rr.tickMs=static_cast<std::uint16_t>(tick);
+        if(!games_->saveGame(g-1,scratchGame_)){sendResponse(client,"500 Internal Server Error","text/plain","OAG game Flash save failed");return;}
         sendResponse(client,"200 OK","text/plain","OAG recoil saved");return;
     }
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/combo-program")){
-        std::uint32_t slot=0,activation=0,repeatMode=0,pass=0,cancelRelease=0,cancelAgain=0,cancelEnabled=0,cancelControl=0;
+        std::uint32_t game=0,slot=0,activation=0,repeatMode=0,pass=0,cancelRelease=0,cancelAgain=0,cancelEnabled=0,cancelControl=0;
         std::uint32_t logicalTrigger=0,keyboardTrigger=0,keyboardModifiersTrigger=0,mouseTrigger=0,stepCount=0;
-        if(!parseUnsigned(body,"slot",1,oag::kDiamondComboSlots,slot)||
+        if(!parseUnsigned(body,"game",1,oag::kDiamondLibraryGameSlots,game)||!loadGame(game)||!parseUnsigned(body,"slot",1,oag::kDiamondComboSlots,slot)||
            !parseUnsigned(body,"activation",0,2,activation)||!parseUnsigned(body,"repeat",0,1,repeatMode)||
            !parseUnsigned(body,"pass",0,1,pass)||!parseUnsigned(body,"cancelRelease",0,1,cancelRelease)||
            !parseUnsigned(body,"cancelAgain",0,1,cancelAgain)||!parseUnsigned(body,"cancelEnabled",0,1,cancelEnabled)||
@@ -371,7 +381,6 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
             sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo program");return;
         }
 
-        auto old=pc.names.comboPrograms[slot-1];
         oag::DiamondComboProgram p{};
         p.activation=static_cast<oag::DiamondComboActivationMode>(activation);
         p.repeat=static_cast<oag::DiamondComboRepeatMode>(repeatMode);
@@ -406,27 +415,39 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
             for(std::uint32_t q=0;q<6;q++){char kq[12]{};std::snprintf(kq,sizeof(kq),"s%luq%lu",static_cast<unsigned long>(i),static_cast<unsigned long>(q));std::uint32_t usage=0;if(!parseUnsigned(body,kq,0,255,usage)){sendResponse(client,"400 Bad Request","text/plain","Invalid keyboard chord");return;}s.keyboardKeys[q]=static_cast<std::uint8_t>(usage);}
         }
         p.enabled=ti>0&&p.stepCount>0;
-        pc.names.comboPrograms[slot-1]=p;
-        if(!store_->save()){pc.names.comboPrograms[slot-1]=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}
+        scratchGame_.comboPrograms[slot-1]=p;
+        if(!games_->saveGame(game-1,scratchGame_)){sendResponse(client,"500 Internal Server Error","text/plain","OAG game Flash save failed");return;}
         sendResponse(client,"200 OK","text/plain","OAG combo program saved");return;
     }
 
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/combo")){
-        std::uint32_t slot=0,press=0,delay=0,repeat=0;
-        if(!parseUnsigned(body,"slot",1,oag::kDiamondComboSlots,slot)||!parseUnsigned(body,"pressMs",1,60000,press)||
+        std::uint32_t game=0,slot=0,press=0,delay=0,repeat=0;
+        if(!parseUnsigned(body,"game",1,oag::kDiamondLibraryGameSlots,game)||!loadGame(game)||
+           !parseUnsigned(body,"slot",1,oag::kDiamondComboSlots,slot)||!parseUnsigned(body,"pressMs",1,60000,press)||
            !parseUnsigned(body,"delayMs",0,60000,delay)||!parseUnsigned(body,"repeat",1,1000,repeat)){
             sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo timing");return;
         }
-        auto old=pc.names.comboTiming[slot-1];auto& t=pc.names.comboTiming[slot-1];
+        auto& t=scratchGame_.comboTiming[slot-1];
         t.enabled=true;t.pressMs=static_cast<std::uint16_t>(press);t.delayAfterMs=static_cast<std::uint16_t>(delay);t.repeatCount=static_cast<std::uint16_t>(repeat);
-        if(!store_->save()){t=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}
+        if(!games_->saveGame(game-1,scratchGame_)){sendResponse(client,"500 Internal Server Error","text/plain","OAG game Flash save failed");return;}
         sendResponse(client,"200 OK","text/plain","OAG combo timing saved");return;
     }
 
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/profile")){
-        std::uint32_t g=0,w=0,en=0;if(!parseUnsigned(body,"game",1,oag::kDiamondGameSlots,g)||!parseUnsigned(body,"weapon",1,oag::kDiamondWeaponSlotsPerGame,w)||!parseUnsigned(body,"enabled",0,1,en)){sendResponse(client,"400 Bad Request","text/plain","Invalid profile");return;}
-        auto og=runtime.activeGame,ow=runtime.activeWeapon;bool oe=runtime.games[g-1].enabled;runtime.activeGame=static_cast<std::uint16_t>(g-1);runtime.activeWeapon=static_cast<std::uint16_t>(w-1);runtime.games[g-1].enabled=en!=0;
-        if(!store_->save()){runtime.activeGame=og;runtime.activeWeapon=ow;runtime.games[g-1].enabled=oe;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}sendResponse(client,"200 OK","text/plain","Profile saved");return;
+        std::uint32_t g=0,w=0,en=0;
+        if(!parseUnsigned(body,"game",1,oag::kDiamondLibraryGameSlots,g)||!parseUnsigned(body,"weapon",1,oag::kDiamondWeaponSlotsPerGame,w)||!parseUnsigned(body,"enabled",0,1,en)){
+            sendResponse(client,"400 Bad Request","text/plain","Invalid profile");return;
+        }
+        if(!games_->activate(g-1,pc)){sendResponse(client,"500 Internal Server Error","text/plain","Game load failed");return;}
+        const auto oldGame=runtime.activeGame,oldWeapon=runtime.activeWeapon;
+        runtime.activeGame=static_cast<std::uint16_t>(g-1);
+        runtime.activeWeapon=static_cast<std::uint16_t>(w-1);
+        if(!store_->save()){
+            runtime.activeGame=oldGame;runtime.activeWeapon=oldWeapon;
+            games_->activate(oldGame<oag::kDiamondLibraryGameSlots?oldGame:0,pc);
+            sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;
+        }
+        sendResponse(client,"200 OK","text/plain","Profile saved");return;
     }
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/save-play")){if(!store_->save()){sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}sendResponse(client,"200 OK","text/plain","Saved");schedulePlayReboot(1200);return;}
     sendResponse(client,"404 Not Found","text/plain","Not found");
