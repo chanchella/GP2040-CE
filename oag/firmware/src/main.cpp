@@ -1169,8 +1169,8 @@ private:
     static constexpr std::uint8_t kPubgScrollUp = 2;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
-    static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
-    static constexpr std::uint64_t kOutputProfileHoldUs = 1500000ull;
+    static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 1000000ull;
+    static constexpr std::uint64_t kOutputProfileHoldUs = 1000000ull;
     static constexpr std::uint8_t kModeToggleF4Usage = 0x3D;
     static constexpr std::uint8_t kModeToggleF5Usage = 0x3E;
     static constexpr std::uint8_t kProfileF8Usage = 0x41;
