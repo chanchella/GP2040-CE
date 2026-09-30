@@ -14,6 +14,7 @@ namespace oag {
 class DiamondComboEngine {
 public:
     void reset();
+    bool active() const;
 
     LogicalGamepadState apply(
         const std::array<DiamondComboProgram, kDiamondComboSlots>& programs,
