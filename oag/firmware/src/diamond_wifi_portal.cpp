@@ -32,18 +32,26 @@ constexpr char kPortalHtml[] =
 "</style></head><body><header><h1>OAG ABO GEMI</h1>"
 "<small>OAG ABO GEMI Configuration Portal</small></header><main class='wrap'>"
 "<div class='grid'>"
-"<section class='card'><h2>Controllers</h2><div class='tag'>OAG ABO GEMI Controller - OAG 1</div>"
+"<section class='card'><h2>Controllers</h2><div class='tag' data-oag-controller='Controller'>Controller</div>"
 "<p class='muted'>Live stick monitor, center calibration and anti-drift.</p></section>"
 "<section class='card'><h2>Games</h2><p class='muted'>Add and manage game profiles.</p></section>"
-"<section class='card'><h2>Weapons</h2><p class='muted'>Weapon profiles keep their real weapon names.</p></section>"
+"<section class='card'><h2>Weapons</h2><div class='tag' data-oag-number='1' data-oag-name='Weapon'>Weapon</div><p class='muted'>Weapon names stay unchanged; every displayed weapon number is OAG ABO GEMI branded.</p></section>"
 "<section class='card'><h2>Recoil</h2><p class='muted'>Vertical, horizontal and timing configuration.</p></section>"
-"<section class='card'><h2>Combos</h2><p class='muted'>Universal actions for keyboard, mouse and controller triggers.</p></section>"
+"<section class='card'><h2>Combos</h2><div class='tag' data-oag-number='1' data-oag-name='Combo'>Combo</div><p class='muted'>Universal actions for keyboard, mouse and controller triggers.</p></section>"
 "<section class='card'><h2>Input Bindings</h2><p class='muted'>Native K/M, controller and touch bindings.</p></section>"
-"<section class='card'><h2>Profiles</h2><div class='tag'>OAG 1</div><div class='tag'>OAG 2</div>"
-"<div class='tag'>OAG 3</div><p class='muted'>Games and weapons keep their original names.</p></section>"
+"<section class='card'><h2>Profiles</h2><div class='tag' data-oag-number='1'></div><div class='tag' data-oag-number='2'></div>"
+"<div class='tag' data-oag-number='3'></div><p class='muted'>Game and weapon names remain original; OAG ABO GEMI is applied to their displayed numbers.</p></section>"
 "<section class='card'><h2>System</h2><p class='ok'>OAG ABO GEMI portal online</p>"
 "<p class='muted'>Backup, restore and Save & Play will live here.</p></section>"
-"</div></main></body></html>";
+"</div></main><script>"
+"const OAG_BRAND='OAG ABO GEMI';"
+"function oagNumber(n){return OAG_BRAND+' '+String(n);}"
+"function oagController(name){return OAG_BRAND+' '+String(name||'Controller');}"
+"function oagNumberedItem(n,name){const id=oagNumber(n);return name?String(name)+' - '+id:id;}"
+"document.querySelectorAll('[data-oag-controller]').forEach(el=>{el.textContent=oagController(el.dataset.oagController);});"
+"document.querySelectorAll('[data-oag-number]').forEach(el=>{el.textContent=oagNumberedItem(el.dataset.oagNumber,el.dataset.oagName||'');});"
+"window.OAG_UI={brand:OAG_BRAND,number:oagNumber,controller:oagController,numberedItem:oagNumberedItem};"
+"</script></body></html>";
 
 err_t httpReceive(void*, tcp_pcb* client, pbuf* packet, err_t error) {
     if (error != ERR_OK || packet == nullptr) {
