@@ -13,7 +13,7 @@ constexpr std::uint32_t kProfileValueIndex = 7u;
 
 bool validProfileValue(std::uint32_t value) {
     return value <=
-        static_cast<std::uint32_t>(OutputProfileId::MobileTouch);
+        static_cast<std::uint32_t>(OutputProfileId::OagConfig);
 }
 
 } // namespace
@@ -38,6 +38,7 @@ bool outputProfileRuntimeAvailable(OutputProfileId profile) {
         case OutputProfileId::Pc:
         case OutputProfileId::Phone:
         case OutputProfileId::MobileTouch:
+        case OutputProfileId::OagConfig:
             return true;
 
         case OutputProfileId::XboxOne:
