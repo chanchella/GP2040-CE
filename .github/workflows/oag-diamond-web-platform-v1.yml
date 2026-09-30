@@ -1,9 +1,9 @@
-name: OAG Diamond Web Platform V1
+name: OAG Diamond Config Security V1
 
 on:
   push:
     branches:
-      - chatgpt/diamond-oag-web-platform-v1
+      - chatgpt/diamond-config-security-v1
     paths:
       - 'oag/**'
       - '.github/workflows/oag-diamond-web-platform-v1.yml'
@@ -71,10 +71,10 @@ jobs:
           mkdir -p artifacts
           UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print -quit)"
           test -n "$UF2"
-          cp "$UF2" artifacts/OAG_DIAMOND_WEB_PLATFORM_V1_Pico2W.uf2
+          cp "$UF2" artifacts/OAG_DIAMOND_CONFIG_SECURITY_V1_Pico2W.uf2
           sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-DIAMOND-WEB-PLATFORM-V1
+          name: OAG-DIAMOND-CONFIG-SECURITY-V1
           path: artifacts/*
           if-no-files-found: error
