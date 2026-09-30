@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG // Keep combo timing assertions active in Release CI builds.
+#endif
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -5,7 +8,114 @@
 #include "oag/input/gamepad_state.h"
 #include "oag/mapping/diamond_combo_engine.h"
 
+// Exercise persisted masks and legacy single-control fields for every direction.
+static void testRightStickActions() {
+    using namespace oag;
+    const std::int32_t expected[][2] = {
+        {2147483647, 0}, {-2147483647 - 1, 0},
+        {0, -2147483647 - 1}, {0, 2147483647},
+        {1518500249, -1518500249}, {-1518500249, -1518500249},
+        {1518500249, 1518500249}, {-1518500249, 1518500249}
+    };
+    static_assert(static_cast<unsigned>(DiamondLogicalControl::DpadRight) == 17);
+    static_assert(static_cast<unsigned>(DiamondLogicalControl::RightStickDownLeft) == 25);
+    for (unsigned direction = 0; direction < 8; ++direction) {
+        for (const bool useMask : {false, true}) {
+            for (const auto kind : {DiamondComboStepKind::Press,
+                    DiamondComboStepKind::HoldStart, DiamondComboStepKind::Pulse}) {
+                std::array<DiamondComboProgram, kDiamondComboSlots> programs {};
+                auto& p = programs[0];
+                p.enabled = true;
+                p.activation = DiamondComboActivationMode::PressOnce;
+                p.cancelOnTriggerRelease = false;
+                p.triggers[0] = {true, DiamondComboTriggerKind::LogicalControl,
+                    static_cast<std::uint16_t>(DiamondLogicalControl::South), 0};
+                p.stepCount = 1;
+                auto& step = p.steps[0];
+                step.enabled = true;
+                step.kind = kind;
+                step.control = useMask ? DiamondLogicalControl::None :
+                    static_cast<DiamondLogicalControl>(18 + direction);
+                step.logicalMask = useMask ? (1u << (18 + direction)) : 0;
+                step.durationMs = 200;
+                step.intervalMs = kind == DiamondComboStepKind::Pulse ? 750 : 0;
+                step.delayAfterMs = kind == DiamondComboStepKind::Pulse ? 0 : 750;
+                step.repeatCount = 0;
+                DiamondComboEngine engine;
+                LogicalGamepadState input {};
+                input.connected = true;
+                input.buttons = ButtonSouth | ButtonRightStick;
+                input.lx = 123456;
+                input.ly = -987654;
+                input.rx = 123456789;
+                input.ry = -987654321;
+                auto out = engine.apply(programs, nullptr, nullptr, input, 1000);
+                assert(out.rx == expected[direction][0]);
+                assert(out.ry == expected[direction][1]);
+                assert(out.lx == input.lx && out.ly == input.ly);
+                assert(out.buttons == input.buttons); // R3 remains independent.
+                out = engine.apply(programs, nullptr, nullptr, input, 201000);
+                assert(out.rx == input.rx && out.ry == input.ry);
+                input.rx = -7654321; // release follows live input, not stale input.
+                out = engine.apply(programs, nullptr, nullptr, input, 950000);
+                assert(out.rx == input.rx && out.ry == input.ry);
+                out = engine.apply(programs, nullptr, nullptr, input, 951000);
+                if (kind == DiamondComboStepKind::Pulse) {
+                    assert(out.rx == expected[direction][0]);
+                    assert(out.ry == expected[direction][1]);
+                } else {
+                    assert(out.rx == input.rx && out.ry == input.ry);
+                    assert(!engine.active());
+                }
+                engine.reset(); // same cancellation used on game changes.
+                input.buttons = 0;
+                out = engine.apply(programs, nullptr, nullptr, input, 952000);
+                assert(out.rx == input.rx && out.ry == input.ry);
+
+                // Hold until combo end restores both axes on the completion frame.
+                engine.reset();
+                step.kind = DiamondComboStepKind::HoldStart;
+                step.durationMs = 0;
+                step.delayAfterMs = 65535;
+                p.stepCount = 2;
+                p.steps[1].enabled = true;
+                p.steps[1].kind = DiamondComboStepKind::Wait;
+                p.steps[1].durationMs = 20;
+                input.buttons = ButtonSouth;
+                out = engine.apply(programs, nullptr, nullptr, input, 1000000);
+                assert(out.rx == expected[direction][0]);
+                out = engine.apply(programs, nullptr, nullptr, input, 1020000);
+                assert(out.rx == input.rx && out.ry == input.ry);
+                assert(!engine.active());
+
+                // Toggle stop and trigger release must release latched axes.
+                for (auto activation : {DiamondComboActivationMode::Toggle,
+                        DiamondComboActivationMode::WhileHeld}) {
+                    engine.reset();
+                    p.activation = activation;
+                    p.cancelOnTriggerRelease = activation == DiamondComboActivationMode::WhileHeld;
+                    p.stepCount = 1;
+                    step.delayAfterMs = 0;
+                    input.buttons = ButtonSouth;
+                    out = engine.apply(programs, nullptr, nullptr, input, 2000000);
+                    assert(out.rx == expected[direction][0]);
+                    input.buttons = 0;
+                    out = engine.apply(programs, nullptr, nullptr, input, 2001000);
+                    if (activation == DiamondComboActivationMode::Toggle) {
+                        assert(out.rx == expected[direction][0]);
+                        input.buttons = ButtonSouth;
+                        out = engine.apply(programs, nullptr, nullptr, input, 2002000);
+                    }
+                    assert(out.rx == input.rx && out.ry == input.ry);
+                    assert(!engine.active());
+                }
+            }
+        }
+    }
+}
+
 int main() {
+    testRightStickActions();
     using namespace oag;
 
     std::array<DiamondComboProgram, kDiamondComboSlots> programs {};

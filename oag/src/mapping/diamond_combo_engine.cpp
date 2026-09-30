@@ -1,10 +1,16 @@
 #include "oag/mapping/diamond_combo_engine.h"
 
 #include "oag/input/gamepad_state.h"
+#include <limits>
 
 namespace {
 
 constexpr std::uint32_t kFullTrigger = 0xFFFFu;
+constexpr std::uint32_t kRightStickMask = 0x03FC0000u;
+constexpr std::int32_t kAxisMax = std::numeric_limits<std::int32_t>::max();
+constexpr std::int32_t kAxisMin = std::numeric_limits<std::int32_t>::min();
+// Full radial travel at 45 degrees: max / sqrt(2).
+constexpr std::int32_t kDiagonal = 1518500249;
 constexpr std::uint16_t kHoldUntilComboEndSentinel = 0xFFFFu;
 
 constexpr std::uint32_t controlBit(oag::DiamondLogicalControl control) {
@@ -92,6 +98,30 @@ void DiamondComboEngine::setControl(
     case DiamondLogicalControl::DpadDown: setDpad(DpadBits::Down); break;
     case DiamondLogicalControl::DpadLeft: setDpad(DpadBits::Left); break;
     case DiamondLogicalControl::DpadRight: setDpad(DpadBits::Right); break;
+    case DiamondLogicalControl::RightStickRight:
+        if (down) { state.rx = kAxisMax; state.ry = 0; }
+        break;
+    case DiamondLogicalControl::RightStickLeft:
+        if (down) { state.rx = kAxisMin; state.ry = 0; }
+        break;
+    case DiamondLogicalControl::RightStickUp:
+        if (down) { state.rx = 0; state.ry = kAxisMin; }
+        break;
+    case DiamondLogicalControl::RightStickDown:
+        if (down) { state.rx = 0; state.ry = kAxisMax; }
+        break;
+    case DiamondLogicalControl::RightStickUpRight:
+        if (down) { state.rx = kDiagonal; state.ry = -kDiagonal; }
+        break;
+    case DiamondLogicalControl::RightStickUpLeft:
+        if (down) { state.rx = -kDiagonal; state.ry = -kDiagonal; }
+        break;
+    case DiamondLogicalControl::RightStickDownRight:
+        if (down) { state.rx = kDiagonal; state.ry = kDiagonal; }
+        break;
+    case DiamondLogicalControl::RightStickDownLeft:
+        if (down) { state.rx = -kDiagonal; state.ry = kDiagonal; }
+        break;
     case DiamondLogicalControl::None:
     default: break;
     }
@@ -108,11 +138,17 @@ std::uint32_t DiamondComboEngine::stepLogicalMask(
 void DiamondComboEngine::applyLogicalMask(
     std::uint32_t mask,
     bool down,
-    LogicalGamepadState& state
+    LogicalGamepadState& state,
+    const LogicalGamepadState* releasedBase
 ) {
+    // Release generated stick ownership, preserving the player's current input.
+    if (!down && releasedBase != nullptr && (mask & kRightStickMask) != 0) {
+        state.rx = releasedBase->rx;
+        state.ry = releasedBase->ry;
+    }
     for (
         std::uint8_t raw = 1;
-        raw <= static_cast<std::uint8_t>(DiamondLogicalControl::DpadRight);
+        raw <= static_cast<std::uint8_t>(DiamondLogicalControl::RightStickDownLeft);
         ++raw
     ) {
         if ((mask & (1u << raw)) != 0) {
@@ -310,15 +346,14 @@ bool DiamondComboEngine::execute(
     LogicalGamepadState& output,
     std::uint64_t nowUs
 ) {
+    const LogicalGamepadState unheldOutput = output;
     applyHeld(runtime, output);
 
-    if (
-        runtime.nextStepNotBeforeUs != 0 &&
-        nowUs < runtime.nextStepNotBeforeUs
-    ) return false;
-    runtime.nextStepNotBeforeUs = 0;
-
     for (unsigned guard = 0; guard < kDiamondComboSteps + 2; ++guard) {
+        // A step advanced in this same frame must also honor its release delay.
+        if (runtime.nextStepNotBeforeUs != 0 &&
+            nowUs < runtime.nextStepNotBeforeUs) return false;
+        runtime.nextStepNotBeforeUs = 0;
         if (runtime.stepIndex >= program.stepCount) {
             if (program.repeat == DiamondComboRepeatMode::AutoRepeat) {
                 runtime.stepIndex = 0;
@@ -332,7 +367,7 @@ bool DiamondComboEngine::execute(
             // Release only the outputs explicitly configured as
             // "UNTIL COMBO END". Holds configured as "UNTIL RELEASE" remain
             // latched and keep the combo alive until its trigger is lifted.
-            applyLogicalMask(runtime.endHeldControls, false, output);
+            applyLogicalMask(runtime.endHeldControls, false, output, &unheldOutput);
             runtime.heldControls &= ~runtime.endHeldControls;
             runtime.heldModifiers &= static_cast<std::uint8_t>(
                 ~runtime.endHeldModifiers
@@ -391,7 +426,7 @@ bool DiamondComboEngine::execute(
             if (step.durationMs != 0 && step.intervalMs == 0) {
                 if (elapsedUs < durationUs) return false;
                 releaseStep(step, runtime);
-                applyLogicalMask(stepLogicalMask(step), false, output);
+                applyLogicalMask(stepLogicalMask(step), false, output, &unheldOutput);
                 nativeOutput_.keyboard.modifiers &=
                     static_cast<std::uint8_t>(~step.keyboardModifiers);
                 for (const auto key : step.keyboardKeys) {
@@ -426,6 +461,9 @@ bool DiamondComboEngine::execute(
 
         case DiamondComboStepKind::HoldEnd:
             releaseStep(step, runtime);
+            applyLogicalMask(stepLogicalMask(step) & kRightStickMask,
+                false, output, &unheldOutput);
+            applyLogicalMask(runtime.heldControls & kRightStickMask, true, output);
             advance(step, runtime, nowUs);
             continue;
 

@@ -85,7 +85,8 @@ private:
     static void applyLogicalMask(
         std::uint32_t mask,
         bool down,
-        LogicalGamepadState& state
+        LogicalGamepadState& state,
+        const LogicalGamepadState* releasedBase = nullptr
     );
     static void mergeKey(
         std::array<std::uint8_t, 6>& keys,

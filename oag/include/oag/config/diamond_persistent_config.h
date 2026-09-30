@@ -42,6 +42,15 @@ enum class DiamondLogicalControl : std::uint8_t {
     DpadDown,
     DpadLeft,
     DpadRight,
+    // Append-only IDs: existing Flash records and button masks stay valid.
+    RightStickRight = 18,
+    RightStickLeft,
+    RightStickUp,
+    RightStickDown,
+    RightStickUpRight,
+    RightStickUpLeft,
+    RightStickDownRight,
+    RightStickDownLeft,
 };
 
 enum class DiamondComboTriggerKind : std::uint8_t {
