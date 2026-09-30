@@ -237,6 +237,32 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
             static_cast<long>(r.horizontalHalfPermille),static_cast<long>(r.verticalHalfPermille),r.tickMs,r.enabled?"true":"false");
         sendResponse(client,"200 OK","application/json",j);return;
     }
+    if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combo-program?slot=",24)){
+        const auto slot=static_cast<std::uint32_t>(std::strtoul(path+24,nullptr,10));
+        if(slot<1||slot>oag::kDiamondComboSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
+        const auto& p=pc.names.comboPrograms[slot-1];
+        std::uint16_t logical=0,key=0,mouse=0;
+        for(const auto& t:p.triggers){
+            if(!t.enabled)continue;
+            if(t.kind==oag::DiamondComboTriggerKind::LogicalControl&&!logical)logical=t.code;
+            else if(t.kind==oag::DiamondComboTriggerKind::KeyboardUsage&&!key)key=t.code;
+            else if(t.kind==oag::DiamondComboTriggerKind::MouseButton&&!mouse)mouse=t.code;
+        }
+        static char j[3072];std::size_t used=0;
+        int n=std::snprintf(j,sizeof(j),"{\"activation\":%u,\"repeat\":%u,\"passTrigger\":%s,\"cancelRelease\":%s,\"cancelAgain\":%s,\"cancelEnabled\":%s,\"cancelControl\":%u,\"logicalTrigger\":%u,\"keyboardTrigger\":%u,\"mouseTrigger\":%u,\"steps\":[",
+            static_cast<unsigned>(p.activation),static_cast<unsigned>(p.repeat),p.passTriggerThrough?"true":"false",p.cancelOnTriggerRelease?"true":"false",p.cancelOnTriggerPressAgain?"true":"false",p.cancelControlEnabled?"true":"false",static_cast<unsigned>(p.cancelControl),logical,key,mouse);
+        if(n<0||static_cast<std::size_t>(n)>=sizeof(j)){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}used=static_cast<std::size_t>(n);
+        for(std::uint8_t i=0;i<p.stepCount&&i<oag::kDiamondComboSteps;i++){
+            const auto& s=p.steps[i];
+            n=std::snprintf(j+used,sizeof(j)-used,"%s{\"kind\":%u,\"control\":%u,\"durationMs\":%u,\"intervalMs\":%u,\"repeatCount\":%u}",
+                i?",":"",static_cast<unsigned>(s.kind),static_cast<unsigned>(s.control),s.durationMs,s.intervalMs,s.repeatCount);
+            if(n<0||static_cast<std::size_t>(n)>=sizeof(j)-used){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}used+=static_cast<std::size_t>(n);
+        }
+        if(used+3>=sizeof(j)){sendResponse(client,"500 Internal Server Error","text/plain","Combo encode failed");return;}
+        j[used++]=']';j[used++]='}';j[used]='\0';
+        sendResponse(client,"200 OK","application/json",j);return;
+    }
+
     if(!std::strcmp(method,"GET")&&!std::strncmp(path,"/api/combo?slot=",16)){
         const auto slot=static_cast<std::uint32_t>(std::strtoul(path+16,nullptr,10));
         if(slot<1||slot>oag::kDiamondComboSlots){sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo");return;}
@@ -275,6 +301,49 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
         if(!store_->save()){r=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}
         sendResponse(client,"200 OK","text/plain","OAG recoil saved");return;
     }
+    if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/combo-program")){
+        std::uint32_t slot=0,activation=0,repeatMode=0,pass=0,cancelRelease=0,cancelAgain=0,cancelEnabled=0,cancelControl=0;
+        std::uint32_t logicalTrigger=0,keyboardTrigger=0,mouseTrigger=0,stepCount=0;
+        if(!parseUnsigned(body,"slot",1,oag::kDiamondComboSlots,slot)||
+           !parseUnsigned(body,"activation",0,2,activation)||!parseUnsigned(body,"repeat",0,1,repeatMode)||
+           !parseUnsigned(body,"pass",0,1,pass)||!parseUnsigned(body,"cancelRelease",0,1,cancelRelease)||
+           !parseUnsigned(body,"cancelAgain",0,1,cancelAgain)||!parseUnsigned(body,"cancelEnabled",0,1,cancelEnabled)||
+           !parseUnsigned(body,"cancelControl",0,17,cancelControl)||!parseUnsigned(body,"logicalTrigger",0,17,logicalTrigger)||
+           !parseUnsigned(body,"keyboardTrigger",0,255,keyboardTrigger)||!parseUnsigned(body,"mouseTrigger",0,31,mouseTrigger)||
+           !parseUnsigned(body,"stepCount",0,oag::kDiamondComboSteps,stepCount)){
+            sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo program");return;
+        }
+
+        auto old=pc.names.comboPrograms[slot-1];
+        oag::DiamondComboProgram p{};
+        p.activation=static_cast<oag::DiamondComboActivationMode>(activation);
+        p.repeat=static_cast<oag::DiamondComboRepeatMode>(repeatMode);
+        p.passTriggerThrough=pass!=0;p.cancelOnTriggerRelease=cancelRelease!=0;p.cancelOnTriggerPressAgain=cancelAgain!=0;
+        p.cancelControlEnabled=cancelEnabled!=0;p.cancelControl=static_cast<oag::DiamondLogicalControl>(cancelControl);
+        std::size_t ti=0;
+        if(logicalTrigger&&ti<p.triggers.size())p.triggers[ti++]={true,oag::DiamondComboTriggerKind::LogicalControl,static_cast<std::uint16_t>(logicalTrigger),0};
+        if(keyboardTrigger&&ti<p.triggers.size())p.triggers[ti++]={true,oag::DiamondComboTriggerKind::KeyboardUsage,static_cast<std::uint16_t>(keyboardTrigger),0};
+        if(mouseTrigger&&ti<p.triggers.size())p.triggers[ti++]={true,oag::DiamondComboTriggerKind::MouseButton,static_cast<std::uint16_t>(mouseTrigger),0};
+
+        p.stepCount=static_cast<std::uint8_t>(stepCount);
+        for(std::uint32_t i=0;i<stepCount;i++){
+            char kk[8]{},kc[8]{},kd[8]{},ki[8]{},kr[8]{};
+            std::snprintf(kk,sizeof(kk),"s%luk",static_cast<unsigned long>(i));std::snprintf(kc,sizeof(kc),"s%luc",static_cast<unsigned long>(i));
+            std::snprintf(kd,sizeof(kd),"s%lud",static_cast<unsigned long>(i));std::snprintf(ki,sizeof(ki),"s%lui",static_cast<unsigned long>(i));std::snprintf(kr,sizeof(kr),"s%lur",static_cast<unsigned long>(i));
+            std::uint32_t kind=0,control=0,duration=0,interval=0,repeats=0;
+            if(!parseUnsigned(body,kk,0,6,kind)||!parseUnsigned(body,kc,0,17,control)||!parseUnsigned(body,kd,0,60000,duration)||
+               !parseUnsigned(body,ki,0,60000,interval)||!parseUnsigned(body,kr,0,1000,repeats)){
+                sendResponse(client,"400 Bad Request","text/plain","Invalid OAG combo step");return;
+            }
+            auto& s=p.steps[i];s.enabled=true;s.kind=static_cast<oag::DiamondComboStepKind>(kind);s.control=static_cast<oag::DiamondLogicalControl>(control);
+            s.durationMs=static_cast<std::uint16_t>(duration);s.intervalMs=static_cast<std::uint16_t>(interval);s.repeatCount=static_cast<std::uint16_t>(repeats);
+        }
+        p.enabled=ti>0&&p.stepCount>0;
+        pc.names.comboPrograms[slot-1]=p;
+        if(!store_->save()){pc.names.comboPrograms[slot-1]=old;sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;}
+        sendResponse(client,"200 OK","text/plain","OAG combo program saved");return;
+    }
+
     if(!std::strcmp(method,"POST")&&!std::strcmp(path,"/api/combo")){
         std::uint32_t slot=0,press=0,delay=0,repeat=0;
         if(!parseUnsigned(body,"slot",1,oag::kDiamondComboSlots,slot)||!parseUnsigned(body,"pressMs",1,60000,press)||
