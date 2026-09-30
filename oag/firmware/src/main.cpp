@@ -1120,7 +1120,7 @@ private:
     // controller-stick pull from V1 and keeps K/M exposed as real HID K/M.
     static constexpr std::uint64_t kNativeAntiRecoilTickUs = 40000;
     static constexpr std::int32_t kNativeAntiRecoilDy = 2;
-    static constexpr std::int32_t kNativeAntiRecoilHorizontalPermille = -500;
+    static constexpr std::int32_t kNativeAntiRecoilHorizontalHalfPermille = -1125;
     static constexpr std::uint64_t kBluetoothRumbleRetryUs = 50000;
     static constexpr std::uint64_t kPrimarySelectHoldUs = 3000000ull;
     static constexpr std::uint64_t kKeyboardMouseModeHoldUs = 2000000ull;
@@ -2083,9 +2083,13 @@ private:
             // deterministic left correction instead. Fixed-point accumulation
             // gives us half a native mouse count per tick (-1 every 2 ticks)
             // without introducing right/left randomness.
+            // -1125 half-permille = -562.5 permille exactly.
+            // With Dy=2 this produces -1125 milli-counts per recoil tick,
+            // preserving the requested 62.5-permille extra left correction
+            // over V5 without reintroducing random horizontal jitter.
             const std::int32_t horizontalMilli =
-                kNativeAntiRecoilDy *
-                kNativeAntiRecoilHorizontalPermille;
+                (kNativeAntiRecoilDy *
+                 kNativeAntiRecoilHorizontalHalfPermille) / 2;
 
             nativeAntiRecoilHorizontalMilli_ += horizontalMilli;
 
