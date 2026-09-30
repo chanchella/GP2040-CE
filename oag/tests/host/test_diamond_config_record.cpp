@@ -48,7 +48,20 @@ int main() {
     finalizeDiamondConfigRecord(wrapped);
     assert(selectNewestDiamondConfigRecord(&old, &wrapped) == &wrapped);
 
-    static_assert(sizeof(DiamondConfigRecord) <= 4096);
+    // V2 intentionally spans multiple flash sectors to persist user names.
+    static_assert(sizeof(DiamondConfigRecord) <= 16384);
+
+    // Named content is covered by the same CRC as runtime settings.
+    DiamondConfigRecord named = a;
+    std::strncpy(
+        named.payload.names.games[0].data(),
+        "Blood Strike",
+        named.payload.names.games[0].size() - 1
+    );
+    finalizeDiamondConfigRecord(named);
+    assert(validateDiamondConfigRecord(named));
+    named.payload.names.games[0][0] ^= 1;
+    assert(!validateDiamondConfigRecord(named));
     std::cout << "OAG_DIAMOND_CONFIG_RECORD_TESTS=PASS\n";
     return 0;
 }
