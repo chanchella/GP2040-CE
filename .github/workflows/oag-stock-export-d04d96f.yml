@@ -1,0 +1,49 @@
+name: OAG Diamond Exact Stock Export D04D96F
+
+on:
+  push:
+    branches:
+      - backup/oag-diamond-stock-d04d96f
+    paths:
+      - '.github/workflows/oag-stock-export-d04d96f.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout exact stable source
+        uses: actions/checkout@v4.1.1
+        with:
+          ref: d04d96f514a81d83ee92a994c24ad4389d80b794
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Build exact stock archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="OAG_DIAMOND_RIGHT_STICK_8_DIRECTIONS_V2_FULL_SOURCE_d04d96f"
+          mkdir -p "/tmp/${ROOT}"
+          rsync -a --exclude='.git' --exclude='.git/**' ./ "/tmp/${ROOT}/"
+          cat > "/tmp/${ROOT}/STOCK_VERSION.txt" <<'EOF'
+          OAG Diamond / OAG ABO GEMI
+          Stable firmware: OAG_DIAMOND_RIGHT_STICK_8_DIRECTIONS_V2_Pico2W.uf2
+          Repository: chanchella/GP2040-CE
+          Stable branch: chatgpt/diamond-oag-gwc-v1
+          Exact source commit: d04d96f514a81d83ee92a994c24ad4389d80b794
+          Commit title: OAG RS8 V2: expose Arabic stick directions beside R3 in every combo menu
+          EOF
+          cd /tmp
+          zip -q -r "$GITHUB_WORKSPACE/${ROOT}.zip" "${ROOT}"
+          sha256sum "$GITHUB_WORKSPACE/${ROOT}.zip" > "$GITHUB_WORKSPACE/${ROOT}.zip.sha256"
+
+      - name: Upload exact stock source
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-DIAMOND-RS8-V2-FULL-STOCK-SOURCE-D04D96F
+          path: |
+            OAG_DIAMOND_RIGHT_STICK_8_DIRECTIONS_V2_FULL_SOURCE_d04d96f.zip
+            OAG_DIAMOND_RIGHT_STICK_8_DIRECTIONS_V2_FULL_SOURCE_d04d96f.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
