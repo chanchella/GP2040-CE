@@ -177,7 +177,7 @@ int main() {
     assert(encoded.lx == std::numeric_limits<std::int16_t>::min());
     assert(encoded.ly == std::numeric_limits<std::int16_t>::max());
     assert(encoded.rx == 0);
-    assert(encoded.ry == 1);
+    assert(encoded.ry == 0); // Frozen encoder truncates normalized +1.
 
     LogicalGamepadState yDownLogical {};
     yDownLogical.connected = true;

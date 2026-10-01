@@ -41,13 +41,11 @@ int main() {
     assert(xinputProtocol01.protocol == ProtocolKind::XusbXbox360);
     assert(xinputProtocol01.driver == UsbDriverFamily::Xinput);
 
-    // Wireless-receiver companion protocol is part of the same XUSB family.
+    // Receiver companion interface is handled by the dedicated transport driver.
     const UsbDeviceClassification xinputProtocol81 = classifier.classify({
         0x9999, 0x1112, 0xFF, 0x5D, 0x81, 2
     });
-    assert(xinputProtocol81.recognized);
-    assert(xinputProtocol81.protocol == ProtocolKind::XusbXbox360);
-    assert(xinputProtocol81.driver == UsbDriverFamily::Xinput);
+    assert(!xinputProtocol81.recognized);
 
     const UsbDeviceClassification g808 = classifier.classify({
         0x2563, 0x0575, 0x03, 0x00, 0x00, 2

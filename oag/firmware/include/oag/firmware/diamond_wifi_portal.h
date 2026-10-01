@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "oag/config/diamond_game_library.h"
+#include "oag/mapping/pro_input_processor.h"
 
 namespace oag::firmware {
 
@@ -13,6 +14,7 @@ class DiamondGameLibraryStore;
 class DiamondWifiPortal {
 public:
     bool start(DiamondConfigStore& store, DiamondGameLibraryStore& games);
+    void attachProInput(oag::ProInputProcessor& p, const oag::DeviceRegistry& r) { proInput_ = &p; proRegistry_ = &r; }
     void task();
     bool started() const { return started_; }
 
@@ -23,6 +25,11 @@ public:
     );
 
 private:
+    bool handleProInputRequest(void*, const char*, const char*, const char*);
+    oag::ProInputProcessor* proInput_ = nullptr;
+    const oag::DeviceRegistry* proRegistry_ = nullptr;
+    oag::DeviceId calibrationDevice_ {};
+    std::int64_t calibrationStartX_ = 0;
     void schedulePlayReboot(std::uint32_t delayMs);
 
     DiamondConfigStore* store_ = nullptr;

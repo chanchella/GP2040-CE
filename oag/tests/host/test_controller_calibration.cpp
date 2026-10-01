@@ -23,6 +23,7 @@ int main() {
     state.ry = -5000;
 
     ControllerCalibration calibration {};
+    calibration.enabled = true; // Calibration is opt-in.
     calibration.left.centerX = 620;
     calibration.left.centerY = -310;
     calibration.left.deadzone = 600;

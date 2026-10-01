@@ -57,6 +57,20 @@ if(OAG_BUILD_HOST_TESTS)
     enable_testing()
     add_compile_options(-UNDEBUG)
 
+    add_executable(oag_pro_input_tests tests/host/test_pro_input.cpp)
+    target_link_libraries(oag_pro_input_tests PRIVATE oag_core)
+    add_test(NAME oag_pro_input_tests COMMAND oag_pro_input_tests)
+    add_executable(oag_pro_native_output_tests tests/host/test_pro_native_output.cpp firmware/src/pc_native_km_output.cpp)
+    target_include_directories(oag_pro_native_output_tests PRIVATE tests/host/stubs firmware/include)
+    target_link_libraries(oag_pro_native_output_tests PRIVATE oag_core)
+    add_test(NAME oag_pro_native_output_tests COMMAND oag_pro_native_output_tests)
+
+    add_executable(oag_pro_portal_tests tests/host/test_pro_portal.cpp)
+    target_include_directories(oag_pro_portal_tests PRIVATE firmware/include)
+    target_compile_options(oag_pro_portal_tests PRIVATE -Wall -Wextra -Werror -Wno-misleading-indentation)
+    target_link_libraries(oag_pro_portal_tests PRIVATE oag_core)
+    add_test(NAME oag_pro_portal_tests COMMAND oag_pro_portal_tests)
+
     add_executable(oag_core_tests
         tests/host/test_core.cpp
     )

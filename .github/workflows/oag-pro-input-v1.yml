@@ -1,0 +1,88 @@
+name: OAG Diamond Pro Input V1
+
+on:
+  push:
+    branches:
+      - chatgpt/oag-pro-input-v1
+    paths:
+      - 'oag/**'
+      - '.github/workflows/oag-pro-input-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+      - name: Verify hardware-proven touch Golden ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOLDEN="594eed51da2be67a747361d0a28e7e2cad244d89"
+          test "$(git merge-base "$GOLDEN" HEAD)" = "$GOLDEN"
+      - name: Verify frozen controller baseline ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="010af3984e70a631da37ddadd7ec6a7db303b1af"
+          test "$(git merge-base "$BASELINE" HEAD)" = "$BASELINE"
+      - name: Architecture guard
+        run: python3 oag/tools/check_architecture.py
+      - name: Verify Arabic combo editor menus
+        run: node oag/tools/test_combo_editor.js
+      - name: Configure host tests
+        run: cmake -S oag -B build/oag-host -DCMAKE_BUILD_TYPE=Debug -DOAG_BUILD_HOST_TESTS=ON
+      - name: Build host tests
+        run: cmake --build build/oag-host --parallel 2
+      - name: Run host tests
+        run: ctest --test-dir build/oag-host --output-on-failure
+
+  firmware:
+    needs: host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.24.x"
+      - uses: Fortinbra/RaspberryPiPicoBuild@v7
+      - name: Checkout pinned Pico SDK
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+      - name: Prepare dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PICO_SDK_PATH=$GITHUB_WORKSPACE/pico-sdk-ui5k" >> "$GITHUB_ENV"
+          python3 oag/tools/prepare_dependencies.py
+      - name: Build Pico 2 W firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PICO_SDK_PATH="$GITHUB_WORKSPACE/pico-sdk-ui5k" cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=pico2_w -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print -quit)"
+          test -n "$UF2"
+          cp "$UF2" artifacts/OAG_DIAMOND_RIGHT_STICK_8_DIRECTIONS_V2_PRO_INPUT_V1_Pico2W.uf2
+          sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-DIAMOND-RS8-PRO-INPUT-V1
+          path: artifacts/*
+          if-no-files-found: error

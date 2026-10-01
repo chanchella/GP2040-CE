@@ -49,7 +49,9 @@ struct HttpClientState {
 };
 std::array<HttpClientState, kHttpClientSlots> gClients {};
 
-constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>OAG ABO GEMI</title><link rel=stylesheet href=/app.css><link rel=stylesheet href=/combo.css></head><body>
+#include "pro_input_portal_assets.h"
+
+constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>OAG ABO GEMI</title><link rel=stylesheet href=/app.css><link rel=stylesheet href=/combo.css><link rel=stylesheet href=/pro.css></head><body>
 <header><h1>OAG ABO GEMI</h1><span>Controller Lab • Smart Anti-Drift • Profiles</span></header><main>
 <section class=card><h2>OAG Games & Weapons</h2><label>OAG Game</label><select id=gs></select><input id=gn maxlength=32 placeholder="Type your OAG game name"><button id=sg>ADD OAG GAME 1</button>
 <label>OAG Weapon for selected game</label><select id=ws></select><input id=wn maxlength=32 placeholder="Type your OAG weapon name"><button id=sw>ADD OAG WEAPON 1</button>
@@ -66,8 +68,9 @@ constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charse
 </section>
 
 <section class=card><h2>Active Profile</h2><div class=two><div><label>Game</label><select id=ag></select></div><div><label>Weapon</label><select id=aw></select></div></div><button id=sp>SAVE ACTIVE PROFILE</button></section>
+<section id=pro-lab class=card>Loading OAG input settings...</section>
 <section class=card><h2>System</h2><p id=gen class=hint>Loading...</p><button id=play class=play>SAVE & PLAY</button><div id=pmsg class=msg></div></section>
-</main><script src=/app.js?v=oag-rs8-v2></script></body></html>)HTML";
+</main><script src=/app.js?v=oag-rs8-pro-v1></script></body></html>)HTML";
 
 constexpr char kAppCss[] = R"CSS(*{box-sizing:border-box}body{margin:0;background:#070b12;color:#eef2ff;font:15px Arial,sans-serif}header{padding:20px;background:#111827;border-bottom:1px solid #263247}h1{margin:0;font-size:30px}header span,.hint{color:#94a3b8}main{max-width:900px;margin:auto;padding:14px}.card{background:#111827;border:1px solid #263247;border-radius:15px;padding:16px;margin-bottom:13px}h2{margin:0 0 12px}h3{text-align:center;font-size:13px;color:#cbd5e1;letter-spacing:.5px}label{display:block;margin:10px 0 5px;color:#cbd5e1}input,select,button{width:100%;padding:11px;border-radius:9px;border:1px solid #334155;background:#0f172a;color:white}input[type=range]{padding:0;accent-color:#86efac}button{margin-top:10px;background:#e5e7eb;color:#111827;font-weight:800}.accent,.play{background:#86efac;color:#052e16}.ghost{background:#1f2937;color:#e5e7eb}.two,.pads{display:grid;grid-template-columns:1fr 1fr;gap:14px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.gamepad{padding:12px;border:1px solid #29364b;border-radius:24px;background:#0b1220}.pad{width:min(36vw,230px);height:min(36vw,230px);margin:auto;border:2px solid #475569;border-radius:50%;position:relative;background:radial-gradient(circle,#172033 0,#0b1220 70%);overflow:hidden}.pad:before,.pad:after{content:"";position:absolute;background:#334155;z-index:0}.pad:before{width:1px;height:100%;left:50%}.pad:after{height:1px;width:100%;top:50%}.pad i{position:absolute;border-radius:50%;transform:translate(-50%,-50%);z-index:4}.pad .raw{width:18px;height:18px;background:#86efac;box-shadow:0 0 12px #86efac}.pad .filtered{width:10px;height:10px;background:#60a5fa;box-shadow:0 0 8px #60a5fa}.center{position:absolute;width:12px;height:12px;border:2px solid #f8fafc;border-radius:50%;transform:translate(-50%,-50%);z-index:3}.dzring{position:absolute;border:2px dashed #fbbf24;border-radius:50%;transform:translate(-50%,-50%);z-index:2;pointer-events:none}.mono{font:12px monospace;color:#94a3b8;text-align:center;margin:7px}.metric{text-align:center}.metric b{font-size:18px;color:#86efac}.metric small{display:block;color:#64748b}.legend{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin:12px 0;color:#94a3b8;font-size:11px}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}.rawkey{background:#86efac}.filterkey{background:#60a5fa}.centerkey{border:2px solid #f8fafc}.shoulders,.face,.systembuttons{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin:8px}.shoulders{justify-content:space-between}.shoulders span,.face span,.systembuttons span{min-width:38px;text-align:center;padding:7px 9px;border-radius:9px;border:1px solid #334155;background:#111827;color:#64748b;font-weight:800}.on{background:#86efac!important;color:#052e16!important;border-color:#86efac!important;box-shadow:0 0 10px #86ef9666}.trigs{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:12px}.trigs em{display:block;height:7px;background:#1e293b;border-radius:5px;overflow:hidden}.trigs em i{display:block;height:100%;width:0;background:#86efac}.wizard{margin-top:15px;padding-top:8px;border-top:1px solid #263247}.rangeval{text-align:center;font-size:22px;font-weight:900;color:#86efac;margin:5px}.ends{display:flex;justify-content:space-between;color:#64748b;font-size:10px}.equation{display:grid;grid-template-columns:auto minmax(260px,1fr) auto;gap:10px;align-items:center;margin:10px 0 6px}.equation strong{font-size:18px;color:#86efac;white-space:nowrap}.triggerselect{margin:0}.timelinewrap{overflow-x:auto;padding:8px 2px 14px}.timeline{display:flex;align-items:stretch;gap:34px;min-width:max-content}.step{width:270px;flex:0 0 270px;border:1px solid #334155;border-radius:12px;padding:11px;position:relative;background:#0b1220}.step:not(:last-child):after{content:"+";position:absolute;right:-25px;top:50%;transform:translateY(-50%);font-size:30px;font-weight:900;color:#86efac}.stephead{display:flex;justify-content:space-between;align-items:center;font-weight:900;color:#86efac;margin-bottom:7px}.action3{display:grid;grid-template-columns:1.35fr 1fr .8fr;gap:8px;align-items:end}.action3 label{margin-top:0}.action3 select,.action3 input{margin-bottom:0}.multi{min-height:150px}.step button{margin-top:7px}.status,.msg{margin:9px 0;color:#86efac}.bad{color:#fca5a5}@media(max-width:560px){.card{padding:12px}.pad{width:40vw;height:40vw}.two,.three{grid-template-columns:1fr}.triggerline{grid-template-columns:auto 1fr auto}.triggerline #ctmode,.triggerline #ctlife,.triggerline #ctms{grid-column:2/3}.triggerline strong:last-child{grid-column:3/4;grid-row:1}.actionfields{grid-template-columns:1fr 1fr}.actionfields .durationbox{grid-column:1/2}.actionfields .msbox{grid-column:2/3}.trigs{margin:10px 0}})CSS";
 constexpr char kComboCss[] = R"CSS(.triggerline{display:grid;grid-template-columns:auto minmax(180px,1.4fr) minmax(110px,.8fr) minmax(165px,1.1fr) 105px;gap:8px;align-items:center;margin:10px 0}.triggerline strong{color:#86efac;white-space:nowrap;font-size:17px}.triggerline select,.triggerline input{margin:0}.equalsline{text-align:center;color:#86efac;font-size:30px;font-weight:900;line-height:38px;margin:2px 0 8px}.actionlist{display:flex;flex-direction:column;gap:0;margin:12px 0}.actionrow{border:1px solid #334155;border-radius:12px;padding:10px;background:#0b1220}.actiontitle{font-weight:800;color:#86efac;margin-bottom:7px}.actionfields{display:grid;grid-template-columns:1.25fr .75fr 1.15fr;gap:8px;align-items:start}.actionfields label{font-size:11px;margin:0 0 4px}.actionfields select,.actionfields input{margin:0}.pressbox .unitbox{margin-top:7px}.pressbox .releaselabel{display:block;margin-top:9px;color:#cbd5e1}.plusline{text-align:center;color:#86efac;font-size:27px;font-weight:900;line-height:32px}.hiddenms{display:none}.unitbox{position:relative}.unitbox input{padding-right:34px}.unitbox span{position:absolute;right:9px;bottom:12px;color:#94a3b8;font-size:11px;pointer-events:none}@media(max-width:560px){.triggerline{grid-template-columns:auto 1fr}.triggerline strong{grid-column:1/2;grid-row:1}.triggerline #ctr{grid-column:2/3;grid-row:1}.triggerline #ctmode,.triggerline #ctlife,.triggerline #ctms{grid-column:2/3}.actionfields{grid-template-columns:1fr 1fr}.actionfields .buttonbox{grid-column:1/3}.actionfields .modebox{grid-column:1/2}.actionfields .pressbox{grid-column:2/3}.equalsline{font-size:34px;margin:0 0 10px}})CSS";
@@ -84,8 +87,8 @@ async function loadCombos(g){combos=(await json('/api/combos?game='+g)).names;na
 async function loadWeapons(g){weapons=(await json('/api/weapons?game='+g)).names;names($('ws'),weapons,'ADD OAG WEAPON');names($('aw'),weapons,'OAG WEAPON');showWeaponName();updateAddButtons();if(typeof loadWeaponSettings==='function')await loadWeaponSettings()}
 function recoilLive(){let h=$('rh'),v=$('rv'),hv=$('rhv'),vv=$('rvv');if(!h||!v||!hv||!vv)return;let draw=()=>{let x=Number(h.value)/100,y=Number(v.value)/100;hv.textContent=(x>=0?'+':'')+x.toFixed(2);vv.textContent=(y>=0?'+':'')+y.toFixed(2)};h.addEventListener('input',draw);v.addEventListener('input',draw);h.addEventListener('change',draw);v.addEventListener('change',draw);draw()}recoilLive();
 
-function oagLoadScript(src,attempt=0){return new Promise((resolve,reject)=>{let s=document.createElement('script');s.src=src+'?v=oag-rs8-v2';s.onload=()=>resolve();s.onerror=()=>{s.remove();if(attempt<20)setTimeout(()=>oagLoadScript(src,attempt+1).then(resolve,reject),150);else reject(new Error('Failed to load '+src))};document.body.appendChild(s)})}
-(async()=>{try{await oagLoadScript('/gwc.js');await oagLoadScript('/gwc-editor.js');await oagLoadScript('/gwc-save.js');await oagLoadScript('/names.js')}catch(e){$('cmsg').textContent=e.message}})();
+function oagLoadScript(src,attempt=0){return new Promise((resolve,reject)=>{let s=document.createElement('script');s.src=src+'?v=oag-rs8-pro-v1';s.onload=()=>resolve();s.onerror=()=>{s.remove();if(attempt<20)setTimeout(()=>oagLoadScript(src,attempt+1).then(resolve,reject),150);else reject(new Error('Failed to load '+src))};document.body.appendChild(s)})}
+(async()=>{try{await oagLoadScript('/gwc.js');await oagLoadScript('/gwc-editor.js');await oagLoadScript('/gwc-save.js');await oagLoadScript('/names.js');await oagLoadScript('/pro-form.js');await oagLoadScript('/pro-monitor.js')}catch(e){$('cmsg').textContent=e.message}})();
 )JS";
 
 
@@ -156,36 +159,7 @@ std::size_t contentLength(const char* request) {
     h+=15; while(*h==' ')++h; return static_cast<std::size_t>(std::strtoul(h,nullptr,10));
 }
 
-bool formValue(const char* body,const char* key,char* out,std::size_t cap) {
-    if(!body||!key||!out||cap==0)return false; out[0]='\0'; const std::size_t kl=std::strlen(key);
-    const char* c=body;
-    while(*c){
-        if((c==body||c[-1]=='&')&&std::strncmp(c,key,kl)==0&&c[kl]=='='){
-            c+=kl+1; std::size_t w=0;
-            while(*c&&*c!='&'){
-                char ch=*c++;
-                if(ch=='+')ch=' ';
-                if(ch=='%'&&c[0]&&c[1]){
-                    auto hx=[](char h)->int{if(h>='0'&&h<='9')return h-'0';if(h>='a'&&h<='f')return h-'a'+10;if(h>='A'&&h<='F')return h-'A'+10;return -1;};
-                    int hi=hx(c[0]),lo=hx(c[1]); if(hi<0||lo<0)return false; ch=static_cast<char>((hi<<4)|lo);c+=2;
-                }
-                if(ch=='\0'||ch=='\r'||ch=='\n'||w+1>=cap)return false; out[w++]=ch;
-            }
-            out[w]='\0';return true;
-        }
-        const char* n=std::strchr(c,'&');if(!n)break;c=n+1;
-    }
-    return false;
-}
-
-bool parseUnsigned(const char* b,const char* k,std::uint32_t lo,std::uint32_t hi,std::uint32_t& v){
-    char x[16]{};if(!formValue(b,k,x,sizeof(x))||!x[0])return false;char* e=nullptr;unsigned long p=std::strtoul(x,&e,10);
-    if(e==x||*e||p<lo||p>hi)return false;v=static_cast<std::uint32_t>(p);return true;
-}
-bool parseSigned(const char* b,const char* k,std::int32_t lo,std::int32_t hi,std::int32_t& v){
-    char x[16]{};if(!formValue(b,k,x,sizeof(x))||!x[0])return false;char* e=nullptr;long p=std::strtol(x,&e,10);
-    if(e==x||*e||p<lo||p>hi)return false;v=static_cast<std::int32_t>(p);return true;
-}
+#include "portal_form_parser.h"
 
 bool safeName(const char* s){if(!s)return false;std::size_t n=std::strlen(s);if(n>=oag::kDiamondDisplayNameBytes)return false;for(std::size_t i=0;i<n;i++)if(static_cast<unsigned char>(s[i])<0x20)return false;return true;}
 void jsonString(char*& out,std::size_t& left,const char* s){
@@ -238,10 +212,13 @@ bool DiamondWifiPortal::start(DiamondConfigStore& store, DiamondGameLibraryStore
 void DiamondWifiPortal::schedulePlayReboot(std::uint32_t ms){playRebootAtUs_=time_us_64()+static_cast<std::uint64_t>(ms)*1000ull;playRebootPending_=true;}
 void DiamondWifiPortal::task(){if(playRebootPending_&&time_us_64()>=playRebootAtUs_){playRebootPending_=false;requestOutputProfile(OutputProfileId::Pc);}}
 
+#include "pro_input_portal.inc"
+
 void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,std::size_t){
     auto* client=static_cast<tcp_pcb*>(rawClient);if(!client||!request||!store_)return;char method[8]{},path[96]{};
     if(std::sscanf(request,"%7s %95s",method,path)!=2){sendResponse(client,"400 Bad Request","text/plain","Bad request");return;}
     const char* body=std::strstr(request,"\r\n\r\n");body=body?body+4:"";auto& pc=store_->config();auto& runtime=pc.runtime;
+    if(handleProInputRequest(rawClient,method,path,body))return;
     if(!games_){sendResponse(client,"503 Service Unavailable","text/plain","OAG game library unavailable");return;}
     const auto loadGame=[&](std::uint32_t oneBased)->bool{
         return oneBased>=1&&oneBased<=oag::kDiamondLibraryGameSlots&&
@@ -441,9 +418,12 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
         }
         if(!games_->activate(g-1,pc)){sendResponse(client,"500 Internal Server Error","text/plain","Game load failed");return;}
         const auto oldGame=runtime.activeGame,oldWeapon=runtime.activeWeapon;
+        const bool oldDesktop=pc.proInput.nativeDesktop;
+        pc.proInput.nativeDesktop=false;
         runtime.activeGame=static_cast<std::uint16_t>(g-1);
         runtime.activeWeapon=static_cast<std::uint16_t>(w-1);
         if(!store_->save()){
+            pc.proInput.nativeDesktop=oldDesktop;
             runtime.activeGame=oldGame;runtime.activeWeapon=oldWeapon;
             games_->activate(oldGame<oag::kDiamondLibraryGameSlots?oldGame:0,pc);
             sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;
