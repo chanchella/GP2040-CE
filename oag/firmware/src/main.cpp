@@ -225,6 +225,8 @@ public:
         const auto now = time_us_64();
         const auto khz = processingHz(oag::ProInputKind::Keyboard);
         const auto mhz = processingHz(oag::ProInputKind::Mouse);
+        // At the 1000 Hz target, USB IN readiness (1 ms descriptor) paces
+        // native output. A second timer can miss a host frame unnecessarily.
         const bool kt = khz == 1000 || keyboardClock_.due(now, khz);
         const bool mt = mhz == 1000 || mouseClock_.due(now, mhz);
         if ((keyboardDirty_ && kt) || (mouseDirty_ && mt)) {
@@ -681,7 +683,7 @@ public:
                 usbHidRawDescriptors_[id->index].data();
 
             const std::uint64_t nowUs = time_us_64();
-            
+
 
             if (hidInfo.hasGamepad) {
                 const auto slot = slots_.slotFor(*id);
@@ -701,7 +703,7 @@ public:
                     )
                 ) {
                     measurement.accepted(4);
-                    queueProGamepad(*slot);
+        queueProGamepad(*slot);
                 }
             }
 
@@ -738,7 +740,7 @@ public:
                     mouseStates_[id->index];
 
                 measurement.accepted(1);
-                acceptProMouse(*record, mouseState);
+            acceptProMouse(*record, mouseState);
 
                 mouseDirty_ = true;
             }
@@ -782,7 +784,7 @@ public:
                     mouseStates_[id->index];
 
                 measurement.accepted(1);
-                acceptProMouse(*record, mouseState);
+            acceptProMouse(*record, mouseState);
             }
             return;
         }
@@ -809,7 +811,7 @@ public:
         }
 
         measurement.accepted(4);
-                    queueProGamepad(*slot);
+        queueProGamepad(*slot);
     }
 
     void onUsbDeviceUnmounted(std::uint8_t devAddr) {
@@ -897,7 +899,7 @@ public:
         }
 
         measurement.accepted(4);
-                    queueProGamepad(*slot);
+        queueProGamepad(*slot);
     }
 
     void onXinputReportSent(
@@ -1078,7 +1080,7 @@ public:
         const std::uint64_t nowUs =
             time_us_64();
 
-        
+
 
         if (info.hasGamepad) {
             const auto slot = slots_.slotFor(*id);
@@ -1099,7 +1101,7 @@ public:
                 )
             ) {
                 measurement.accepted(4);
-                    queueProGamepad(*slot);
+        queueProGamepad(*slot);
             }
         }
 
@@ -1136,7 +1138,7 @@ public:
                 mouseStates_[id->index];
 
             measurement.accepted(1);
-                acceptProMouse(*record, mouseState);
+            acceptProMouse(*record, mouseState);
 
             mouseDirty_ = true;
         }

@@ -107,7 +107,7 @@ pico_set_program_name(
     OAG_UI5K_MULTIPROFILE_V1_Pico2W
     "OAG Abo Gemi Ultra Gaming"
 )
-pico_set_program_version(OAG_UI5K_MULTIPROFILE_V1_Pico2W "UI5K-MULTIPROFILE-V1")
+pico_set_program_version(OAG_UI5K_MULTIPROFILE_V1_Pico2W "DIAMOND-RS8-PRO-INPUT-V1")
 
 target_link_options(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_UI5K_MULTIPROFILE_V1_Pico2W.map"

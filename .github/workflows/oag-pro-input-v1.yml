@@ -38,6 +38,18 @@ jobs:
         run: cmake --build build/oag-host --parallel 2
       - name: Run host tests
         run: ctest --test-dir build/oag-host --output-on-failure
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Pro Input page in Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix build/oag-ui --no-audit --no-fund playwright@1.62.1
+          build/oag-ui/node_modules/.bin/playwright install --with-deps chromium
+          PLAYWRIGHT_MODULE="$GITHUB_WORKSPACE/build/oag-ui/node_modules/playwright" \
+            OAG_PRO_API_TEST="$GITHUB_WORKSPACE/build/oag-host/oag_pro_portal_tests" \
+            node oag/tools/test_pro_ui.mjs
 
   firmware:
     needs: host-tests
