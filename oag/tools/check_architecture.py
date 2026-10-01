@@ -50,6 +50,13 @@ else:
         if forbidden in body:
             errors.append(f"F1+0 must preserve physical input/transport: {forbidden}")
 composed = firmware_text.split("void sendComposedOutput() {", 1)[1].split("void updatePubgTriangleState(", 1)[0]
+selection = firmware_text.split("void serviceOagGameWeaponHotkey() {", 1)[1].split("void maskOagGameWeaponHotkey(", 1)[0]
+selection = re.sub(r"//[^\n]*", "", selection)
+for forbidden in (".save(", "nativeKmOutput_", "proInput_", "keyboardMouseMode_",
+                  "requestOutputProfile", "watchdog", "currentMouseMotion_", "registry_",
+                  "bluetoothHost_", "usbHost_"):
+    if forbidden in selection:
+        errors.append(f"F1+game selection must preserve live input: {forbidden}")
 if composed.count("!gameContextInactive_") != 3 or "if (gameContextInactive_)" in composed:
     errors.append("All three physical output routes must precede the game-effects gate")
 toggle = firmware_text.split("void serviceKeyboardMouseModeToggle() {", 1)[1].split("void serviceNativeKeyboardMouseOutput(", 1)[0]

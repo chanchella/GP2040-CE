@@ -69,6 +69,24 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_pro_game_context_tests PRIVATE oag_core)
     add_test(NAME oag_pro_game_context_tests COMMAND oag_pro_game_context_tests)
 
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(OAG_PROFILE_TEST_INCLUDE "${CMAKE_CURRENT_BINARY_DIR}/profile_transition_under_test.inc")
+    add_custom_command(OUTPUT "${OAG_PROFILE_TEST_INCLUDE}"
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/extract_profile_transition_test.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/firmware/src/main.cpp"
+            "${OAG_PROFILE_TEST_INCLUDE}"
+        DEPENDS firmware/src/main.cpp tools/extract_profile_transition_test.py
+        VERBATIM)
+    add_executable(oag_pro_profile_transition_tests
+        tests/host/test_pro_profile_transition.cpp
+        firmware/src/pc_native_km_output.cpp
+        "${OAG_PROFILE_TEST_INCLUDE}")
+    target_include_directories(oag_pro_profile_transition_tests PRIVATE
+        tests/host/stubs firmware/include "${CMAKE_CURRENT_BINARY_DIR}")
+    target_link_libraries(oag_pro_profile_transition_tests PRIVATE oag_core)
+    add_test(NAME oag_pro_profile_transition_tests COMMAND oag_pro_profile_transition_tests)
+
     add_executable(oag_pro_portal_tests tests/host/test_pro_portal.cpp)
     target_include_directories(oag_pro_portal_tests PRIVATE firmware/include)
     target_compile_options(oag_pro_portal_tests PRIVATE -Wall -Wextra -Werror -Wno-misleading-indentation)
