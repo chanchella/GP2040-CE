@@ -364,6 +364,21 @@ bool DiamondConfigStore::load() {
         return true;
     }
 
+    // V5 occupies the same physical slots. Keep its valid slot until a V6
+    // write has completed in the opposite slot, including during power loss.
+    const auto* oldA = reinterpret_cast<const oag::DiamondConfigRecordV5*>(slotA);
+    const auto* oldB = reinterpret_cast<const oag::DiamondConfigRecordV5*>(slotB);
+    const bool validA = oag::validateDiamondConfigRecordV5(*oldA);
+    const bool validB = oag::validateDiamondConfigRecordV5(*oldB);
+    const auto* old = !validA ? (validB ? oldB : nullptr) :
+        !validB ? oldA : static_cast<std::int32_t>(oldB->generation - oldA->generation) > 0 ? oldB : oldA;
+    if (old && oag::migrateDiamondConfigV5(*old, config_)) {
+        generation_ = old->generation;
+        activeSlot_ = old == oldA ? 0u : 1u;
+        loadedFromFlash_ = true;
+        return true;
+    }
+
     // Transparent V4 -> V5 migration. Preserve every existing OAG
     // Game/Weapon/Combo and convert each legacy single-control step into the
     // new multi-control chord representation.

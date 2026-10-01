@@ -5,6 +5,7 @@
 
 #include "oag/input/keyboard_state.h"
 #include "oag/input/mouse_state.h"
+#include "oag/output/native_mouse_report.h"
 
 namespace oag::firmware {
 
@@ -24,7 +25,7 @@ public:
         std::int16_t pan
     );
 
-    void task(std::uint64_t nowUs);
+    void task(std::uint64_t nowUs, bool keyboardTick = true, bool mouseTick = true);
     void releaseAll();
 
 private:
@@ -43,11 +44,8 @@ private:
     std::array<std::uint8_t, 8> lastKeyboardReport_ {};
     std::uint8_t lastMouseButtons_ = 0;
 
-    std::int32_t pendingDx_ = 0;
-    std::int32_t pendingDy_ = 0;
-    std::int32_t pendingWheel_ = 0;
-    std::int32_t pendingPan_ = 0;
-
+    oag::NativeMouseQueue pendingMouse_ {};
+    std::uint64_t f1PressedSinceUs_ = 0;
     std::uint64_t f4PressedSinceUs_ = 0;
     std::uint64_t f5PressedSinceUs_ = 0;
     std::uint64_t f8PressedSinceUs_ = 0;

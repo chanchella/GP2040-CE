@@ -1,3 +1,4 @@
+#include "oag/output/native_mouse_report.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -26,9 +27,7 @@ const std::uint8_t kPcKeyboardReportDescriptor[] = {
     TUD_HID_REPORT_DESC_KEYBOARD()
 };
 
-const std::uint8_t kPcMouseReportDescriptor[] = {
-    TUD_HID_REPORT_DESC_MOUSE()
-};
+const auto& kPcMouseReportDescriptor = oag::kNativeMouseReportDescriptor;
 
 // U10E emulates the full-speed Microsoft Xbox 360 Wireless Receiver USB
 // topology instead of repeating wired-controller interfaces.
@@ -275,9 +274,7 @@ const std::uint8_t kMobileKeyboardReportDescriptor[] = {
     TUD_HID_REPORT_DESC_KEYBOARD()
 };
 
-const std::uint8_t kMobileMouseReportDescriptor[] = {
-    TUD_HID_REPORT_DESC_MOUSE()
-};
+const auto& kMobileMouseReportDescriptor = oag::kNativeMouseReportDescriptor;
 
 const std::uint8_t kMobileDeviceDescriptor[] = {
     0x12, 0x01,             // bLength, bDescriptorType

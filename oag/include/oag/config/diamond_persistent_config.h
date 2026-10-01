@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "oag/config/diamond_config.h"
+#include "oag/config/pro_input_config.h"
 
 namespace oag {
 
@@ -165,7 +166,7 @@ struct DiamondContentNames {
     std::array<DiamondComboProgram, kDiamondComboSlots> comboPrograms {};
 };
 
-struct DiamondPersistentConfig {
+struct DiamondPersistentConfigV5 {
     static constexpr std::uint32_t kMagic = 0x4F414750u; // OAGP
     static constexpr std::uint16_t kSchemaVersion = 5;
 
@@ -175,6 +176,19 @@ struct DiamondPersistentConfig {
     DiamondRuntimeConfig runtime {};
     DiamondSecurityConfig security {};
     DiamondContentNames names {};
+};
+
+struct DiamondPersistentConfig {
+    static constexpr std::uint32_t kMagic = 0x4F414750u; // OAGP
+    static constexpr std::uint16_t kSchemaVersion = 6;
+
+    std::uint32_t magic = kMagic;
+    std::uint16_t schemaVersion = kSchemaVersion;
+    std::uint16_t reserved = 0;
+    DiamondRuntimeConfig runtime {};
+    DiamondSecurityConfig security {};
+    DiamondContentNames names {};
+    ProInputConfig proInput {};
 };
 
 } // namespace oag

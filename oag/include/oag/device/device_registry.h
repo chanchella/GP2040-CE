@@ -70,6 +70,9 @@ public:
     bool disconnectUsb(UsbTransportHandle handle);
     bool disconnectBluetooth(BluetoothTransportHandle handle);
 
+    const DeviceRecord* at(std::size_t index) const {
+        return index < records_.size() && records_[index].connected ? &records_[index] : nullptr;
+    }
     const DeviceRecord* find(DeviceId id) const;
     DeviceRecord* find(DeviceId id);
 

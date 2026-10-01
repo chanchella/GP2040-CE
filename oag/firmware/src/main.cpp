@@ -33,6 +33,8 @@
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/native_km_combo_engine.h"
 #include "oag/mapping/pass_through_mapping.h"
+#include "oag/mapping/pro_input_processor.h"
+#include "oag/mapping/pro_profile_shortcut.h"
 #include "oag/output/touch/mobile_touch_mapper.h"
 #include "oag/protocol/hid/boot_keyboard_input_driver.h"
 #include "oag/protocol/hid/boot_mouse_input_driver.h"
@@ -127,6 +129,18 @@ static constexpr std::uint8_t kPubgKeyWUsage = 0x1A;
 static constexpr std::uint8_t kPubgKeyTabUsage = 0x2B;
 static constexpr std::uint8_t kPubgKeySpaceUsage = 0x2C;
 
+class ProReportMeasurement {
+public:
+    ProReportMeasurement(oag::ProInputProcessor& p, oag::DeviceId d) : p_(p), d_(d), start_(time_us_64()) {}
+    void accepted(std::uint8_t caps) {
+        const auto& s = p_.stats(d_.index);
+        p_.setCapabilities(d_, (s.source == d_ ? s.capabilities : 0) | caps); accepted_ = true;
+    }
+    ~ProReportMeasurement() { if (accepted_) { p_.noteReport(d_, start_); p_.noteProcessTime(d_, time_us_64() - start_); } }
+private:
+    oag::ProInputProcessor& p_; oag::DeviceId d_; std::uint64_t start_; bool accepted_ = false;
+};
+
 class FirmwareCore final
     : public oag::firmware::BluetoothHostV2Observer {
 public:
@@ -155,6 +169,7 @@ public:
             return false;
         }
 
+        desktopMode_ = configStore_.config().proInput.nativeDesktop;
         configMode_ =
             oag::firmware::activeOutputProfile() ==
             oag::firmware::OutputProfileId::OagConfig;
@@ -162,6 +177,7 @@ public:
         if (configMode_) {
             // Config mode owns CYW43. USB Host remains available for local
             // inputs/calibration, while Bluetooth and gaming output stay off.
+            wifiPortal_.attachProInput(proInput_, registry_);
             if (!wifiPortal_.start(configStore_, gameLibrary_)) {
                 return false;
             }
@@ -178,6 +194,7 @@ public:
             return false;
         }
 
+        nativeKmOutput_.setEnabled(!oag::firmware::mobileTouchUsbProfileActive());
         return true;
     }
 
@@ -204,7 +221,18 @@ public:
         serviceOutputProfileHotkey();
         serviceKeyboardMouseModeToggle();
         serviceOagGameWeaponHotkey();
-        serviceNativeKeyboardMouseOutput();
+        serviceProGamepads();
+        const auto now = time_us_64();
+        const auto khz = processingHz(oag::ProInputKind::Keyboard);
+        const auto mhz = processingHz(oag::ProInputKind::Mouse);
+        const bool kt = khz == 1000 || keyboardClock_.due(now, khz);
+        const bool mt = mhz == 1000 || mouseClock_.due(now, mhz);
+        if ((keyboardDirty_ && kt) || (mouseDirty_ && mt)) {
+            if (kt) keyboardDirty_ = false;
+            if (mt) mouseDirty_ = false;
+            sendComposedOutput();
+        }
+        serviceNativeKeyboardMouseOutput(kt, mt);
         servicePubgTouchMaintenance();
         serviceMouseAimRelease();
         serviceDiamondComboTimeline();
@@ -516,6 +544,7 @@ public:
             }
         }
 
+        proInput_.setCapabilities(*id, (hasMouse ? 1 : 0) | (hasKeyboard ? 2 : 0) | (parsedGamepad ? 4 : 0));
         if (hasKeyboard) {
             keyboardStates_[id->index] = {};
             keyboardStates_[id->index].source = *id;
@@ -632,6 +661,8 @@ public:
             return;
         }
 
+        ProReportMeasurement measurement(proInput_, *id);
+
         const auto& hidInfo =
             usbHidDescriptors_[id->index];
 
@@ -650,7 +681,7 @@ public:
                 usbHidRawDescriptors_[id->index].data();
 
             const std::uint64_t nowUs = time_us_64();
-            bool composedChanged = false;
+            
 
             if (hidInfo.hasGamepad) {
                 const auto slot = slots_.slotFor(*id);
@@ -669,7 +700,8 @@ public:
                         states_[*slot]
                     )
                 ) {
-                    sendSlotOutput(*slot);
+                    measurement.accepted(4);
+                    queueProGamepad(*slot);
                 }
             }
 
@@ -686,7 +718,7 @@ public:
                     keyboardStates_[id->index]
                 )
             ) {
-                composedChanged = true;
+                measurement.accepted(2); keyboardDirty_ = true;
             }
 
             if (
@@ -705,20 +737,10 @@ public:
                 const oag::MouseState& mouseState =
                     mouseStates_[id->index];
 
-                currentMouseMotion_ = {
-                    mouseState.dx,
-                    mouseState.dy,
-                };
-                currentNativeWheel_ = mouseState.wheel;
-                currentNativePan_ = mouseState.pan;
+                measurement.accepted(1);
+                acceptProMouse(*record, mouseState);
 
-                updateMouseAimFromCurrentMotion(nowUs);
-
-                composedChanged = true;
-            }
-
-            if (composedChanged) {
-                sendComposedOutput();
+                mouseDirty_ = true;
             }
 
             return;
@@ -743,7 +765,7 @@ public:
                         keyboardLedStates_[id->index].reportByte();
                 }
 
-                sendComposedOutput();
+                measurement.accepted(2); keyboardDirty_ = true;
             }
             return;
         }
@@ -759,16 +781,8 @@ public:
                 const oag::MouseState& mouseState =
                     mouseStates_[id->index];
 
-                currentMouseMotion_ = {
-                    mouseState.dx,
-                    mouseState.dy,
-                };
-                currentNativeWheel_ = mouseState.wheel;
-                currentNativePan_ = mouseState.pan;
-
-                updateMouseAimFromCurrentMotion(time_us_64());
-
-                sendComposedOutput();
+                measurement.accepted(1);
+                acceptProMouse(*record, mouseState);
             }
             return;
         }
@@ -794,7 +808,8 @@ public:
             return;
         }
 
-        sendSlotOutput(*slot);
+        measurement.accepted(4);
+                    queueProGamepad(*slot);
     }
 
     void onUsbDeviceUnmounted(std::uint8_t devAddr) {
@@ -827,6 +842,8 @@ public:
         if (record == nullptr) {
             return;
         }
+
+        ProReportMeasurement measurement(proInput_, *id);
 
         const auto slot = slots_.slotFor(*id);
         if (!slot || *slot >= states_.size()) {
@@ -879,7 +896,8 @@ public:
             return;
         }
 
-        sendSlotOutput(*slot);
+        measurement.accepted(4);
+                    queueProGamepad(*slot);
     }
 
     void onXinputReportSent(
@@ -1012,6 +1030,7 @@ public:
             }
         }
 
+        proInput_.setCapabilities(*id, (parsed.hasMouse ? 1 : 0) | (parsed.hasKeyboard ? 2 : 0) | (parsed.hasGamepad ? 4 : 0));
         if (parsed.hasKeyboard) {
             keyboardStates_[id->index] = {};
             keyboardStates_[id->index].source = *id;
@@ -1049,13 +1068,17 @@ public:
             return;
         }
 
+        const auto* record = registry_.find(*id);
+        if (!record) return;
+
+        ProReportMeasurement measurement(proInput_, *id);
         const auto& info =
             bluetoothHidDescriptors_[id->index];
 
         const std::uint64_t nowUs =
             time_us_64();
 
-        bool composedChanged = false;
+        
 
         if (info.hasGamepad) {
             const auto slot = slots_.slotFor(*id);
@@ -1075,7 +1098,8 @@ public:
                     states_[*slot]
                 )
             ) {
-                sendSlotOutput(*slot);
+                measurement.accepted(4);
+                    queueProGamepad(*slot);
             }
         }
 
@@ -1092,7 +1116,7 @@ public:
                 keyboardStates_[id->index]
             )
         ) {
-            composedChanged = true;
+            measurement.accepted(2); keyboardDirty_ = true;
         }
 
         if (
@@ -1111,20 +1135,10 @@ public:
             const oag::MouseState& mouseState =
                 mouseStates_[id->index];
 
-            currentMouseMotion_ = {
-                mouseState.dx,
-                mouseState.dy,
-            };
-            currentNativeWheel_ = mouseState.wheel;
-            currentNativePan_ = mouseState.pan;
+            measurement.accepted(1);
+                acceptProMouse(*record, mouseState);
 
-            updateMouseAimFromCurrentMotion(nowUs);
-
-            composedChanged = true;
-        }
-
-        if (composedChanged) {
-            sendComposedOutput();
+            mouseDirty_ = true;
         }
     }
 
@@ -1243,142 +1257,54 @@ private:
         return mask;
     }
 
-    void resetOagSelectionChord() {
-        oagSelectionMode_ = 0;
-        oagSelectionValue_ = 0;
-        oagSelectionPreviousDigits_ = 0;
-        oagSelectionStartedUs_ = 0;
-        oagSelectionLatched_ = false;
+    void enterProDesktop() {
+        desktopMode_ = true; configStore_.config().proInput.nativeDesktop = true;
+        configStore_.config().runtime.activeWeapon = oag::kDiamondNoActiveWeapon;
+        keyboardMouseMode_ = KeyboardMouseOutputMode::Native;
+        diamondCombos_.reset(); diamondRecoilActive_ = false;
+        nextDiamondComboServiceUs_ = nextDiamondRecoilServiceUs_ = nextNativeRecoilUs_ = 0;
+        nativeRecoilAccumX_ = nativeRecoilAccumY_ = 0;
+        currentMouseMotion_ = {}; currentNativeWheel_ = currentNativePan_ = 0;
+        mouseAimActive_ = false; mouseAimExpiresUs_ = 0;
+        pubgTriangleKeyDown_ = pubgTriangleSequenceActive_ = pubgTriangleHoldLatched_ = false;
+        pubgTriangleStartedUs_ = pubgTriangleRefreshNotBeforeUs_ = 0;
+        pubgMovementMask_ = 0; pubgMovementPrimePending_ = false;
+        pubgScrollPulse_ = kPubgScrollNone; pubgScrollPulseExpiresUs_ = 0;
+        proInput_.resetFractions(); nativeKmOutput_.releaseAll();
+        platformOutput_.submit(hostPrimaryOutputSlot_, {});
+        sendComposedOutput();
+        (void)configStore_.save();
+        if (oag::firmware::mobileTouchUsbProfileActive())
+            (void)oag::firmware::requestOutputProfile(oag::firmware::OutputProfileId::Pc);
     }
-
     void serviceOagGameWeaponHotkey() {
-        const oag::KeyboardState keyboard = combinedKeyboard();
-        const bool f1 = keyboard.pressed(kOagF1Usage);
-        const bool f4 = keyboard.pressed(kModeToggleF4Usage);
-        const bool f5 = keyboard.pressed(kModeToggleF5Usage);
-
-        const std::uint8_t wantedMode =
-            f1 && !f5 ? 1u :
-            (f5 && !f4 && !f1 ? 2u : 0u);
-
-        if (wantedMode == 0) {
-            resetOagSelectionChord();
-            return;
-        }
-
-        if (oagSelectionMode_ != wantedMode) {
-            resetOagSelectionChord();
-            oagSelectionMode_ = wantedMode;
-        }
-
-        const std::uint16_t digits = oagDigitMask(keyboard);
-        const std::uint16_t newlyPressed =
-            static_cast<std::uint16_t>(
-                digits & ~oagSelectionPreviousDigits_
-            );
-        oagSelectionPreviousDigits_ = digits;
-
-        if (newlyPressed != 0 && !oagSelectionLatched_) {
-            const auto appendDigit = [this, wantedMode](
-                std::uint8_t digit
-            ) {
-                const std::uint16_t next =
-                    static_cast<std::uint16_t>(
-                        oagSelectionValue_ * 10u + digit
-                    );
-                const std::uint16_t maximum =
-                    wantedMode == 1
-                        ? static_cast<std::uint16_t>(
-                            oag::kDiamondLibraryGameSlots
-                        )
-                        : static_cast<std::uint16_t>(
-                            oag::kDiamondWeaponSlotsPerGame
-                        );
-                if (next >= 1u && next <= maximum) {
-                    oagSelectionValue_ = next;
-                    oagSelectionStartedUs_ = time_us_64();
-                }
-            };
-
-            for (std::uint8_t digit = 1; digit <= 9; ++digit) {
-                if ((newlyPressed & (1u << digit)) != 0) {
-                    appendDigit(digit);
-                }
-            }
-            if ((newlyPressed & 1u) != 0) {
-                appendDigit(0);
-            }
-        }
-
-        if (
-            oagSelectionLatched_ ||
-            oagSelectionValue_ == 0 ||
-            oagSelectionStartedUs_ == 0 ||
-            time_us_64() - oagSelectionStartedUs_ <
-                kOagSelectionHoldUs
-        ) {
-            return;
-        }
-
-        auto& runtime = configStore_.config().runtime;
-        if (wantedMode == 1) {
-            const std::size_t gameIndex =
-                static_cast<std::size_t>(oagSelectionValue_ - 1u);
-            if (
-                gameLibrary_.activate(
-                    gameIndex,
-                    configStore_.config()
-                )
-            ) {
-                runtime.activeGame =
-                    static_cast<std::uint16_t>(gameIndex);
-                runtime.activeWeapon = oag::kDiamondNoActiveWeapon;
-
-                // A game switch is a hard context boundary. No held output,
-                // combo phase, recoil accumulator or weapon from the previous
-                // game is allowed to survive into the new game.
-                diamondCombos_.reset();
-                diamondRecoilActive_ = false;
-                nextDiamondRecoilServiceUs_ = 0;
-                nextNativeRecoilUs_ = 0;
-                nativeRecoilAccumX_ = 0;
-                nativeRecoilAccumY_ = 0;
-            }
+        const auto selected = profileShortcut_.poll(combinedKeyboard(), time_us_64());
+        if (selected.action == oag::ProShortcutAction::None) return;
+        if (selected.action == oag::ProShortcutAction::Desktop) { enterProDesktop(); return; }
+        auto& config = configStore_.config();
+        if (selected.action == oag::ProShortcutAction::Game) {
+            if (!gameLibrary_.activate(selected.number - 1u, config)) return;
+            desktopMode_ = config.proInput.nativeDesktop = false;
+            config.runtime.activeGame = selected.number - 1u;
+            config.runtime.activeWeapon = oag::kDiamondNoActiveWeapon;
+            diamondCombos_.reset(); nativeKmOutput_.releaseAll(); proInput_.resetFractions();
+            (void)configStore_.save();
         } else {
-            runtime.activeWeapon =
-                static_cast<std::uint16_t>(
-                    oagSelectionValue_ - 1u
-                );
-            diamondRecoilActive_ = false;
-            nextDiamondRecoilServiceUs_ = 0;
-            nextNativeRecoilUs_ = 0;
-            nativeRecoilAccumX_ = 0;
-            nativeRecoilAccumY_ = 0;
+            if (desktopMode_) return;
+            config.runtime.activeWeapon = selected.number - 1u;
         }
-
-        oagSelectionLatched_ = true;
+        diamondRecoilActive_ = false;
+        nextDiamondComboServiceUs_ = nextDiamondRecoilServiceUs_ = nextNativeRecoilUs_ = 0;
+        nativeRecoilAccumX_ = nativeRecoilAccumY_ = 0;
+        sendComposedOutput();
     }
-
     void maskOagGameWeaponHotkey(oag::KeyboardState& keyboard) const {
-        const bool f1 = keyboard.pressed(kOagF1Usage);
-        const bool f4 = keyboard.pressed(kModeToggleF4Usage);
-        const bool f5 = keyboard.pressed(kModeToggleF5Usage);
-        if (!(f1 || (f5 && !f4))) {
-            return;
+        if ((keyboard.pressed(kOagF1Usage) || (keyboard.pressed(kModeToggleF5Usage) && !keyboard.pressed(kModeToggleF4Usage))) && oagDigitMask(keyboard)) {
+            keyboard.setPressed(kOagF1Usage, false);
+            if (!keyboard.pressed(kModeToggleF4Usage)) keyboard.setPressed(kModeToggleF5Usage, false);
+            for (unsigned u = 0x1E; u <= 0x27; ++u) keyboard.setPressed(u, false);
         }
-
-        const std::uint16_t digits = oagDigitMask(keyboard);
-        if (digits == 0 && oagSelectionMode_ == 0) {
-            return;
-        }
-
-        keyboard.setPressed(kOagF1Usage, false);
-        if (!f4) {
-            keyboard.setPressed(kModeToggleF5Usage, false);
-        }
-        for (std::uint8_t usage = 0x1E; usage <= 0x27; ++usage) {
-            keyboard.setPressed(usage, false);
-        }
+        profileShortcut_.mask(keyboard);
     }
 
     void serviceBluetoothHostV2() {
@@ -2003,7 +1929,7 @@ private:
                     internalSlot < states_.size() &&
                     states_[internalSlot].connected
                 ) {
-                    output = mapping_.process(states_[internalSlot]);
+                    output = processedGamepad(internalSlot);
                 }
             }
 
@@ -2011,6 +1937,63 @@ private:
                 static_cast<std::uint8_t>(pcSlot),
                 output
             );
+        }
+    }
+
+    const oag::ProInputSettings& proSettings(const oag::DeviceRecord& d, oag::ProInputKind k) const {
+        return oag::proSettingsFor(configStore_.config().proInput, d, k);
+    }
+    std::uint16_t processingHz(oag::ProInputKind k) const {
+        std::uint16_t hz = 0;
+        for (std::size_t i = 0; i < oag::DeviceRegistry::kCapacity; ++i) {
+            const auto* d = registry_.at(i); if (!d) continue;
+            const auto& st = proInput_.stats(i);
+            const auto caps = st.source == d->id && st.capabilities ? st.capabilities : 1u << static_cast<unsigned>(oag::proInputKind(d->protocol));
+            if (caps & (1u << static_cast<unsigned>(k))) hz = std::max(hz, proSettings(*d, k).processingHz);
+        }
+        return hz ? hz : configStore_.config().proInput.defaults[static_cast<unsigned>(k)].processingHz;
+    }
+    void acceptProMouse(const oag::DeviceRecord& record, const oag::MouseState& mouse) {
+        const auto& settings = proSettings(record, oag::ProInputKind::Mouse);
+        const auto start = time_us_64(); currentMouseDevice_ = record.id;
+        currentMouseMotion_ = proInput_.processMouse(record.id, {mouse.dx, mouse.dy}, settings);
+        proInput_.noteShapeTime(record.id, time_us_64() - start);
+        keyboardMouse_.mouseConfig().sensitivityX = keyboardMouse_.mouseConfig().sensitivityY = 1.0f / settings.mouseFullScaleCounts;
+        keyboardMouse_.mouseConfig().exponent = settings.curvePermille / 1000.0f;
+        currentNativeWheel_ = mouse.wheel; currentNativePan_ = mouse.pan;
+        if (!configMode_ && keyboardMouseMode_ == KeyboardMouseOutputMode::Native && !oag::firmware::mobileTouchUsbProfileActive())
+            nativeKmOutput_.addMouseMotion(currentMouseMotion_.dx, currentMouseMotion_.dy, mouse.wheel, mouse.pan);
+        updateMouseAimFromCurrentMotion(time_us_64()); mouseDirty_ = true;
+    }
+    oag::LogicalGamepadState processedGamepad(oag::LogicalSlotId slot) const {
+        if (proPadSource_[slot] == states_[slot].source) return proPadOutput_[slot];
+        const auto* record = registry_.find(states_[slot].source);
+        const auto mapped = mapping_.process(states_[slot]);
+        return record ? proInput_.processGamepad(mapped, proSettings(*record, oag::ProInputKind::Gamepad)) : mapped;
+    }
+    void updateProGamepad(oag::LogicalSlotId slot, const oag::DeviceRecord& record) {
+        const auto start = time_us_64();
+        proPadOutput_[slot] = proInput_.processGamepad(mapping_.process(states_[slot]), proSettings(record, oag::ProInputKind::Gamepad));
+        proPadSource_[slot] = record.id;
+        proInput_.noteShapeTime(record.id, time_us_64() - start);
+        proInput_.previewAxes(record.id, states_[slot].rx, states_[slot].ry, proPadOutput_[slot].rx, proPadOutput_[slot].ry);
+    }
+    void queueProGamepad(oag::LogicalSlotId slot) {
+        const auto* d = registry_.find(states_[slot].source); if (!d) return;
+        if (configMode_) { updateProGamepad(slot, *d); return; }
+        if (proSettings(*d, oag::ProInputKind::Gamepad).processingHz == 1000) {
+            updateProGamepad(slot, *d); sendSlotOutput(slot); return;
+        }
+        if (proPadSource_[slot] != d->id) proPadClocks_[slot].reset();
+        proPadPending_[slot] = true;
+    }
+    void serviceProGamepads() {
+        for (std::size_t i = 0; i < states_.size(); ++i) if (proPadPending_[i]) {
+            const auto* d = registry_.find(states_[i].source);
+            if (!d) { proPadPending_[i] = false; continue; }
+            if (proPadClocks_[i].due(time_us_64(), proSettings(*d, oag::ProInputKind::Gamepad).processingHz)) {
+                proPadPending_[i] = false; updateProGamepad(i, *d); sendSlotOutput(i);
+            }
         }
     }
 
@@ -2029,7 +2012,7 @@ private:
             return {};
         }
 
-        return mapping_.process(states_[slot]);
+        return processedGamepad(slot);
     }
 
     void sendSlotOutput(oag::LogicalSlotId slot) {
@@ -2055,7 +2038,7 @@ private:
             oag::LogicalGamepadState output {};
 
             if (states_[slot].connected) {
-                output = mapping_.process(states_[slot]);
+                output = processedGamepad(slot);
             }
 
             platformOutput_.submit(
@@ -2067,6 +2050,7 @@ private:
     }
 
     const oag::WeaponRecoilProfile* activeRecoilProfile() const {
+        if (desktopMode_) return nullptr;
         const auto& runtime = configStore_.config().runtime;
         if (runtime.activeWeapon >= oag::kDiamondWeaponSlotsPerGame) {
             return nullptr;
@@ -2139,6 +2123,8 @@ private:
     }
 
     void sendComposedOutput() {
+        if (configMode_) return;
+        if (desktopMode_) { platformOutput_.submit(hostPrimaryOutputSlot_, basePrimaryOutput()); return; }
         oag::KeyboardState keyboard = combinedKeyboard();
         const oag::MouseState mouse = combinedMouse();
 
@@ -2397,6 +2383,15 @@ private:
                 basePrimaryOutput()
             );
 
+        if (hasMouse && mouseAimActive_) {
+            if (const auto* record = registry_.find(currentMouseDevice_)) {
+                auto settings = proSettings(*record, oag::ProInputKind::Mouse);
+                settings.gainXPermille = settings.gainYPermille = settings.curvePermille = 1000;
+                oag::LogicalGamepadState aim {}; aim.rx = output.rx; aim.ry = output.ry;
+                aim = proInput_.processGamepad(aim, settings); output.rx = aim.rx; output.ry = aim.ry;
+            }
+        }
+
         const std::uint64_t nowUs = time_us_64();
         output = diamondCombos_.apply(
             gameLibrary_.active().comboPrograms,
@@ -2612,6 +2607,7 @@ private:
     }
 
     void serviceKeyboardMouseModeToggle() {
+        if (desktopMode_) return;
         // Mobile Touch is always a composed controller-to-touch profile.
         // F4+F5 remains untouched for the hardware-verified PC/Phone modes.
         if (oag::firmware::mobileTouchUsbProfileActive()) {
@@ -2665,7 +2661,7 @@ private:
         sendComposedOutput();
     }
 
-    void serviceNativeKeyboardMouseOutput() {
+    void serviceNativeKeyboardMouseOutput(bool keyboardTick, bool mouseTick) {
         // Profile 7 exposes exactly one HID multitouch interface. Never send
         // keyboard/mouse report shapes to that endpoint.
         if (oag::firmware::mobileTouchUsbProfileActive()) {
@@ -2677,7 +2673,7 @@ private:
 
         if (keyboardMouseMode_ != KeyboardMouseOutputMode::Native) {
             nativeKmOutput_.setEnabled(false);
-            nativeKmOutput_.task(nowUs);
+            nativeKmOutput_.task(nowUs, keyboardTick, mouseTick);
             return;
         }
 
@@ -2694,9 +2690,10 @@ private:
         }
 
         consumeOutputProfileChord(keyboard);
+        maskOagGameWeaponHotkey(keyboard);
 
         oag::NativeKmComboFrame frame =
-            nativeKmCombos_.apply(keyboard, mouse);
+            desktopMode_ ? oag::NativeKmComboFrame {keyboard, mouse} : nativeKmCombos_.apply(keyboard, mouse);
 
         // Merge the programmable OAG Combo chord generated by the shared
         // post-mapping engine. This keeps physical KM input intact while
@@ -2730,28 +2727,11 @@ private:
             diamondCombos_.consumeNativeWheel();
         }
 
-        if (
-            currentMouseMotion_.dx != 0 ||
-            currentMouseMotion_.dy != 0 ||
-            currentNativeWheel_ != 0 ||
-            currentNativePan_ != 0
-        ) {
-            nativeKmOutput_.addMouseMotion(
-                currentMouseMotion_.dx,
-                currentMouseMotion_.dy,
-                currentNativeWheel_,
-                currentNativePan_
-            );
+        currentMouseMotion_ = {}; currentNativeWheel_ = currentNativePan_ = 0;
+        mouseAimActive_ = false; mouseAimExpiresUs_ = 0;
 
-            currentMouseMotion_ = {};
-            currentNativeWheel_ = 0;
-            currentNativePan_ = 0;
-            mouseAimActive_ = false;
-            mouseAimExpiresUs_ = 0;
-        }
-
-        serviceNativeDiamondRecoil(mouse, nowUs);
-        nativeKmOutput_.task(nowUs);
+        if (mouseTick) serviceNativeDiamondRecoil(mouse, nowUs);
+        nativeKmOutput_.task(nowUs, keyboardTick, mouseTick);
     }
 
     void serviceNativeDiamondRecoil(
@@ -2796,7 +2776,7 @@ private:
     }
 
     void serviceDiamondComboTimeline() {
-        if (!diamondCombos_.active()) {
+        if (desktopMode_ || !diamondCombos_.active()) {
             nextDiamondComboServiceUs_ = 0;
             return;
         }
@@ -3140,11 +3120,6 @@ private:
 
     // OAG profile selector: F1 + 1..20 = Game, F5 + 1..24 = Weapon.
     // Multi-digit numbers are collected while the function key remains held.
-    std::uint8_t oagSelectionMode_ = 0;
-    std::uint16_t oagSelectionValue_ = 0;
-    std::uint16_t oagSelectionPreviousDigits_ = 0;
-    std::uint64_t oagSelectionStartedUs_ = 0;
-    bool oagSelectionLatched_ = false;
 
     std::int16_t currentNativeWheel_ = 0;
     std::int16_t currentNativePan_ = 0;
@@ -3246,6 +3221,15 @@ private:
 
     std::uint8_t mountedRootMask_ = 0;
 
+    oag::ProInputProcessor proInput_ {};
+    oag::ProProfileShortcut profileShortcut_ {};
+    oag::ProProcessingClock keyboardClock_ {}, mouseClock_ {};
+    std::array<oag::ProProcessingClock, oag::LogicalSlotManager::kGamepadSlots> proPadClocks_ {};
+    std::array<bool, oag::LogicalSlotManager::kGamepadSlots> proPadPending_ {};
+    std::array<oag::LogicalGamepadState, oag::LogicalSlotManager::kGamepadSlots> proPadOutput_ {};
+    std::array<oag::DeviceId, oag::LogicalSlotManager::kGamepadSlots> proPadSource_ {};
+    bool keyboardDirty_ = false, mouseDirty_ = false, desktopMode_ = false;
+    oag::DeviceId currentMouseDevice_ {};
     oag::MouseMotion currentMouseMotion_ {};
     std::uint64_t mouseAimExpiresUs_ = 0;
     bool mouseAimActive_ = false;

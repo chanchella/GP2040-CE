@@ -11,6 +11,7 @@ add_library(oag_core STATIC
     src/device/usb_device_classifier.cpp
     src/protocol/xusb/xusb_input_driver.cpp
     src/protocol/xgip/xgip_input_driver.cpp
+    src/mapping/pro_input_processor.cpp
     src/mapping/logical_slot_manager.cpp
     src/mapping/pass_through_mapping.cpp
     src/output/xinput/xinput_report_encoder.cpp
@@ -54,6 +55,7 @@ target_compile_options(oag_core PRIVATE
 
 if(OAG_BUILD_HOST_TESTS)
     enable_testing()
+    add_compile_options(-UNDEBUG)
 
     add_executable(oag_core_tests
         tests/host/test_core.cpp

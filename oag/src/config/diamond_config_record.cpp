@@ -44,10 +44,27 @@ bool validateDiamondConfigRecord(const DiamondConfigRecord& record) {
         return false;
     }
 
+    for (const auto& s : record.payload.proInput.defaults) if (!validProInputSettings(s)) return false;
+    for (const auto& p : record.payload.proInput.devices) if (p.enabled &&
+        (static_cast<unsigned>(p.kind) > 2 || static_cast<unsigned>(p.transport) > 2 || !validProInputSettings(p.settings))) return false;
     return record.payloadCrc32 == diamondConfigCrc32(
         &record.payload,
         sizeof(record.payload)
     );
+}
+
+bool validateDiamondConfigRecordV5(const DiamondConfigRecordV5& r) {
+    return r.magic == DiamondConfigRecord::kMagic && r.recordVersion == 5 &&
+        r.payloadLength == sizeof(DiamondPersistentConfigV5) &&
+        r.payload.magic == DiamondPersistentConfigV5::kMagic && r.payload.schemaVersion == 5 &&
+        r.payload.runtime.magic == DiamondRuntimeConfig::kMagic &&
+        r.payload.runtime.schemaVersion == DiamondRuntimeConfig::kSchemaVersion &&
+        r.payloadCrc32 == diamondConfigCrc32(&r.payload, sizeof(r.payload));
+}
+bool migrateDiamondConfigV5(const DiamondConfigRecordV5& r, DiamondPersistentConfig& c) {
+    if (!validateDiamondConfigRecordV5(r)) return false;
+    c = {}; c.reserved = r.payload.reserved; c.runtime = r.payload.runtime;
+    c.security = r.payload.security; c.names = r.payload.names; return true;
 }
 
 const DiamondConfigRecord* selectNewestDiamondConfigRecord(

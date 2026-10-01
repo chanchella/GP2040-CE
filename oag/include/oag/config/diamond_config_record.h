@@ -9,7 +9,7 @@ namespace oag {
 
 struct DiamondConfigRecord {
     static constexpr std::uint32_t kMagic = 0x4F414743u; // OAGC
-    static constexpr std::uint16_t kRecordVersion = 5;
+    static constexpr std::uint16_t kRecordVersion = 6;
 
     std::uint32_t magic = kMagic;
     std::uint16_t recordVersion = kRecordVersion;
@@ -18,6 +18,16 @@ struct DiamondConfigRecord {
     std::uint32_t payloadCrc32 = 0;
     DiamondPersistentConfig payload {};
 };
+
+struct DiamondConfigRecordV5 {
+    std::uint32_t magic = DiamondConfigRecord::kMagic;
+    std::uint16_t recordVersion = 5;
+    std::uint16_t payloadLength = sizeof(DiamondPersistentConfigV5);
+    std::uint32_t generation = 0, payloadCrc32 = 0;
+    DiamondPersistentConfigV5 payload {};
+};
+bool validateDiamondConfigRecordV5(const DiamondConfigRecordV5&);
+bool migrateDiamondConfigV5(const DiamondConfigRecordV5&, DiamondPersistentConfig&);
 
 static_assert(
     sizeof(DiamondConfigRecord) <= 24576,

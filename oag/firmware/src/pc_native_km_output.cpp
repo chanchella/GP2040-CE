@@ -10,16 +10,11 @@
 
 namespace {
 
+constexpr std::uint8_t kUsageF1 = 0x3A;
 constexpr std::uint8_t kUsageF4 = 0x3D;
 constexpr std::uint8_t kUsageF5 = 0x3E;
 constexpr std::uint8_t kUsageF8 = 0x41;
 constexpr std::uint8_t kUsageF9 = 0x42;
-
-std::int8_t clampMouseAxis(std::int32_t value) {
-    return static_cast<std::int8_t>(
-        std::clamp<std::int32_t>(value, -127, 127)
-    );
-}
 
 } // namespace
 
@@ -35,10 +30,8 @@ void PcNativeKmOutput::setEnabled(bool enabled) {
     if (!enabled_) {
         keyboardReleasePending_ = true;
         mouseReleasePending_ = true;
-        pendingDx_ = 0;
-        pendingDy_ = 0;
-        pendingWheel_ = 0;
-        pendingPan_ = 0;
+        pendingMouse_.clear();
+        f1PressedSinceUs_ = 0;
         f4PressedSinceUs_ = 0;
         f5PressedSinceUs_ = 0;
         f8PressedSinceUs_ = 0;
@@ -64,10 +57,7 @@ void PcNativeKmOutput::addMouseMotion(
         return;
     }
 
-    pendingDx_ += dx;
-    pendingDy_ += dy;
-    pendingWheel_ += wheel;
-    pendingPan_ += pan;
+    pendingMouse_.add(dx, dy, wheel, pan);
 }
 
 std::array<std::uint8_t, 8>
@@ -75,6 +65,9 @@ PcNativeKmOutput::buildKeyboardReport(std::uint64_t nowUs) {
     std::array<std::uint8_t, 8> report {};
     report[0] = keyboard_.modifiers;
 
+    const bool f1Down = keyboard_.pressed(kUsageF1);
+    if (f1Down && f1PressedSinceUs_ == 0) f1PressedSinceUs_ = nowUs;
+    else if (!f1Down) f1PressedSinceUs_ = 0;
     const bool f4Down = keyboard_.pressed(kUsageF4);
     const bool f5Down = keyboard_.pressed(kUsageF5);
     const bool chordDown = f4Down && f5Down;
@@ -115,6 +108,8 @@ PcNativeKmOutput::buildKeyboardReport(std::uint64_t nowUs) {
         if (!keyboard_.pressed(static_cast<std::uint8_t>(usage))) {
             continue;
         }
+
+        if (usage == kUsageF1 && (f1PressedSinceUs_ == 0 || nowUs - f1PressedSinceUs_ < kProfileChordGraceUs)) continue;
 
         if (
             usage == kUsageF4 ||
@@ -165,105 +160,37 @@ PcNativeKmOutput::buildKeyboardReport(std::uint64_t nowUs) {
     return report;
 }
 
-void PcNativeKmOutput::task(std::uint64_t nowUs) {
-    if (!enabled_) {
-        if (
-            keyboardReleasePending_ &&
-            tud_hid_n_ready(nativeKeyboardHidInstance())
-        ) {
+void PcNativeKmOutput::task(std::uint64_t nowUs, bool keyboardTick, bool mouseTick) {
+    // Neutral must be transmitted before a state following a context switch,
+    // even if output was already re-enabled while the endpoint was busy.
+    if (keyboardReleasePending_ || mouseReleasePending_) {
+        if (keyboardReleasePending_ && tud_hid_n_ready(nativeKeyboardHidInstance())) {
             const std::array<std::uint8_t, 8> empty {};
-            if (tud_hid_n_report(
-                    nativeKeyboardHidInstance(),
-                    0,
-                    empty.data(),
-                    empty.size()
-                )) {
-                lastKeyboardReport_ = {};
-                keyboardReleasePending_ = false;
+            if (tud_hid_n_report(nativeKeyboardHidInstance(), 0, empty.data(), empty.size())) {
+                lastKeyboardReport_ = {}; keyboardReleasePending_ = false;
             }
         }
-
-        if (
-            mouseReleasePending_ &&
-            tud_hid_n_ready(nativeMouseHidInstance())
-        ) {
-            hid_mouse_report_t report {};
-            if (tud_hid_n_report(
-                    nativeMouseHidInstance(),
-                    0,
-                    &report,
-                    sizeof(report)
-                )) {
-                lastMouseButtons_ = 0;
-                mouseReleasePending_ = false;
+        if (mouseReleasePending_ && tud_hid_n_ready(nativeMouseHidInstance())) {
+            const auto empty = oag::NativeMouseQueue {}.packet(0, tud_hid_n_get_protocol(nativeMouseHidInstance()) == HID_PROTOCOL_BOOT);
+            if (tud_hid_n_report(nativeMouseHidInstance(), 0, empty.bytes.data(), empty.length)) {
+                lastMouseButtons_ = 0; mouseReleasePending_ = false;
             }
         }
-
         return;
     }
-
-    const auto keyboardReport =
-        buildKeyboardReport(nowUs);
-
-    if (
-        keyboardReport != lastKeyboardReport_ &&
-        tud_hid_n_ready(nativeKeyboardHidInstance())
-    ) {
-        if (tud_hid_n_report(
-                nativeKeyboardHidInstance(),
-                0,
-                keyboardReport.data(),
-                keyboardReport.size()
-            )) {
-            lastKeyboardReport_ = keyboardReport;
-        }
+    if (!enabled_) return;
+    const auto keys = buildKeyboardReport(nowUs);
+    if (keyboardTick && keys != lastKeyboardReport_ && tud_hid_n_ready(nativeKeyboardHidInstance()) &&
+        tud_hid_n_report(nativeKeyboardHidInstance(), 0, keys.data(), keys.size())) lastKeyboardReport_ = keys;
+    const std::uint8_t buttons = mouse_.buttons & 31u;
+    if (!mouseTick || (buttons == lastMouseButtons_ && !pendingMouse_.pending()) || !tud_hid_n_ready(nativeMouseHidInstance())) return;
+    const auto packet = pendingMouse_.packet(buttons, tud_hid_n_get_protocol(nativeMouseHidInstance()) == HID_PROTOCOL_BOOT);
+    if (tud_hid_n_report(nativeMouseHidInstance(), 0, packet.bytes.data(), packet.length)) {
+        lastMouseButtons_ = buttons; pendingMouse_.sent(packet);
     }
-
-    const std::uint8_t buttons =
-        static_cast<std::uint8_t>(mouse_.buttons & 0x1Fu);
-
-    const bool mouseChanged =
-        buttons != lastMouseButtons_ ||
-        pendingDx_ != 0 ||
-        pendingDy_ != 0 ||
-        pendingWheel_ != 0 ||
-        pendingPan_ != 0;
-
-    if (!mouseChanged || !tud_hid_n_ready(nativeMouseHidInstance())) {
-        return;
-    }
-
-    const std::int8_t x = clampMouseAxis(pendingDx_);
-    const std::int8_t y = clampMouseAxis(pendingDy_);
-    const std::int8_t wheel = clampMouseAxis(pendingWheel_);
-    const std::int8_t pan = clampMouseAxis(pendingPan_);
-
-    hid_mouse_report_t report {
-        buttons,
-        x,
-        y,
-        wheel,
-        pan,
-    };
-
-    if (!tud_hid_n_report(
-            nativeMouseHidInstance(),
-            0,
-            &report,
-            sizeof(report)
-        )) {
-        return;
-    }
-
-    lastMouseButtons_ = buttons;
-    pendingDx_ -= x;
-    pendingDy_ -= y;
-    pendingWheel_ -= wheel;
-    pendingPan_ -= pan;
 }
-
 void PcNativeKmOutput::releaseAll() {
-    setEnabled(false);
+    setEnabled(false); pendingMouse_.clear();
+    keyboardReleasePending_ = mouseReleasePending_ = true;
 }
-
 } // namespace oag::firmware

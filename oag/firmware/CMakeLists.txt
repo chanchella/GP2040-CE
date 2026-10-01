@@ -54,6 +54,7 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     ../src/protocol/hid/boot_keyboard_input_driver.cpp
     ../src/protocol/hid/boot_mouse_input_driver.cpp
     ../src/protocol/hid/generic_hid_gamepad_driver.cpp
+    ../src/mapping/pro_input_processor.cpp
     ../src/mapping/logical_slot_manager.cpp
     ../src/mapping/pass_through_mapping.cpp
     ../src/mapping/digital_binding_engine.cpp
