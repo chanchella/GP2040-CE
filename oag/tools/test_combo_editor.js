@@ -56,5 +56,5 @@ rows.forEach((row,i) => {
   assert.equal(row.querySelector('.srel').value, 750);
 });
 assert.match(source, /OAG RS8 V2/);
-assert.match(source, /app\.js\?v=oag-rs8-v2/);
-console.log('OAG RS8: all eight actions and trigger menus, order, Arabic labels and saved values PASS');
+assert.match(source, /app\.js\?v=oag-wt-v1/);
+console.log('OAG RS8 + Weapon Tuning V1: combo editor regression PASS');

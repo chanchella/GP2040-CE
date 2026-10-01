@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <optional>
+#include <utility>
 
 #include "pico/stdlib.h"
 #include "pico/time.h"
@@ -1338,22 +1340,14 @@ private:
                 // combo phase, recoil accumulator or weapon from the previous
                 // game is allowed to survive into the new game.
                 diamondCombos_.reset();
-                diamondRecoilActive_ = false;
-                nextDiamondRecoilServiceUs_ = 0;
-                nextNativeRecoilUs_ = 0;
-                nativeRecoilAccumX_ = 0;
-                nativeRecoilAccumY_ = 0;
+                resetAllWeaponRecoilState();
             }
         } else {
             runtime.activeWeapon =
                 static_cast<std::uint16_t>(
                     oagSelectionValue_ - 1u
                 );
-            diamondRecoilActive_ = false;
-            nextDiamondRecoilServiceUs_ = 0;
-            nextNativeRecoilUs_ = 0;
-            nativeRecoilAccumX_ = 0;
-            nativeRecoilAccumY_ = 0;
+            resetAllWeaponRecoilState();
         }
 
         oagSelectionLatched_ = true;
@@ -2074,28 +2068,198 @@ private:
         return &gameLibrary_.active().weapons[runtime.activeWeapon];
     }
 
+    const oag::WeaponTuningProfile* activeWeaponTuningProfile() const {
+        const auto& runtime = configStore_.config().runtime;
+        if (runtime.activeWeapon >= oag::kDiamondWeaponSlotsPerGame) {
+            return nullptr;
+        }
+        return &gameLibrary_.active().weaponTuning[runtime.activeWeapon];
+    }
+
+    static std::uint16_t effectiveRecoilTickMs(
+        const oag::WeaponRecoilProfile& profile,
+        const oag::WeaponTuningProfile& tuning
+    ) {
+        if (tuning.syncTickToFireRate && tuning.fireRateRpm >= 60u) {
+            const std::uint32_t derived =
+                60000u / static_cast<std::uint32_t>(tuning.fireRateRpm);
+            return static_cast<std::uint16_t>(
+                std::clamp<std::uint32_t>(derived, 1u, 1000u)
+            );
+        }
+        return std::max<std::uint16_t>(profile.tickMs, 1u);
+    }
+
+    static std::int32_t recoilScalePermille(
+        const oag::WeaponTuningProfile& tuning,
+        std::uint64_t elapsedMs
+    ) {
+        if (elapsedMs < tuning.startDelayMs) return 0;
+        if (
+            tuning.rampDurationMs == 0u ||
+            tuning.recoilCurve == oag::WeaponRecoilCurve::Direct
+        ) {
+            return 1000;
+        }
+
+        const std::uint64_t activeMs = elapsedMs - tuning.startDelayMs;
+        const std::int32_t linear = static_cast<std::int32_t>(
+            std::min<std::uint64_t>(
+                1000u,
+                (activeMs * 1000u) / tuning.rampDurationMs
+            )
+        );
+        if (tuning.recoilCurve == oag::WeaponRecoilCurve::EaseIn) {
+            return (linear * linear) / 1000;
+        }
+        return linear;
+    }
+
+    static std::int32_t antiShakeRecoilRaw(
+        std::int32_t raw,
+        const oag::WeaponTuningProfile& tuning
+    ) {
+        // Anti-Shake is deliberately scoped to generated recoil correction,
+        // never the user's real mouse/controller input. At 100%, only tiny
+        // corrections inside +/-0.20 are suppressed.
+        const std::int32_t threshold =
+            static_cast<std::int32_t>(tuning.antiShakePercent) / 5;
+        return std::abs(raw) <= threshold ? 0 : raw;
+    }
+
+    static std::int32_t smoothRecoilRaw(
+        std::int32_t target,
+        std::int32_t& filtered,
+        const oag::WeaponTuningProfile& tuning
+    ) {
+        const std::int32_t blendPercent = std::max<std::int32_t>(
+            10,
+            100 - (static_cast<std::int32_t>(tuning.smoothingPercent) * 9) / 10
+        );
+        filtered += ((target - filtered) * blendPercent) / 100;
+        if (std::abs(target - filtered) <= 1) filtered = target;
+        return filtered;
+    }
+
+    static std::array<std::int32_t, 2> calculateWeaponRecoilRaw(
+        const oag::WeaponRecoilProfile& profile,
+        const oag::WeaponTuningProfile& tuning,
+        bool ads,
+        std::uint64_t nowUs,
+        std::uint64_t startedUs,
+        std::int32_t& filteredX,
+        std::int32_t& filteredY,
+        bool& firstShotPending
+    ) {
+        const std::uint64_t elapsedMs =
+            nowUs >= startedUs ? (nowUs - startedUs) / 1000ull : 0ull;
+        const std::int32_t scale = recoilScalePermille(tuning, elapsedMs);
+        if (scale == 0) return { 0, 0 };
+
+        std::int32_t rawX =
+            ads && tuning.adsOverrideEnabled
+                ? tuning.adsHorizontalRaw
+                : profile.horizontalHalfPermille;
+        std::int32_t rawY =
+            ads && tuning.adsOverrideEnabled
+                ? tuning.adsVerticalRaw
+                : profile.verticalHalfPermille;
+
+        rawX = antiShakeRecoilRaw(rawX, tuning);
+        rawY = antiShakeRecoilRaw(rawY, tuning);
+        rawX = (rawX * scale) / 1000;
+        rawY = (rawY * scale) / 1000;
+        rawX = smoothRecoilRaw(rawX, filteredX, tuning);
+        rawY = smoothRecoilRaw(rawY, filteredY, tuning);
+
+        if (firstShotPending) {
+            if (tuning.firstShotEnabled) {
+                rawX += tuning.firstShotHorizontalRaw;
+                rawY += tuning.firstShotVerticalRaw;
+            }
+            firstShotPending = false;
+        }
+        return { rawX, rawY };
+    }
+
+    void resetLogicalWeaponRecoilState() {
+        diamondRecoilActive_ = false;
+        nextDiamondRecoilServiceUs_ = 0;
+        diamondRecoilStartedUs_ = 0;
+        diamondRecoilFilteredX_ = 0;
+        diamondRecoilFilteredY_ = 0;
+        diamondRecoilAppliedX_ = 0;
+        diamondRecoilAppliedY_ = 0;
+        diamondFirstShotPending_ = true;
+    }
+
+    void resetNativeWeaponRecoilState() {
+        nextNativeRecoilUs_ = 0;
+        nativeRecoilStartedUs_ = 0;
+        nativeRecoilFilteredX_ = 0;
+        nativeRecoilFilteredY_ = 0;
+        nativeFirstShotPending_ = true;
+        nativeRecoilAccumX_ = 0;
+        nativeRecoilAccumY_ = 0;
+    }
+
+    void resetAllWeaponRecoilState() {
+        resetLogicalWeaponRecoilState();
+        resetNativeWeaponRecoilState();
+    }
+
     oag::LogicalGamepadState applyDiamondLogicalRecoil(
         oag::LogicalGamepadState output,
         bool mouseFire,
+        bool mouseAds,
         std::uint64_t nowUs
     ) {
         const auto* profile = activeRecoilProfile();
-        const bool firing =
-            output.rightTrigger != 0 ||
-            mouseFire;
+        const auto* tuning = activeWeaponTuningProfile();
+        const bool firing = output.rightTrigger != 0 || mouseFire;
 
-        if (profile == nullptr || !profile->enabled || !firing) {
-            diamondRecoilActive_ = false;
-            nextDiamondRecoilServiceUs_ = 0;
+        if (
+            profile == nullptr || tuning == nullptr ||
+            !profile->enabled || !firing
+        ) {
+            resetLogicalWeaponRecoilState();
             return output;
         }
 
+        if (diamondRecoilStartedUs_ == 0) {
+            diamondRecoilStartedUs_ = nowUs;
+            diamondFirstShotPending_ = true;
+            diamondRecoilFilteredX_ = 0;
+            diamondRecoilFilteredY_ = 0;
+            diamondRecoilAppliedX_ = 0;
+            diamondRecoilAppliedY_ = 0;
+            nextDiamondRecoilServiceUs_ = nowUs;
+        }
+
         diamondRecoilActive_ = true;
-        nextDiamondRecoilServiceUs_ =
-            nowUs +
-            static_cast<std::uint64_t>(
-                std::max<std::uint16_t>(profile->tickMs, 1u)
-            ) * 1000ull;
+        if (
+            nextDiamondRecoilServiceUs_ == 0 ||
+            nowUs >= nextDiamondRecoilServiceUs_
+        ) {
+            const bool ads = output.leftTrigger != 0 || mouseAds;
+            const auto raw = calculateWeaponRecoilRaw(
+                *profile,
+                *tuning,
+                ads,
+                nowUs,
+                diamondRecoilStartedUs_,
+                diamondRecoilFilteredX_,
+                diamondRecoilFilteredY_,
+                diamondFirstShotPending_
+            );
+            diamondRecoilAppliedX_ = raw[0];
+            diamondRecoilAppliedY_ = raw[1];
+            nextDiamondRecoilServiceUs_ =
+                nowUs +
+                static_cast<std::uint64_t>(
+                    effectiveRecoilTickMs(*profile, *tuning)
+                ) * 1000ull;
+        }
 
         const auto addAxis = [](std::int32_t value, std::int32_t raw) {
             const std::int64_t delta =
@@ -2116,14 +2280,8 @@ private:
             );
         };
 
-        output.rx = addAxis(
-            output.rx,
-            profile->horizontalHalfPermille
-        );
-        output.ry = addAxis(
-            output.ry,
-            profile->verticalHalfPermille
-        );
+        output.rx = addAxis(output.rx, diamondRecoilAppliedX_);
+        output.ry = addAxis(output.ry, diamondRecoilAppliedY_);
         return output;
     }
 
@@ -2328,6 +2486,8 @@ private:
                 output,
                 hasMouse &&
                     (mouse.buttons & oag::MouseButtonLeft) != 0,
+                hasMouse &&
+                    (mouse.buttons & oag::MouseButtonRight) != 0,
                 nowUs
             );
             output.timestampUs = nowUs;
@@ -2375,6 +2535,7 @@ private:
             output = applyDiamondLogicalRecoil(
                 output,
                 false,
+                false,
                 nowUs
             );
             platformOutput_.submit(
@@ -2409,6 +2570,8 @@ private:
             output,
             hasMouse &&
                 (mouse.buttons & oag::MouseButtonLeft) != 0,
+            hasMouse &&
+                (mouse.buttons & oag::MouseButtonRight) != 0,
             nowUs
         );
 
@@ -2759,25 +2922,44 @@ private:
         std::uint64_t nowUs
     ) {
         const auto* profile = activeRecoilProfile();
+        const auto* tuning = activeWeaponTuningProfile();
         const bool firing =
             mouse.connected &&
             (mouse.buttons & oag::MouseButtonLeft) != 0;
 
-        if (profile == nullptr || !profile->enabled || !firing) {
-            nextNativeRecoilUs_ = 0;
-            nativeRecoilAccumX_ = 0;
-            nativeRecoilAccumY_ = 0;
+        if (
+            profile == nullptr || tuning == nullptr ||
+            !profile->enabled || !firing
+        ) {
+            resetNativeWeaponRecoilState();
             return;
         }
 
-        if (nextNativeRecoilUs_ == 0) {
+        if (nativeRecoilStartedUs_ == 0) {
+            nativeRecoilStartedUs_ = nowUs;
+            nativeFirstShotPending_ = true;
+            nativeRecoilFilteredX_ = 0;
+            nativeRecoilFilteredY_ = 0;
             nextNativeRecoilUs_ = nowUs;
         }
 
         if (nowUs < nextNativeRecoilUs_) return;
 
-        nativeRecoilAccumX_ += profile->horizontalHalfPermille;
-        nativeRecoilAccumY_ += profile->verticalHalfPermille;
+        const bool ads =
+            (mouse.buttons & oag::MouseButtonRight) != 0;
+        const auto raw = calculateWeaponRecoilRaw(
+            *profile,
+            *tuning,
+            ads,
+            nowUs,
+            nativeRecoilStartedUs_,
+            nativeRecoilFilteredX_,
+            nativeRecoilFilteredY_,
+            nativeFirstShotPending_
+        );
+
+        nativeRecoilAccumX_ += raw[0];
+        nativeRecoilAccumY_ += raw[1];
 
         const std::int32_t dx = nativeRecoilAccumX_ / 100;
         const std::int32_t dy = nativeRecoilAccumY_ / 100;
@@ -2791,7 +2973,7 @@ private:
         nextNativeRecoilUs_ =
             nowUs +
             static_cast<std::uint64_t>(
-                std::max<std::uint16_t>(profile->tickMs, 1u)
+                effectiveRecoilTickMs(*profile, *tuning)
             ) * 1000ull;
     }
 
@@ -3115,7 +3297,17 @@ private:
     std::uint64_t nextDiamondComboServiceUs_ = 0;
     bool diamondRecoilActive_ = false;
     std::uint64_t nextDiamondRecoilServiceUs_ = 0;
+    std::uint64_t diamondRecoilStartedUs_ = 0;
+    std::int32_t diamondRecoilFilteredX_ = 0;
+    std::int32_t diamondRecoilFilteredY_ = 0;
+    std::int32_t diamondRecoilAppliedX_ = 0;
+    std::int32_t diamondRecoilAppliedY_ = 0;
+    bool diamondFirstShotPending_ = true;
     std::uint64_t nextNativeRecoilUs_ = 0;
+    std::uint64_t nativeRecoilStartedUs_ = 0;
+    std::int32_t nativeRecoilFilteredX_ = 0;
+    std::int32_t nativeRecoilFilteredY_ = 0;
+    bool nativeFirstShotPending_ = true;
     std::int32_t nativeRecoilAccumX_ = 0;
     std::int32_t nativeRecoilAccumY_ = 0;
     oag::firmware::MultiProfilePlatformDriver platformOutput_;

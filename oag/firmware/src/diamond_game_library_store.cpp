@@ -60,16 +60,48 @@ std::uint32_t slotOffset(std::size_t gameIndex, std::uint8_t copy) {
         static_cast<std::uint32_t>(copy) * kGameRecordSlotSize;
 }
 
-const oag::DiamondGameRecord* recordAt(
-    std::size_t gameIndex,
-    std::uint8_t copy
-) {
-    return reinterpret_cast<const oag::DiamondGameRecord*>(
+struct LegacyDiamondGameContentV1 {
+    std::array<char, oag::kDiamondDisplayNameBytes> gameName {};
+    std::array<
+        std::array<char, oag::kDiamondDisplayNameBytes>,
+        oag::kDiamondWeaponSlotsPerGame
+    > weaponNames {};
+    std::array<oag::WeaponRecoilProfile, oag::kDiamondWeaponSlotsPerGame> weapons {};
+    std::array<
+        std::array<char, oag::kDiamondDisplayNameBytes>,
+        oag::kDiamondComboSlots
+    > comboNames {};
+    std::array<oag::DiamondComboTiming, oag::kDiamondComboSlots> comboTiming {};
+    std::array<oag::DiamondComboProgram, oag::kDiamondComboSlots> comboPrograms {};
+};
+
+struct LegacyDiamondGameRecordV1 {
+    std::uint32_t magic = oag::DiamondGameRecord::kMagic;
+    std::uint16_t recordVersion = 1;
+    std::uint16_t gameIndex = 0;
+    std::uint32_t generation = 0;
+    std::uint32_t payloadCrc32 = 0;
+    LegacyDiamondGameContentV1 payload {};
+};
+
+static_assert(sizeof(LegacyDiamondGameRecordV1) <= kGameRecordSlotSize);
+
+const std::uint8_t* rawRecordAt(std::size_t gameIndex, std::uint8_t copy) {
+    return reinterpret_cast<const std::uint8_t*>(
         XIP_BASE + slotOffset(gameIndex, copy)
     );
 }
 
-bool validRecord(
+struct StoredRecordSelection {
+    const std::uint8_t* raw = nullptr;
+    std::uint8_t copy = 0;
+    std::uint16_t version = 0;
+    std::uint32_t generation = 0;
+
+    explicit operator bool() const { return raw != nullptr; }
+};
+
+bool validRecordV2(
     const oag::DiamondGameRecord& record,
     std::size_t gameIndex
 ) {
@@ -83,17 +115,78 @@ bool validRecord(
         );
 }
 
-const oag::DiamondGameRecord* newestRecord(std::size_t gameIndex) {
-    const auto* a = recordAt(gameIndex, 0);
-    const auto* b = recordAt(gameIndex, 1);
-    const bool va = validRecord(*a, gameIndex);
-    const bool vb = validRecord(*b, gameIndex);
-    if (!va) return vb ? b : nullptr;
-    if (!vb) return a;
+bool validRecordV1(
+    const LegacyDiamondGameRecordV1& record,
+    std::size_t gameIndex
+) {
+    return
+        record.magic == oag::DiamondGameRecord::kMagic &&
+        record.recordVersion == 1u &&
+        record.gameIndex == gameIndex &&
+        record.payloadCrc32 == oag::diamondConfigCrc32(
+            &record.payload,
+            sizeof(record.payload)
+        );
+}
+
+StoredRecordSelection inspectRecord(
+    std::size_t gameIndex,
+    std::uint8_t copy
+) {
+    const auto* raw = rawRecordAt(gameIndex, copy);
+    const auto* v2 = reinterpret_cast<const oag::DiamondGameRecord*>(raw);
+    if (validRecordV2(*v2, gameIndex)) {
+        return { raw, copy, v2->recordVersion, v2->generation };
+    }
+
+    const auto* v1 = reinterpret_cast<const LegacyDiamondGameRecordV1*>(raw);
+    if (validRecordV1(*v1, gameIndex)) {
+        return { raw, copy, v1->recordVersion, v1->generation };
+    }
+
+    return {};
+}
+
+StoredRecordSelection newestRecord(std::size_t gameIndex) {
+    const auto a = inspectRecord(gameIndex, 0);
+    const auto b = inspectRecord(gameIndex, 1);
+    if (!a) return b;
+    if (!b) return a;
 
     const auto delta =
-        static_cast<std::int32_t>(b->generation - a->generation);
+        static_cast<std::int32_t>(b.generation - a.generation);
     return delta > 0 ? b : a;
+}
+
+bool decodeRecord(
+    const StoredRecordSelection& selected,
+    oag::DiamondGameContent& out
+) {
+    if (!selected) return false;
+
+    if (selected.version == oag::DiamondGameRecord::kRecordVersion) {
+        const auto* record = reinterpret_cast<const oag::DiamondGameRecord*>(
+            selected.raw
+        );
+        out = record->payload;
+        return true;
+    }
+
+    if (selected.version == 1u) {
+        const auto* record = reinterpret_cast<const LegacyDiamondGameRecordV1*>(
+            selected.raw
+        );
+        out = oag::DiamondGameContent {};
+        out.gameName = record->payload.gameName;
+        out.weaponNames = record->payload.weaponNames;
+        out.weapons = record->payload.weapons;
+        out.comboNames = record->payload.comboNames;
+        out.comboTiming = record->payload.comboTiming;
+        out.comboPrograms = record->payload.comboPrograms;
+        return true;
+    }
+
+    return false;
 }
 
 bool firmwareLeavesLibraryFree() {
@@ -212,13 +305,8 @@ bool DiamondGameLibraryStore::loadStored(
         return false;
     }
 
-    const auto* selected = newestRecord(gameIndex);
-    if (selected == nullptr) {
-        return false;
-    }
-
-    out = selected->payload;
-    return true;
+    const auto selected = newestRecord(gameIndex);
+    return decodeRecord(selected, out);
 }
 
 bool DiamondGameLibraryStore::loadGame(
@@ -249,11 +337,11 @@ bool DiamondGameLibraryStore::saveGame(
         return false;
     }
 
-    const auto* current = newestRecord(gameIndex);
+    const auto current = newestRecord(gameIndex);
     const std::uint32_t generation =
-        current == nullptr ? 1u : current->generation + 1u;
+        current ? current.generation + 1u : 1u;
     const std::uint8_t targetCopy =
-        current == recordAt(gameIndex, 0) ? 1u : 0u;
+        current && current.copy == 0u ? 1u : 0u;
 
     oag::DiamondGameRecord pending {};
     pending.gameIndex = static_cast<std::uint16_t>(gameIndex);
@@ -279,8 +367,8 @@ bool DiamondGameLibraryStore::saveGame(
         return false;
     }
 
-    const auto* written = recordAt(gameIndex, targetCopy);
-    if (!validRecord(*written, gameIndex)) {
+    const auto written = inspectRecord(gameIndex, targetCopy);
+    if (!written || written.version != oag::DiamondGameRecord::kRecordVersion) {
         return false;
     }
 
