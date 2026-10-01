@@ -1,35 +1,31 @@
 name: OAG Weapon Tuning Experimental V1
-# patch-revision: r2
 
 on:
   push:
     branches:
       - chatgpt/oag-weapon-tuning-v1
     paths:
+      - 'oag/**'
       - '.github/workflows/oag-weapon-tuning-v1.yml'
+  workflow_dispatch:
 
 jobs:
-  build-experimental-copy:
+  verify-and-build:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
-      - name: Checkout experimental carrier branch
+      - name: Checkout experimental source copy
         uses: actions/checkout@v4.1.1
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Rebuild patch and reset working tree to exact RS8 V2 stock
+      - name: Verify RS8 V2 stock ancestry
         shell: bash
         run: |
           set -euo pipefail
-          cat .oag-experimental/weapon_tuning_v1.patch.gz.b64.part* > /tmp/oag_weapon_tuning_v1.patch.gz.b64
-          base64 -d /tmp/oag_weapon_tuning_v1.patch.gz.b64 > /tmp/oag_weapon_tuning_v1.patch.gz
-          gzip -dc /tmp/oag_weapon_tuning_v1.patch.gz > /tmp/oag_weapon_tuning_v1.patch
-          git reset --hard d04d96f514a81d83ee92a994c24ad4389d80b794
-          git submodule update --init --recursive
-          git apply --check /tmp/oag_weapon_tuning_v1.patch
-          git apply /tmp/oag_weapon_tuning_v1.patch
+          BASE="d04d96f514a81d83ee92a994c24ad4389d80b794"
+          test "$(git merge-base "$BASE" HEAD)" = "$BASE"
 
       - name: Architecture and web guards
         shell: bash
@@ -85,7 +81,6 @@ jobs:
           UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print -quit)"
           test -n "$UF2"
           cp "$UF2" artifacts/OAG_DIAMOND_RS8_V2_WEAPON_TUNING_EXPERIMENTAL_V1_Pico2W.uf2
-          cp /tmp/oag_weapon_tuning_v1.patch artifacts/OAG_WEAPON_TUNING_V1_SOURCE.patch
           sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4.3.1
