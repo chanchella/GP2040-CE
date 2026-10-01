@@ -27,7 +27,9 @@ struct ProDeviceProfile {
 };
 struct ProInputConfig {
     static constexpr std::size_t kDeviceProfiles = 16;
-    bool nativeDesktop = false;
+    // V6 layout unchanged: formerly named nativeDesktop. Cancels only the
+    // selected game effects; it never selects a USB profile or KM route.
+    bool gameContextInactive = false;
     std::array<std::uint8_t, 3> reserved {};
     std::array<ProInputSettings, 3> defaults {};
     std::array<ProDeviceProfile, kDeviceProfiles> devices {};

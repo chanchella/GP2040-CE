@@ -1,7 +1,7 @@
 #pragma once
 #include "oag/input/keyboard_state.h"
 namespace oag {
-enum class ProShortcutAction { None, Game, Weapon, Desktop };
+enum class ProShortcutAction { None, Game, Weapon, CancelGameProfile };
 struct ProShortcutSelection { ProShortcutAction action = ProShortcutAction::None; std::uint16_t number = 0; };
 class ProProfileShortcut {
 public:
@@ -12,16 +12,16 @@ public:
         for (unsigned d = 1; d <= 9; ++d) if (k.pressed(0x1D + d)) digits |= 1u << d;
         if (!f1 && !f5 && digits == 0) maskUntilRelease_ = false;
         if (!mode || mode != mode_) {
-            mode_ = mode; value_ = previousDigits_ = 0; started_ = desktop_ = latched_ = false;
+            mode_ = mode; value_ = previousDigits_ = 0; started_ = cancelGame_ = latched_ = false;
         }
         if (!mode) return {};
         if (digits) maskUntilRelease_ = true;
         const auto fresh = digits & ~previousDigits_; previousDigits_ = digits;
         if (latched_) return {};
-        if (desktop_ && !(digits & 1)) { desktop_ = started_ = false; }
+        if (cancelGame_ && !(digits & 1)) { cancelGame_ = started_ = false; }
         if (mode == 1 && value_ == 0 && fresh == 1) {
-            desktop_ = started_ = true; startedUs_ = now;
-        } else if (fresh && !desktop_) {
+            cancelGame_ = started_ = true; startedUs_ = now;
+        } else if (fresh && !cancelGame_) {
             for (unsigned i = 1; i <= 10; ++i) {
                 const unsigned d = i % 10;
                 if (!(fresh & (1u << d))) continue;
@@ -33,7 +33,7 @@ public:
         }
         if (!started_ || now - startedUs_ < 1000000) return {};
         latched_ = true;
-        return {desktop_ ? ProShortcutAction::Desktop : mode == 1 ? ProShortcutAction::Game : ProShortcutAction::Weapon, value_};
+        return {cancelGame_ ? ProShortcutAction::CancelGameProfile : mode == 1 ? ProShortcutAction::Game : ProShortcutAction::Weapon, value_};
     }
     void mask(KeyboardState& k) const {
         if (!maskUntilRelease_) return;
@@ -45,6 +45,6 @@ private:
     std::uint8_t mode_ = 0;
     std::uint16_t value_ = 0, previousDigits_ = 0;
     std::uint64_t startedUs_ = 0;
-    bool started_ = false, desktop_ = false, latched_ = false, maskUntilRelease_ = false;
+    bool started_ = false, cancelGame_ = false, latched_ = false, maskUntilRelease_ = false;
 };
 } // namespace oag

@@ -169,7 +169,7 @@ public:
             return false;
         }
 
-        desktopMode_ = configStore_.config().proInput.nativeDesktop;
+        gameContextInactive_ = configStore_.config().proInput.gameContextInactive;
         configMode_ =
             oag::firmware::activeOutputProfile() ==
             oag::firmware::OutputProfileId::OagConfig;
@@ -1259,40 +1259,34 @@ private:
         return mask;
     }
 
-    void enterProDesktop() {
-        desktopMode_ = true; configStore_.config().proInput.nativeDesktop = true;
+    void cancelGameProfile() {
+        // F1+0 cancels F1+1..20. It must not change USB identity, transport,
+        // Native/Controller routing, or any physical input/Pro Input state.
+        gameContextInactive_ = configStore_.config().proInput.gameContextInactive = true;
         configStore_.config().runtime.activeWeapon = oag::kDiamondNoActiveWeapon;
-        keyboardMouseMode_ = KeyboardMouseOutputMode::Native;
-        diamondCombos_.reset(); diamondRecoilActive_ = false;
+        diamondCombos_.reset();
+        diamondRecoilActive_ = false;
         nextDiamondComboServiceUs_ = nextDiamondRecoilServiceUs_ = nextNativeRecoilUs_ = 0;
         nativeRecoilAccumX_ = nativeRecoilAccumY_ = 0;
-        currentMouseMotion_ = {}; currentNativeWheel_ = currentNativePan_ = 0;
-        mouseAimActive_ = false; mouseAimExpiresUs_ = 0;
-        pubgTriangleKeyDown_ = pubgTriangleSequenceActive_ = pubgTriangleHoldLatched_ = false;
-        pubgTriangleStartedUs_ = pubgTriangleRefreshNotBeforeUs_ = 0;
-        pubgMovementMask_ = 0; pubgMovementPrimePending_ = false;
-        pubgScrollPulse_ = kPubgScrollNone; pubgScrollPulseExpiresUs_ = 0;
-        proInput_.resetFractions(); nativeKmOutput_.releaseAll();
-        platformOutput_.submit(hostPrimaryOutputSlot_, {});
+        keyboardDirty_ = mouseDirty_ = true;
         sendComposedOutput();
-        (void)configStore_.save();
-        if (oag::firmware::mobileTouchUsbProfileActive())
-            (void)oag::firmware::requestOutputProfile(oag::firmware::OutputProfileId::Pc);
+        // Apply this cancellation in RAM only; the page has a separate saved
+        // startup preference. This chord must never stall on a Flash write.
     }
     void serviceOagGameWeaponHotkey() {
         const auto selected = profileShortcut_.poll(combinedKeyboard(), time_us_64());
         if (selected.action == oag::ProShortcutAction::None) return;
-        if (selected.action == oag::ProShortcutAction::Desktop) { enterProDesktop(); return; }
+        if (selected.action == oag::ProShortcutAction::CancelGameProfile) { cancelGameProfile(); return; }
         auto& config = configStore_.config();
         if (selected.action == oag::ProShortcutAction::Game) {
             if (!gameLibrary_.activate(selected.number - 1u, config)) return;
-            desktopMode_ = config.proInput.nativeDesktop = false;
+            gameContextInactive_ = config.proInput.gameContextInactive = false;
             config.runtime.activeGame = selected.number - 1u;
             config.runtime.activeWeapon = oag::kDiamondNoActiveWeapon;
             diamondCombos_.reset(); nativeKmOutput_.releaseAll(); proInput_.resetFractions();
             (void)configStore_.save();
         } else {
-            if (desktopMode_) return;
+            if (gameContextInactive_) return;
             config.runtime.activeWeapon = selected.number - 1u;
         }
         diamondRecoilActive_ = false;
@@ -2052,7 +2046,7 @@ private:
     }
 
     const oag::WeaponRecoilProfile* activeRecoilProfile() const {
-        if (desktopMode_) return nullptr;
+        if (gameContextInactive_) return nullptr;
         const auto& runtime = configStore_.config().runtime;
         if (runtime.activeWeapon >= oag::kDiamondWeaponSlotsPerGame) {
             return nullptr;
@@ -2126,7 +2120,6 @@ private:
 
     void sendComposedOutput() {
         if (configMode_) return;
-        if (desktopMode_) { platformOutput_.submit(hostPrimaryOutputSlot_, basePrimaryOutput()); return; }
         oag::KeyboardState keyboard = combinedKeyboard();
         const oag::MouseState mouse = combinedMouse();
 
@@ -2310,7 +2303,8 @@ private:
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
                 output,
-                nowUs
+                nowUs,
+                !gameContextInactive_
             );
             output = applyDiamondLogicalRecoil(
                 output,
@@ -2355,7 +2349,8 @@ private:
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
                 basePrimaryOutput(),
-                nowUs
+                nowUs,
+                !gameContextInactive_
             );
             // Native keyboard/mouse recoil is injected into the native mouse
             // report path. Only a real controller RT activates logical recoil
@@ -2400,7 +2395,8 @@ private:
             hasKeyboard ? &keyboard : nullptr,
             hasMouse ? &mouse : nullptr,
             output,
-            nowUs
+            nowUs,
+            !gameContextInactive_
         );
         output = applyDiamondLogicalRecoil(
             output,
@@ -2609,7 +2605,6 @@ private:
     }
 
     void serviceKeyboardMouseModeToggle() {
-        if (desktopMode_) return;
         // Mobile Touch is always a composed controller-to-touch profile.
         // F4+F5 remains untouched for the hardware-verified PC/Phone modes.
         if (oag::firmware::mobileTouchUsbProfileActive()) {
@@ -2695,7 +2690,7 @@ private:
         maskOagGameWeaponHotkey(keyboard);
 
         oag::NativeKmComboFrame frame =
-            desktopMode_ ? oag::NativeKmComboFrame {keyboard, mouse} : nativeKmCombos_.apply(keyboard, mouse);
+            gameContextInactive_ ? oag::NativeKmComboFrame {keyboard, mouse} : nativeKmCombos_.apply(keyboard, mouse);
 
         // Merge the programmable OAG Combo chord generated by the shared
         // post-mapping engine. This keeps physical KM input intact while
@@ -2778,7 +2773,7 @@ private:
     }
 
     void serviceDiamondComboTimeline() {
-        if (desktopMode_ || !diamondCombos_.active()) {
+        if (gameContextInactive_ || !diamondCombos_.active()) {
             nextDiamondComboServiceUs_ = 0;
             return;
         }
@@ -3230,7 +3225,7 @@ private:
     std::array<bool, oag::LogicalSlotManager::kGamepadSlots> proPadPending_ {};
     std::array<oag::LogicalGamepadState, oag::LogicalSlotManager::kGamepadSlots> proPadOutput_ {};
     std::array<oag::DeviceId, oag::LogicalSlotManager::kGamepadSlots> proPadSource_ {};
-    bool keyboardDirty_ = false, mouseDirty_ = false, desktopMode_ = false;
+    bool keyboardDirty_ = false, mouseDirty_ = false, gameContextInactive_ = false;
     oag::DeviceId currentMouseDevice_ {};
     oag::MouseMotion currentMouseMotion_ {};
     std::uint64_t mouseAimExpiresUs_ = 0;

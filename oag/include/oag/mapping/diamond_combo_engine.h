@@ -26,7 +26,8 @@ public:
         const KeyboardState* keyboard,
         const MouseState* mouse,
         LogicalGamepadState base,
-        std::uint64_t nowUs
+        std::uint64_t nowUs,
+        bool gameContextEnabled = true
     );
 
     const DiamondComboNativeFrame& nativeOutput() const {

@@ -53,8 +53,11 @@ int main(int argc,char** argv){
  r=request("GET","/api/pro-input?"+key);assert(r.body.find("\"effectiveQ16\":131072")!=r.body.npos&&r.body.find("\"fullScale\":48")!=r.body.npos);
  assert(request("GET","/api/pro-input?kind=0&scope=1&vid=1133&pid=49271&transport=2").body.find("\"sourceDpi\":0")!=std::string::npos);
  store.failSave=true;assert(request("POST","/api/pro-reset",key).status=="500 Internal Server Error");assert(store.value.proInput.devices[0].enabled);
- assert(request("POST","/api/pro-desktop","enabled=1").status=="500 Internal Server Error"&&!store.value.proInput.nativeDesktop);store.failSave=false;
- assert(request("POST","/api/pro-desktop","enabled=1").status=="200 OK"&&store.persisted.proInput.nativeDesktop);
+ assert(request("POST","/api/pro-game-context","enabled=1").status=="500 Internal Server Error"&&!store.value.proInput.gameContextInactive);store.failSave=false;
+ assert(request("POST","/api/pro-game-context","enabled=1").status=="200 OK"&&store.persisted.proInput.gameContextInactive);
+ assert(request("GET","/api/pro-profiles").body.find("\"gameContextInactive\":1")!=std::string::npos);
+ assert(request("POST","/api/pro-desktop","enabled=0").status=="200 OK"&&!store.persisted.proInput.gameContextInactive);
+ assert(request("POST","/api/pro-game-context","enabled=2").status=="400 Bad Request");
  auto invalid=settings();invalid.replace(invalid.find("processingHz=1000"),17,"processingHz=8000");assert(request("POST","/api/pro-input",invalid).status=="400 Bad Request");
  assert(request("POST","/api/pro-input",settings()+"%00").status=="400 Bad Request");
  const auto identity="index="+std::to_string(mouse->index)+"&generation="+std::to_string(mouse->generation);

@@ -418,12 +418,12 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
         }
         if(!games_->activate(g-1,pc)){sendResponse(client,"500 Internal Server Error","text/plain","Game load failed");return;}
         const auto oldGame=runtime.activeGame,oldWeapon=runtime.activeWeapon;
-        const bool oldDesktop=pc.proInput.nativeDesktop;
-        pc.proInput.nativeDesktop=false;
+        const bool oldGameContextInactive=pc.proInput.gameContextInactive;
+        pc.proInput.gameContextInactive=false;
         runtime.activeGame=static_cast<std::uint16_t>(g-1);
         runtime.activeWeapon=static_cast<std::uint16_t>(w-1);
         if(!store_->save()){
-            pc.proInput.nativeDesktop=oldDesktop;
+            pc.proInput.gameContextInactive=oldGameContextInactive;
             runtime.activeGame=oldGame;runtime.activeWeapon=oldWeapon;
             games_->activate(oldGame<oag::kDiamondLibraryGameSlots?oldGame:0,pc);
             sendResponse(client,"500 Internal Server Error","text/plain","Flash save failed");return;

@@ -555,8 +555,15 @@ LogicalGamepadState DiamondComboEngine::apply(
     const KeyboardState* keyboard,
     const MouseState* mouse,
     LogicalGamepadState base,
-    std::uint64_t nowUs
+    std::uint64_t nowUs,
+    bool gameContextEnabled
 ) {
+    // Cancelling a game only removes generated actions. The mapped physical
+    // input and its connected state still reach the existing output profile.
+    if (!gameContextEnabled) {
+        reset();
+        return base;
+    }
     const LogicalGamepadState input = base;
     nativeOutput_ = {};
     nativeOutput_.keyboard.connected = true;

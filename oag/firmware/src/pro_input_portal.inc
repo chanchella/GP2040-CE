@@ -69,7 +69,7 @@ bool DiamondWifiPortal::handleProInputRequest(void* raw, const char* method, con
         char out[640] {}; encodeProSettings(out,sizeof(out),scope ? oag::proSettingsFor(config,d,static_cast<oag::ProInputKind>(kind)) : config.defaults[kind]); json(out); return true;
     }
     if (get && !std::strcmp(path,"/api/pro-profiles")) {
-        char out[1800] {}; int used=std::snprintf(out,sizeof(out),"{\"desktop\":%u,\"generation\":%lu,\"profiles\":[",config.nativeDesktop,static_cast<unsigned long>(store_->generation())); bool comma=false;
+        char out[1800] {}; int used=std::snprintf(out,sizeof(out),"{\"gameContextInactive\":%u,\"desktop\":%u,\"generation\":%lu,\"profiles\":[",config.gameContextInactive,config.gameContextInactive,static_cast<unsigned long>(store_->generation())); bool comma=false;
         for (const auto& p : config.devices) if (p.enabled) {
             used+=std::snprintf(out+used,sizeof(out)-used,"%s{\"kind\":%u,\"vid\":%u,\"pid\":%u,\"transport\":%u}",comma?",":"",static_cast<unsigned>(p.kind),p.vid,p.pid,static_cast<unsigned>(p.transport)); comma=true;
         }
@@ -119,11 +119,12 @@ bool DiamondWifiPortal::handleProInputRequest(void* raw, const char* method, con
         if (proInput_) proInput_->resetFractions();
         json("{\"saved\":true}"); return true;
     }
-    if (post && !std::strcmp(path,"/api/pro-desktop")) {
+    // Preserve the V1 endpoint as an alias for already-cached pages.
+    if (post && (!std::strcmp(path,"/api/pro-game-context") || !std::strcmp(path,"/api/pro-desktop"))) {
         std::uint32_t value=0;
-        if (!parseUnsigned(body,"enabled",0,1,value)) { reply("400 Bad Request","Invalid desktop state"); return true; }
-        const bool previous=config.nativeDesktop; config.nativeDesktop=value;
-        if (!store_->save()) { config.nativeDesktop=previous; reply("500 Internal Server Error","Flash save failed"); } else json("{\"saved\":true}"); return true;
+        if (!parseUnsigned(body,"enabled",0,1,value)) { reply("400 Bad Request","Invalid game context state"); return true; }
+        const bool previous=config.gameContextInactive; config.gameContextInactive=value;
+        if (!store_->save()) { config.gameContextInactive=previous; reply("500 Internal Server Error","Flash save failed"); } else json("{\"saved\":true}"); return true;
     }
     if (post && (!std::strcmp(path,"/api/pro-calibrate/start") || !std::strcmp(path,"/api/pro-calibrate/finish"))) {
         std::uint32_t index=0,generation=0,mm=0;

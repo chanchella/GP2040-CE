@@ -48,7 +48,7 @@ try{
  await page.selectOption('#pi-scope','9571:1397:0');await page.waitForFunction(()=>document.querySelector('#pi-save').disabled===false);
  await page.fill('#pi-inner','5');await page.fill('#pi-outer','2');await page.fill('#pi-curve','1.5');await page.click('#pi-save');await page.waitForFunction(()=>document.querySelector('#pi-msg').textContent.includes('تم الحفظ'));
  const pad=await (await fetch(origin+'/api/pro-input?kind=2&scope=1&vid=9571&pid=1397&transport=0')).json();assert.equal(pad.inner,50);assert.equal(pad.outer,20);assert.equal(pad.curve,1500);
- await page.check('#pi-desktop');await page.click('#pi-desktop-save');await page.waitForFunction(()=>document.querySelector('#pi-msg').textContent.includes('تم حفظ وضع'));assert.equal((await(await fetch(origin+'/api/pro-profiles')).json()).desktop,1);
+ await page.check('#pi-game-inactive');await page.click('#pi-game-inactive-save');await page.waitForFunction(()=>document.querySelector('#pi-msg').textContent.includes('تم حفظ وضع'));assert.equal((await(await fetch(origin+'/api/pro-profiles')).json()).gameContextInactive,1);
  await page.click('#pi-reset');await page.waitForFunction(()=>document.querySelector('#pi-msg').textContent.includes('تمت الاستعادة'));assert.equal(await page.inputValue('#pi-inner'),'0');
  assert.equal(await page.locator('#cg option').count(),20);assert.equal(await page.locator('#ws option').count(),24);assert.equal(await page.locator('#cs option').count(),16);assert.equal(await page.locator('.actionrow').count(),8);
  await page.selectOption('#pi-kind','0');await page.waitForFunction(()=>document.querySelector('#pi-target').offsetParent!==null);await page.selectOption('#pi-scope',mouse);await page.waitForFunction(()=>document.querySelector('#pi-source').value==='800');
@@ -58,5 +58,5 @@ try{
   const dimensions=await page.locator('#pro-lab').evaluate(el=>({scroll:el.scrollWidth,client:el.clientWidth,window:innerWidth,right:el.getBoundingClientRect().right}));assert(dimensions.scroll<=dimensions.client+1,JSON.stringify({width,...dimensions}));assert(dimensions.right<=width+1,JSON.stringify({width,...dimensions}));
   if(output)await page.locator('#pro-lab').screenshot({path:path.join(output,'pro-ui-'+width+'.png')});
  }
- assert.deepEqual(errors,[]);console.log('OAG_PRO_UI=PASS (real C++ API saves/reset; mouse/pad profiles; desktop; edit preservation; 1280/390/360/320 layouts; legacy RS8)');
+ assert.deepEqual(errors,[]);console.log('OAG_PRO_UI=PASS (real C++ API saves/reset; mouse/pad profiles; game context; edit preservation; 1280/390/360/320 layouts; legacy RS8)');
 }finally{if(browser)await browser.close();api.stdin.end();server.close()}

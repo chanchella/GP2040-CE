@@ -65,6 +65,10 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_pro_native_output_tests PRIVATE oag_core)
     add_test(NAME oag_pro_native_output_tests COMMAND oag_pro_native_output_tests)
 
+    add_executable(oag_pro_game_context_tests tests/host/test_pro_game_context.cpp)
+    target_link_libraries(oag_pro_game_context_tests PRIVATE oag_core)
+    add_test(NAME oag_pro_game_context_tests COMMAND oag_pro_game_context_tests)
+
     add_executable(oag_pro_portal_tests tests/host/test_pro_portal.cpp)
     target_include_directories(oag_pro_portal_tests PRIVATE firmware/include)
     target_compile_options(oag_pro_portal_tests PRIVATE -Wall -Wextra -Werror -Wno-misleading-indentation)

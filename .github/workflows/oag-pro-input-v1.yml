@@ -1,4 +1,4 @@
-name: OAG Diamond Pro Input V1
+name: OAG Diamond Pro Input V1 F1 Context Fix
 
 on:
   push:
@@ -91,10 +91,10 @@ jobs:
           mkdir -p artifacts
           UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print -quit)"
           test -n "$UF2"
-          cp "$UF2" artifacts/OAG_DIAMOND_RIGHT_STICK_8_DIRECTIONS_V2_PRO_INPUT_V1_Pico2W.uf2
+          cp "$UF2" artifacts/OAG_DIAMOND_RS8_PRO_INPUT_V1_F1_CONTEXT_FIX_Pico2W.uf2
           sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-DIAMOND-RS8-PRO-INPUT-V1
+          name: OAG-DIAMOND-RS8-PRO-INPUT-V1-F1-CONTEXT-FIX
           path: artifacts/*
           if-no-files-found: error
