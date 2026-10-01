@@ -69,6 +69,24 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_pro_game_context_tests PRIVATE oag_core)
     add_test(NAME oag_pro_game_context_tests COMMAND oag_pro_game_context_tests)
 
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        firmware/src/main.cpp tools/extract_game_hotkey_handlers.py)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/extract_game_hotkey_handlers.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/firmware/src/main.cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/oag_game_hotkey_handlers.inc
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    add_executable(oag_game_hotkey_continuity_tests
+        tests/host/test_game_hotkey_continuity.cpp
+        firmware/src/pc_native_km_output.cpp)
+    target_include_directories(oag_game_hotkey_continuity_tests PRIVATE
+        tests/host/stubs firmware/include ${CMAKE_CURRENT_BINARY_DIR})
+    target_link_libraries(oag_game_hotkey_continuity_tests PRIVATE oag_core)
+    add_test(NAME oag_game_hotkey_continuity_tests COMMAND oag_game_hotkey_continuity_tests)
+
     add_executable(oag_pro_portal_tests tests/host/test_pro_portal.cpp)
     target_include_directories(oag_pro_portal_tests PRIVATE firmware/include)
     target_compile_options(oag_pro_portal_tests PRIVATE -Wall -Wextra -Werror -Wno-misleading-indentation)

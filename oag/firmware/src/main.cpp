@@ -1283,8 +1283,11 @@ private:
             gameContextInactive_ = config.proInput.gameContextInactive = false;
             config.runtime.activeGame = selected.number - 1u;
             config.runtime.activeWeapon = oag::kDiamondNoActiveWeapon;
-            diamondCombos_.reset(); nativeKmOutput_.releaseAll(); proInput_.resetFractions();
-            (void)configStore_.save();
+            // Match the hardware-proven selector: switch the game in RAM.
+            // Flash erase/program pauses live USB/BT servicing, and disabling
+            // native output here loses queued physical mouse movement. Only
+            // the old game's generated effects belong to this transition.
+            diamondCombos_.reset();
         } else {
             if (gameContextInactive_) return;
             config.runtime.activeWeapon = selected.number - 1u;
@@ -1292,6 +1295,7 @@ private:
         diamondRecoilActive_ = false;
         nextDiamondComboServiceUs_ = nextDiamondRecoilServiceUs_ = nextNativeRecoilUs_ = 0;
         nativeRecoilAccumX_ = nativeRecoilAccumY_ = 0;
+        keyboardDirty_ = mouseDirty_ = true;
         sendComposedOutput();
     }
     void maskOagGameWeaponHotkey(oag::KeyboardState& keyboard) const {

@@ -1,9 +1,10 @@
-name: OAG Diamond Pro Input V1 F1 Context Fix
+name: OAG Diamond Pro Input V1 F1 KM Continuity Fix2
 
 on:
   push:
     branches:
       - chatgpt/oag-pro-input-v1
+      - chatgpt/oag-f1-input-continuity-fix
     paths:
       - 'oag/**'
       - '.github/workflows/oag-pro-input-v1.yml'
@@ -91,10 +92,10 @@ jobs:
           mkdir -p artifacts
           UF2="$(find build/oag-fw -maxdepth 1 -type f -name '*.uf2' -print -quit)"
           test -n "$UF2"
-          cp "$UF2" artifacts/OAG_DIAMOND_RS8_PRO_INPUT_V1_F1_CONTEXT_FIX_Pico2W.uf2
+          cp "$UF2" artifacts/OAG_DIAMOND_RS8_PRO_INPUT_F1_KM_FIX2_Pico2W.uf2
           sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4.3.1
         with:
-          name: OAG-DIAMOND-RS8-PRO-INPUT-V1-F1-CONTEXT-FIX
+          name: OAG-DIAMOND-RS8-PRO-INPUT-F1-KM-FIX2
           path: artifacts/*
           if-no-files-found: error

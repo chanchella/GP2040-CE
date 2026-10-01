@@ -49,6 +49,15 @@ else:
                       "bluetoothHost_", "usbHost_", ".save("):
         if forbidden in body:
             errors.append(f"F1+0 must preserve physical input/transport: {forbidden}")
+selection = re.search(r"void serviceOagGameWeaponHotkey\(\) \{(.*?)\n    \}", firmware_text, re.S)
+if selection is None:
+    errors.append("Game/weapon hotkey handler is missing")
+else:
+    body = re.sub(r"//[^\n]*", "", selection[1])
+    for forbidden in ("requestOutputProfile", "watchdog", "keyboardMouseMode_", "nativeKmOutput_",
+                      "proInput_", "registry_", "bluetoothHost_", "usbHost_", ".save("):
+        if forbidden in body:
+            errors.append(f"F1/F5 selection must preserve physical input/transport: {forbidden}")
 composed = firmware_text.split("void sendComposedOutput() {", 1)[1].split("void updatePubgTriangleState(", 1)[0]
 if composed.count("!gameContextInactive_") != 3 or "if (gameContextInactive_)" in composed:
     errors.append("All three physical output routes must precede the game-effects gate")
