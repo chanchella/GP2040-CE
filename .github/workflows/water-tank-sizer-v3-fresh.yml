@@ -1,8 +1,8 @@
-name: Build Water Tank Sizer V5 One Page
+name: Build Water Tank Sizer V6 Fixed
 
 on:
   push:
-    branches: [ water-tank-sizer-v5-onepage ]
+    branches: [ water-tank-sizer-v6-fixed ]
   workflow_dispatch:
 
 jobs:
@@ -31,6 +31,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Water-Tank-Sizer-V5-ONEPAGE
+          name: Water-Tank-Sizer-V6-FIXED
           path: water-tank-sizer-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
