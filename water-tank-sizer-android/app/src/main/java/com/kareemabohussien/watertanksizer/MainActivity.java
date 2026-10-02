@@ -106,7 +106,7 @@ public class MainActivity extends Activity {
                                 PrintDocumentAdapter adapter =
                                         webView.createPrintDocumentAdapter("Water Tank Sizing - Kareem abo Hussien");
                                 PrintAttributes attrs = new PrintAttributes.Builder()
-                                        .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                                        .setMediaSize(PrintAttributes.MediaSize.ISO_A4.asLandscape())
                                         .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
                                         .build();
                                 waitingForPrintReturn = true;
