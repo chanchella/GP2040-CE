@@ -4,11 +4,35 @@
 #include <new>
 
 namespace oag {
+namespace {
+const OagSmartGameV1& legacy(const OagSmartRecord* r) {
+    return *reinterpret_cast<const OagSmartGameV1*>(reinterpret_cast<const std::uint8_t*>(r)+offsetof(OagSmartRecord,payload));
+}
+}
+void OagSmartStore::readCombo(const OagSmartRecord* r,std::size_t slot,OagSmartCombo& out) {
+    if (!r) { new(&out) OagSmartCombo {}; return; }
+    if (r->version==1) oagMigrateCombo(legacy(r).combos[slot],out);
+    else out=r->payload.combos[slot];
+}
+OagWeaponSettings OagSmartStore::readWeapon(const OagSmartRecord* r,std::size_t slot) {
+    return !r?OagWeaponSettings{}:r->version==1?legacy(r).weapons[slot]:r->payload.weapons[slot];
+}
+void OagSmartStore::readGame(const OagSmartRecord* r,OagSmartGame& out) {
+    for (std::size_t i=0;i<out.combos.size();++i) readCombo(r,i,out.combos[i]);
+    for (std::size_t i=0;i<out.weapons.size();++i) out.weapons[i]=readWeapon(r,i);
+}
 bool OagSmartStore::valid(const OagSmartRecord& r, std::size_t game) {
-    if (r.magic!=OagSmartRecord::kMagic || r.version!=OagSmartRecord::kVersion || r.game!=game ||
-        r.crc!=diamondConfigCrc32(&r.payload,sizeof(r.payload))) return false;
-    for (const auto& c:r.payload.combos) if (!oagValidateCombo(c)) return false;
-    for (const auto& w:r.payload.weapons) if (!oagValidateWeapon(w)) return false;
+    if (r.magic!=OagSmartRecord::kMagic || (r.version!=1 && r.version!=OagSmartRecord::kVersion) || r.game!=game) return false;
+    if (r.version==1) {
+        const auto& old=legacy(&r);
+        if (r.crc!=diamondConfigCrc32(&old,sizeof(old))) return false;
+        for (const auto& c:old.combos) if (!oagValidateComboV1(c)) return false;
+        for (const auto& w:old.weapons) if (!oagValidateWeapon(w)) return false;
+    } else {
+        if (r.crc!=diamondConfigCrc32(&r.payload,sizeof(r.payload))) return false;
+        for (const auto& c:r.payload.combos) if (!oagValidateCombo(c)) return false;
+        for (const auto& w:r.payload.weapons) if (!oagValidateWeapon(w)) return false;
+    }
     return true;
 }
 const OagSmartRecord* OagSmartStore::newest(std::size_t game) const {
@@ -22,7 +46,7 @@ const OagSmartRecord* OagSmartStore::newest(std::size_t game) const {
 bool OagSmartStore::activate(std::size_t game) {
     if (game>=kDiamondLibraryGameSlots) return false;
     const auto* r=newest(game);
-    if (r) active_=r->payload; else active_={};
+    readGame(r,active_);
     activeGame_=game;
     if (comboApplied_ && comboGame_==game) active_.combos[comboSlot_]=draftCombo_;
     if (weaponDirty_ && weaponGame_==game) active_.weapons[weaponSlot_]=draftWeapon_;
@@ -35,23 +59,22 @@ bool OagSmartStore::combo(std::size_t game,std::size_t slot,OagSmartCombo& out,b
         out=active_.combos[slot]; return true;
     }
     const auto* r=newest(game);
-    if (r) out=r->payload.combos[slot]; else new(&out) OagSmartCombo {};
+    readCombo(r,slot,out);
     return true;
 }
 bool OagSmartStore::weapon(std::size_t game,std::size_t slot,OagWeaponSettings& out,bool saved) const {
     if (game>=kDiamondLibraryGameSlots || slot>=kDiamondWeaponSlotsPerGame) return false;
     if (!saved && weaponDirty_ && game==weaponGame_ && slot==weaponSlot_) { out=draftWeapon_; return true; }
-    const auto* r=newest(game); out=r?r->payload.weapons[slot]:OagWeaponSettings{}; return true;
+    const auto* r=newest(game); out=readWeapon(r,slot); return true;
 }
 bool OagSmartStore::beginCombo(std::size_t game,std::size_t slot,const OagSmartCombo& m,std::uint32_t token) {
     if (game>=kDiamondLibraryGameSlots || slot>=kDiamondComboSlots || !token ||
         m.enabled>1 || m.cancelable>1 || unsigned(m.mode)>5 || m.branchCount<1 ||
-        m.branchCount>kOagSmartBranches || !std::memchr(m.name.data(),0,m.name.size())) return false;
+        m.branchCount>kOagSmartBranches || !std::memchr(m.name.data(),0,m.name.size()) || !oagValidateCancel(m.cancel)) return false;
     // An applied draft remains in active RAM until the complete replacement is validated.
     if ((comboApplied_ || comboEditing_) && comboGame_==activeGame_ && (game!=comboGame_ || slot!=comboSlot_)) {
         const auto* previous=newest(activeGame_);
-        if (previous) active_.combos[comboSlot_]=previous->payload.combos[comboSlot_];
-        else new(&active_.combos[comboSlot_]) OagSmartCombo {};
+        readCombo(previous,comboSlot_,active_.combos[comboSlot_]);
         ++comboRevision_;
     }
     draftCombo_=m; comboGame_=game; comboSlot_=slot; token_=token;
@@ -73,7 +96,7 @@ bool OagSmartStore::previewWeapon(std::size_t game,std::size_t slot,const OagWea
     // Restore a previous unsaved target before moving the one-weapon RAM preview.
     if (weaponDirty_ && weaponGame_==activeGame_ && (game!=weaponGame_ || slot!=weaponSlot_)) {
         const auto* r=newest(activeGame_);
-        active_.weapons[weaponSlot_]=r?r->payload.weapons[weaponSlot_]:OagWeaponSettings{};
+        active_.weapons[weaponSlot_]=readWeapon(r,weaponSlot_);
     }
     draftWeapon_=w; weaponGame_=game; weaponSlot_=slot; weaponDirty_=true;
     if (game==activeGame_) active_.weapons[slot]=w;
@@ -86,7 +109,7 @@ bool OagSmartStore::save(std::size_t game,std::size_t slot,bool weapon) {
     alignas(256) static std::array<std::uint8_t,32768> bytes {};
     bytes.fill(0xff);
     auto* next=new(bytes.data()) OagSmartRecord {};
-    if (current) next->payload=current->payload;
+    readGame(current,next->payload);
     next->game=std::uint16_t(game); next->generation=current?current->generation+1:1;
     if (weapon) next->payload.weapons[slot]=draftWeapon_;
     else next->payload.combos[slot]=draftCombo_;
@@ -109,14 +132,13 @@ bool OagSmartStore::saveWeapon(std::size_t game,std::size_t slot) {
 void OagSmartStore::discardCombo() {
     if ((comboApplied_ || comboEditing_) && comboGame_==activeGame_) {
         const auto* r=newest(activeGame_);
-        if (r) active_.combos[comboSlot_]=r->payload.combos[comboSlot_];
-        else new(&active_.combos[comboSlot_]) OagSmartCombo {};
+        readCombo(r,comboSlot_,active_.combos[comboSlot_]);
     }
     comboEditing_=comboApplied_=false; ++revision_; ++comboRevision_;
 }
 void OagSmartStore::discardWeapon() {
     if (weaponDirty_ && weaponGame_==activeGame_) {
-        const auto* r=newest(activeGame_); active_.weapons[weaponSlot_]=r?r->payload.weapons[weaponSlot_]:OagWeaponSettings{};
+        const auto* r=newest(activeGame_); active_.weapons[weaponSlot_]=readWeapon(r,weaponSlot_);
     }
     weaponDirty_=false; ++revision_; ++weaponRevision_;
 }

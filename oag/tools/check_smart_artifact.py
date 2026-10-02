@@ -59,7 +59,7 @@ if a.stack_dir:
     for f in a.stack_dir.rglob('*.su'):
         for line in f.read_text(errors='replace').splitlines():
             fields=line.split('\t')
-            if len(fields)>2 and any(s in fields[0] for s in ('/oag_smart_','/oag_weapon_tuning_')):
+            if len(fields)>2 and any(s in fields[0] for s in ('/oag_smart_','/oag_weapon_tuning_','/oag_auto_input')):
                 n=int(fields[1]);assert n<=1280,'إطار Stack كبير في الوحدة الجديدة: '+fields[0]
                 frames.append(n)
     assert frames,'ملفات قياس Stack مش موجودة'

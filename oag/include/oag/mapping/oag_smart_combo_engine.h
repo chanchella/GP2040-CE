@@ -51,14 +51,30 @@ private:
         bool previous = false;
     };
     struct Run {
+        struct Clock {
+            std::uint64_t deadline = 0;
+            std::uint16_t pulses = 0;
+            std::uint8_t phase = 0;
+            bool pulseDown = false;
+        };
         std::array<std::uint64_t, 5> held {};
         std::array<std::uint8_t, kOagSmartActions> repeats {};
+        std::array<Clock, kOagSmartActions> clocks {};
         std::array<std::int16_t, 4> axes {};
         std::array<std::int16_t, 2> triggers {};
         std::uint64_t deadline = 0, testEnd = 0;
         std::uint16_t pulses = 0;
         std::uint8_t branch = 0, step = 0, begin = 0, end = 0, phase = 0, owns = 0;
         bool running = false, latched = false, testRun = false, pulseDown = false, fallback = false;
+        std::uint8_t groupEnd = 0;
+        bool groupStarted = false;
+    };
+    struct CancelRun {
+        std::array<History, kOagSmartConditions+kOagSmartRefs> history {};
+        std::array<std::uint16_t, kOagSmartConditions+kOagSmartRefs> ids {};
+        std::array<ConditionState, kOagSmartConditions> conditions {};
+        std::uint8_t count = 0;
+        bool armed = false;
     };
     struct Verdict { bool value = false, pulse = false; };
     struct Candidate {
@@ -68,8 +84,11 @@ private:
     };
     static std::size_t id(OagControl c);
     static OagControl control(std::size_t id);
-    Verdict evaluate(const OagCondition&, const OagBranch&, ConditionState&,
-                     const OagSmartInput&, std::uint64_t);
+    Verdict evaluate(const OagCondition&, const std::array<OagControl,kOagSmartRefs>&, ConditionState&,
+                     const OagSmartInput&, std::uint64_t, int cancelSlot=-1);
+    static void updateHistory(History&, OagControl, const OagSmartInput&, std::uint64_t, bool newMouse);
+    void configureCancel(std::size_t slot);
+    bool cancelMatched(std::size_t slot,const OagSmartInput&,std::uint64_t,bool newMouse);
     void claim(const OagBranch&, std::uint8_t conditionMask, std::array<bool,kControls>& claims, bool consume);
     void start(std::size_t slot, std::size_t branch, bool fallback, std::uint64_t now);
     void execute(std::size_t slot, const OagSmartInput&, std::uint64_t now, std::uint16_t reloadMs);
@@ -82,6 +101,7 @@ private:
     std::array<std::array<std::array<ConditionState,kOagSmartConditions>,kOagSmartBranches>,kDiamondComboSlots> conditions_ {};
     std::array<std::array<bool,kOagSmartBranches>,kDiamondComboSlots> previous_ {};
     std::array<Run,kDiamondComboSlots> runs_ {};
+    std::array<CancelRun,kDiamondComboSlots> cancellation_ {};
     // Main-loop scratch stays in fixed RAM, leaving the existing IRQ stack available.
     std::array<Candidate,kDiamondComboSlots*kOagSmartBranches> candidates_ {};
     std::array<bool,kControls> used_ {}, claims_ {};

@@ -15,7 +15,7 @@ bool oagValidControl(OagControl c, bool output) {
     }
     return false;
 }
-bool oagValidateCombo(const OagSmartCombo& c) {
+template<class Combo> static bool validateProgram(const Combo& c) {
     if (c.enabled > 1 || c.cancelable > 1 || c.branchCount < 1 ||
         c.branchCount > kOagSmartBranches || unsigned(c.mode) > 5 ||
         !std::memchr(c.name.data(), 0, c.name.size())) return false;
@@ -43,11 +43,14 @@ bool oagValidateCombo(const OagSmartCombo& c) {
             const auto& x = r.actions[i];
             if (unsigned(x.kind) > 13 || x.durationMs > 60000 || x.beforeMs > 60000 ||
                 x.afterMs > 60000 || x.intervalMs > 60000 || x.count > 100 ||
-                x.x < -1000 || x.x > 1000 || x.y < -1000 || x.y > 1000 || x.flags) return false;
+                x.x < -1000 || x.x > 1000 || x.y < -1000 || x.y > 1000 || (x.flags & ~3u)) return false;
+            const auto start = i < r.thenCount ? 0u : r.thenCount;
+            if ((x.flags & kOagActionTogether) && (i == start || x.kind == OagActionKind::Repeat || x.kind == OagActionKind::Loop || x.kind == OagActionKind::ReleaseAll ||
+                r.actions[i-1].kind == OagActionKind::Repeat || r.actions[i-1].kind == OagActionKind::Loop || r.actions[i-1].kind == OagActionKind::ReleaseAll)) return false;
             const auto k = x.kind;
             if (k == OagActionKind::Repeat || k == OagActionKind::Loop) {
                 const auto start = i < r.thenCount ? 0u : r.thenCount;
-                if (x.first < start || x.first >= i ||
+                if (x.first < start || x.first >= i || (r.actions[x.first].flags & kOagActionTogether) ||
                     (k == OagActionKind::Repeat && !x.count)) return false;
             } else if (k == OagActionKind::MultiPress) {
                 if (x.count < 2 || x.first + x.count > r.refCount) return false;
@@ -63,7 +66,46 @@ bool oagValidateCombo(const OagSmartCombo& c) {
             }
         }
     }
+    for (std::size_t n=0;n<c.branchCount;++n) {
+        const auto& b=c.branches[n];
+        for (std::size_t i=0;i<b.thenCount+b.elseCount;++i) {
+            const auto& a=b.actions[i]; if (!(a.flags & kOagActionTogether)) continue;
+            auto first=i; while (first && (b.actions[first].flags & kOagActionTogether)) --first;
+            const auto controls=[&](const OagAction& x,std::size_t k) { return x.kind==OagActionKind::MultiPress?b.refs[x.first+k]:x.control; };
+            const auto count=[](const OagAction& x) { return x.kind==OagActionKind::MultiPress?x.count:
+                x.kind==OagActionKind::Wait || x.kind==OagActionKind::ReloadWait?0u:1u; };
+            for (std::size_t j=first;j<i;++j) for (std::size_t x=0;x<count(a);++x) for (std::size_t y=0;y<count(b.actions[j]);++y) {
+                const auto u=controls(a,x),v=controls(b.actions[j],y);
+                const auto stick=[](OagControl q)->int { return q.source==OagSource::Stick?q.code/8:q.source==OagSource::Axis?q.code:-1; };
+                if (u==v || (stick(u)>=0 && stick(u)==stick(v))) return false;
+            }
+        }
+    }
     return true;
+}
+bool oagValidateCancel(const OagCancelLogic& b) {
+    if (b.enabled>1 || b.reserved || b.conditionCount>kOagSmartConditions || b.refCount>kOagSmartRefs) return false;
+    if (!b.enabled || !b.conditionCount) return true; // Absent/disabled has no runtime role.
+    for (std::size_t q=0;q<b.refCount;++q) if (!oagValidControl(b.refs[q])) return false;
+    for (std::size_t i=0;i<b.conditionCount;++i) {
+        const auto& x=b.conditions[i];
+        if (!oagValidControl(x.control) || unsigned(x.kind)>11 || unsigned(x.join)>1 || x.negate>1 || (!i && x.negate) ||
+            !x.windowMs || x.windowMs>60000 || !x.holdMs || x.holdMs>60000 || x.threshold< -1000 || x.threshold>1000 ||
+            (x.kind==OagTrigger::Multi && (!x.taps || x.taps>20))) return false;
+        if ((x.kind==OagTrigger::Chord || x.kind==OagTrigger::Sequence) &&
+            (x.refCount<2 || x.refFirst+x.refCount>b.refCount || !(b.refs[x.refFirst]==x.control))) return false;
+    }
+    return true;
+}
+bool oagValidateCombo(const OagSmartCombo& c) { return validateProgram(c) && oagValidateCancel(c.cancel); }
+bool oagValidateComboV1(const OagSmartComboV1& c) {
+    if (!validateProgram(c)) return false;
+    for (std::size_t b=0;b<c.branchCount;++b) for (std::size_t i=0;i<c.branches[b].thenCount+c.branches[b].elseCount;++i)
+        if (c.branches[b].actions[i].flags) return false;
+    return true;
+}
+void oagMigrateCombo(const OagSmartComboV1& from,OagSmartCombo& to) {
+    std::memcpy(static_cast<void*>(&to),&from,sizeof(from)); to.cancel={};
 }
 bool oagValidateWeapon(const OagWeaponSettings& w) {
     const auto raw = [](std::int16_t n) { return n >= -200 && n <= 200; };

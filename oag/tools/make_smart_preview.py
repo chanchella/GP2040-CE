@@ -11,7 +11,7 @@ root = Path(__file__).parent / 'smart_ui'
 page = (root / 'oag.html').read_text()
 page = re.sub(r'<link rel="stylesheet" href="/(oag(?:-extra)?\.css)">',
               lambda m: '<style>' + (root / m[1]).read_text() + '</style>', page)
-modules = ['controls', 'wire', 'net', 'condition', 'action', 'builder', 'history',
+modules = ['controls', 'wire', 'net', 'condition', 'action', 'cancel', 'builder', 'history',
            'combo', 'weapon', 'advanced', 'weapon-events', 'boot']
 scripts = '<script>globalThis.OAG_PREVIEW=true;</script>\n' + '\n'.join(
     '<script>' + (root / f'oag-{name}.js').read_text().replace('</script', '<\\/script') + '</script>'

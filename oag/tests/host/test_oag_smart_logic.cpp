@@ -141,4 +141,59 @@ void actionStrengths() {
     f.tick(66);assert(f.e.output().gamepad.buttons==ButtonWest);f.tick(76);f.tick(81);assert(f.e.output().gamepad.buttons==ButtonWest);
     f.tick(91);f.tick(96);assert(!f.e.active());assert(!f.e.output().gamepad.rightTrigger);
 }
-int main() {taps();chordAndSequence();logic();nativeAnalogAndCancellation();modesAndTiming();actionStrengths();std::cout<<"OAG Smart logic regression scenarios PASS\n";}
+void groups() {
+    Fixture f; f.p=single(); auto& b=f.p[0].branches[0]; b.thenCount=3;
+    b.actions[0].kind=OagActionKind::Press; b.actions[0].control=g(5); b.actions[0].durationMs=100; b.actions[0].flags=kOagActionTimed;
+    b.actions[1]=b.actions[0]; b.actions[1].control=g(4); b.actions[1].durationMs=250; b.actions[1].flags|=kOagActionTogether;
+    b.actions[2]=b.actions[0]; b.actions[2].control=g(3); b.actions[2].durationMs=80;
+    f.load(); f.down(1); assert(f.e.output().gamepad.buttons==(ButtonLeftBumper|ButtonNorth));
+    f.tick(101); assert(f.e.output().gamepad.buttons==ButtonNorth); f.tick(250); assert(f.e.output().gamepad.buttons==ButtonNorth);
+    f.tick(251); assert(f.e.output().gamepad.buttons==ButtonWest); f.tick(331); assert(!f.e.active());
+    Fixture delays; delays.p=f.p; auto& d=delays.p[0].branches[0]; d.actions[0].beforeMs=20; d.actions[0].afterMs=300;
+    delays.load(); delays.down(1); assert(delays.e.output().gamepad.buttons==ButtonNorth);
+    delays.tick(21); assert(delays.e.output().gamepad.buttons==(ButtonNorth|ButtonLeftBumper)); delays.tick(121); delays.tick(251);
+    assert(!delays.e.output().gamepad.buttons); delays.tick(420); assert(!delays.e.output().gamepad.buttons); delays.tick(421); assert(delays.e.output().gamepad.buttons==ButtonWest);
+    Fixture pulse; pulse.p=f.p; auto& pb=pulse.p[0].branches[0]; pb.actions[1].kind=OagActionKind::Pulse;pb.actions[1].count=2;pb.actions[1].durationMs=60;pb.actions[1].intervalMs=20;
+    pulse.load();pulse.down(1);pulse.tick(61);assert(pulse.e.output().gamepad.buttons==ButtonLeftBumper);pulse.tick(81);pulse.tick(101);
+    assert(pulse.e.output().gamepad.buttons==ButtonNorth);pulse.tick(141);assert(!pulse.e.output().gamepad.buttons);pulse.tick(161);assert(pulse.e.output().gamepad.buttons==ButtonWest);
+    auto bad=f.p[0]; bad.branches[0].actions[0].flags|=kOagActionTogether;assert(!oagValidateCombo(bad));
+    bad=f.p[0];bad.branches[0].actions[1].control=g(5);assert(!oagValidateCombo(bad));
+    bad=f.p[0];bad.branches[0].actions[2].kind=OagActionKind::Repeat;bad.branches[0].actions[2].first=1;bad.branches[0].actions[2].count=2;assert(!oagValidateCombo(bad));
+    Fixture repeat;repeat.p=f.p;auto& rb=repeat.p[0].branches[0];rb.thenCount=3;rb.actions[0].durationMs=10;rb.actions[1].durationMs=20;
+    rb.actions[2].kind=OagActionKind::Repeat;rb.actions[2].first=0;rb.actions[2].count=2;rb.actions[2].intervalMs=10;
+    repeat.load();repeat.down(1);repeat.tick(11);repeat.tick(21);repeat.tick(31);assert(repeat.e.output().gamepad.buttons==(ButtonLeftBumper|ButtonNorth));repeat.tick(41);repeat.tick(51);assert(!repeat.e.active());
+}
+void independentCancel() {
+    for (unsigned kind=0;kind<12;++kind) {
+        Fixture f;f.p=single();auto& c=f.p[0];c.branches[0].actions[0].kind=OagActionKind::Hold;c.branches[0].actions[0].durationMs=0;
+        c.mode=OagExecution::Toggle; c.cancel.enabled=1;c.cancel.conditionCount=1;auto& q=c.cancel.conditions[0];q.control=g(2);q.kind=OagTrigger(kind);q.windowMs=100;q.holdMs=80;q.taps=4;
+        if(kind==8||kind==9){c.cancel.refCount=q.refCount=kind==8?2:3;c.cancel.refs[0]=g(2);c.cancel.refs[1]=g(3);c.cancel.refs[2]=g(2);}
+        if(kind==10)q.control={OagSource::Stick,0,0};if(kind==11)q.control={OagSource::Axis,0,4};
+        f.load();f.down(1);assert(f.e.active());
+        if(kind<=3){const unsigned count=kind==0?1:kind==1?2:kind==2?3:4;for(unsigned n=0;n<count;++n){f.down(20+n*20,ButtonRightBumper|ButtonEast);f.down(25+n*20);}f.tick(120);}
+        else if(kind==4||kind==7){f.down(20,ButtonRightBumper|ButtonEast);f.tick(100);}
+        else if(kind==5)f.down(20,ButtonRightBumper|ButtonEast);
+        else if(kind==6){f.down(20,ButtonRightBumper|ButtonEast);f.down(30);}
+        else if(kind==8){f.down(20,ButtonRightBumper|ButtonEast);f.down(25,ButtonRightBumper|ButtonEast|ButtonWest);}
+        else if(kind==9){f.down(20,ButtonRightBumper|ButtonEast);f.down(25);f.down(30,ButtonRightBumper|ButtonWest);f.down(35);f.down(40,ButtonRightBumper|ButtonEast);}
+        else if(kind==10){f.pad.lx=1600000000;f.tick(20);}else {f.pad.leftTrigger=40000;f.tick(20);}
+        assert(!f.e.active()); assert(f.e.merge(f.pad).buttons==f.pad.buttons);f.tick(200);assert(f.e.executionCount()==1);
+    }
+    Fixture disabled;disabled.p=single();auto& c=disabled.p[0];c.mode=OagExecution::Toggle;c.branches[0].actions[0].kind=OagActionKind::Press;
+    c.cancel.enabled=0;c.cancel.conditionCount=1;c.cancel.conditions[0].control=g(6);c.cancel.conditions[0].kind=OagTrigger::Held;
+    disabled.load();disabled.down(1);assert(disabled.e.active());disabled.tick(1000);assert(disabled.e.active());
+    c.cancel.enabled=1;c.cancel.conditionCount=0;disabled.load();disabled.down(1);assert(disabled.e.active());
+    // Cancellation and activation on the same control must not consume each other's histories.
+    Fixture same;same.p=single(OagTrigger::Double);auto& sc=same.p[0];sc.mode=OagExecution::Toggle;sc.branches[0].actions[0].kind=OagActionKind::Press;
+    sc.cancel.enabled=1;sc.cancel.conditionCount=1;sc.cancel.conditions[0]=sc.branches[0].conditions[0];same.load();same.down(1);same.up(20);same.down(50);same.up(70);same.tick(501);assert(same.e.active());
+    same.down(600);same.up(620);same.down(650);same.up(670);same.tick(1100);assert(!same.e.active());assert(same.e.executionCount()==1);
+    // Cancel only one of two independent active combos.
+    Fixture isolated;isolated.p=single();isolated.p[0].mode=OagExecution::Toggle;isolated.p[0].branches[0].actions[0].kind=OagActionKind::Press;
+    isolated.p[0].cancel.enabled=1;isolated.p[0].cancel.conditionCount=1;isolated.p[0].cancel.conditions[0].control={OagSource::Keyboard,0,41};isolated.p[0].cancel.conditions[0].kind=OagTrigger::Held;
+    isolated.p[1]=isolated.p[0];isolated.p[1].cancel={};isolated.p[1].branches[0].conditions[0].control=g(5);isolated.p[1].branches[0].actions[0].control=g(3);
+    isolated.load();isolated.down(1,ButtonRightBumper|ButtonLeftBumper);assert(isolated.e.executionCount()==2);isolated.k.setPressed(41,true);isolated.tick(2);assert(isolated.e.output().gamepad.buttons==ButtonWest);
+    isolated.e.cancel();assert(!isolated.e.active());
+    Fixture wheel;wheel.p=isolated.p;wheel.p[1].enabled=0;auto& wc=wheel.p[0].cancel;wc.conditions[0].control={OagSource::Wheel,0,1};wc.conditions[0].kind=OagTrigger::Single;wc.conditions[0].windowMs=100;
+    wheel.load();wheel.down(1);wheel.m.wheel=1;wheel.m.timestampUs=2;wheel.tick(20);wheel.tick(120);assert(!wheel.e.active());
+}
+int main() {taps();chordAndSequence();logic();nativeAnalogAndCancellation();modesAndTiming();actionStrengths();groups();independentCancel();std::cout<<"OAG Smart logic regression scenarios PASS\n";}

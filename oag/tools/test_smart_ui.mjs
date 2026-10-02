@@ -17,8 +17,8 @@ const server=http.createServer(async(req,res)=>{
     let body='';for await(const chunk of req)body+=chunk;
     if(req.url.startsWith('/api/oag/')){if(req.url.startsWith('/api/oag/weapon?game=1&slot=4&'))await new Promise(r=>setTimeout(r,100));const line=await request(req.method,req.url,body),at=line.indexOf('\t');res.writeHead(+line.slice(0,at),{'Content-Type':'application/json'});res.end(line.slice(at+1));return}
     if(req.url==='/api/games'||req.url.startsWith('/api/weapons?')){res.end(names(req.url==='/api/games'?20:24));return}
-    if(req.url.startsWith('/api/recoil?')){res.end(JSON.stringify({horizontalRaw:0,verticalRaw:0,tickMs:40,enabled:0}));return}
-    const name=req.url.split('?')[0],f=path.join(root,name==='/oag-smart'||name==='/oag-weapons'?'oag.html':path.basename(name));
+    if(req.url.startsWith('/api/recoil?')){res.writeHead(410);res.end('الإعدادات القديمة اتلغت');return}
+    const name=req.url.split('?')[0],f=path.join(root,name==='/'?'oag-home.html':name==='/oag-smart'||name==='/oag-weapons'?'oag.html':path.basename(name));
     if(!fs.existsSync(f)){res.writeHead(404);res.end('missing');return}
     res.setHeader('Content-Type',f.endsWith('.js')?'application/javascript':f.endsWith('.css')?'text/css':'text/html; charset=utf-8');res.end(fs.readFileSync(f));
 });
@@ -40,10 +40,21 @@ try {
     await page.locator('[data-oag-add-action="0:then"]').click();
     await page.locator('[data-oag-action="0:then:1"][data-field="kind"]').selectOption('9');
     await page.locator('[data-oag-action="0:then:1"][data-field="x"]').fill('600');
+    // User selects mixed groups and independent cancellation through real controls.
+    await page.locator('[data-oag-action="0:then:0"][data-field="kind"]').selectOption('0');
+    await page.locator('[data-oag-action="0:then:0"][data-field="duration"]').fill('200');
+    await page.locator('[data-oag-action="0:then:1"][data-field="together"]').selectOption('1');
+    await page.locator('[data-oag-add-action="0:then"]').click();
+    await page.locator('[data-oag-action="0:then:2"][data-field="control"]').selectOption('g3');
+    await page.locator('[data-oag-cancel-enabled]').check();
+    assert.equal(await page.locator('[data-oag-condition="cancel:0"][data-field="kind"] option').count(),12);
+    assert.equal(await page.locator('[data-oag-condition="cancel:0"][data-field="control"] option[value^="k"]').count(),228);
+    await page.locator('[data-oag-add-condition="cancel"]').click();
+    await page.locator('[data-oag-condition="cancel:1"][data-field="join"]').selectOption('1');
     await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);
     const api=async p=>(await page.request.get(base+p)).json();
     assert.equal((await api('/api/oag/status')).writes,0);
-    const draft=await api('/api/oag/combo?game=1&slot=1');assert.equal(draft.enabled,1);assert.equal(draft.branches[0].length,848);
+    const draft=await api('/api/oag/combo?game=1&slot=1');assert.equal(draft.enabled,1);assert.equal(draft.branches[0].length,848);assert.equal(draft.cancelWire.length,200);assert.equal(await page.evaluate(()=>OAG.cancelRead(OAG.cancelWire(OAG.combo.cancel)).conditions.length),2);assert.equal(await page.evaluate(()=>OAG.decodeBranch(OAG.encodeBranch(OAG.combo.branches[0])).then[1].together),1);
     assert.equal((await api('/api/oag/combo?game=1&slot=1&saved=1')).name,'');
     await page.locator('#oag-save-combo').click();await page.waitForFunction(()=>OAG.state.dirty===false);
     assert.equal((await api('/api/oag/status')).writes,1);
@@ -53,7 +64,7 @@ try {
     await page.reload();await page.waitForFunction(()=>globalThis.OAG?.savedWeapon);
     assert.equal(await page.locator('#oag-name').inputValue(),'تعديل مؤقت');
     assert.equal(await page.evaluate(()=>OAG.savedCombo.name),'دبل R1 مع مسكة L1');
-    assert.equal(await page.evaluate(()=>OAG.state.dirty),true);
+    assert.equal(await page.evaluate(()=>OAG.state.dirty),true);assert.equal(await page.evaluate(()=>OAG.combo.cancel.enabled),1);assert.equal(await page.evaluate(()=>OAG.combo.branches[0].then[1].together),1);
     await page.locator('#oag-undo-combo').click();await page.waitForFunction(()=>!OAG.state.dirty);
     assert.equal(await page.locator('#oag-name').inputValue(),'دبل R1 مع مسكة L1');
     await page.locator('#oag-duplicate').click();await page.waitForFunction(()=>OAG.state.slot===2);await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);
@@ -91,6 +102,7 @@ try {
     assert.equal(await page.evaluate(()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return new Set(ids).size===ids.length}),true);
     // Every action and trigger can be serialized by the UI and validated by C++.
     await page.evaluate(async()=>{for(let kind=0;kind<12;kind++){const c=OAG.emptyCombo();c.enabled=1;const q=c.branches[0].conditions[0];q.kind=kind;if(kind===8)q.refs=['g6','g5'];if(kind===9)q.refs=['g6','g6','g4'];if(kind===10)q.control='s12';if(kind===11)q.control='a5';await OAG.applyComboSnapshot(c,1,16)}for(let kind=0;kind<14;kind++){const c=OAG.emptyCombo();c.enabled=1;const a=OAG.action();a.kind=kind;if(kind===6)a.refs=['g5','k4'];if(kind===9)a.control='s12';if(kind===10)a.control='a1';if(kind===11)a.control='g8';if(kind===7||kind===8)c.branches[0].then.push(a);else c.branches[0].then=[a];await OAG.applyComboSnapshot(c,1,16)}});
+    await page.evaluate(async()=>{for(let kind=0;kind<12;kind++){const c=OAG.emptyCombo();c.enabled=1;c.cancel.enabled=1;const q=OAG.condition();q.kind=kind;if(kind===8)q.refs=['g6','g5'];if(kind===9)q.refs=['g6','g6','g4'];if(kind===10)q.control='s12';if(kind===11)q.control='a5';c.cancel.conditions=[q];await OAG.applyComboSnapshot(c,2,16);const saved=OAG.comboFrom(await OAG.api('/api/oag/combo?game=2&slot=16'));if(saved.cancel.conditions[0].kind!==kind)throw Error('الإلغاء ما رجعش صح')}for(const control of ['k41','m2','w1','s12','a5']){const c=OAG.emptyCombo();c.cancel={enabled:1,conditions:[{...OAG.condition(),control,kind:5}]};await OAG.applyComboSnapshot(c,2,16)}await OAG.post('/api/oag/discard-combo',{})});
     await page.locator('#oag-tab-combo').click();await page.locator('#oag-slot').selectOption('1');await page.waitForFunction(()=>OAG.state.slot===1&&!OAG.contextLoading&&!OAG.state.dirty);
     const out=process.env.OAG_UI_OUTPUT||'build/smart-ui';fs.mkdirSync(out,{recursive:true});
     await page.screenshot({path:path.join(out,'OAG_SMART_COMBO_DESKTOP.png'),fullPage:true});
@@ -100,11 +112,16 @@ try {
     await page.screenshot({path:path.join(out,'OAG_WEAPON_TUNING_MOBILE.png'),fullPage:true});
     await page.locator('#oag-tab-combo').click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:path.join(out,'OAG_SMART_COMBO_MOBILE.png'),fullPage:true});
+    await page.setViewportSize({width:320,height:740});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.locator('[data-oag-cancel-enabled]').uncheck();await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);
+    assert.equal(await page.locator('[data-oag-condition="cancel:0"][data-field="control"]').isDisabled(),true);
+    assert.equal((await api('/api/oag/combo?game=1&slot=1')).cancelWire.slice(0,2),'00');
+    await page.locator('[data-oag-cancel-enabled]').check();await page.locator('[data-oag-clear-cancel]').click();await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);assert.equal((await api('/api/oag/combo?game=1&slot=1')).cancelWire.slice(0,4),'0000');
     if(process.env.OAG_PREVIEW_FILE){
         const preview=await browser.newPage({viewport:{width:1365,height:1100}});preview.on('pageerror',e=>errors.push(e.message));
         await preview.goto('file://'+path.resolve(process.env.OAG_PREVIEW_FILE));await preview.waitForFunction(()=>globalThis.OAG?.savedWeapon);
         assert.equal(await preview.locator('#oag-demo').isVisible(),true);
-        await preview.evaluate(()=>{OAG.combo.name='دبل R1 مع مسكة L1';OAG.combo.enabled=1;const b=OAG.combo.branches[0],c=OAG.condition();c.control='g5';c.kind=5;b.conditions.push(c);const a=OAG.action();a.kind=9;a.control='s12';a.x=600;b.then.push(a);OAG.paintCombo()});
+        await preview.evaluate(()=>{OAG.combo.name='دبل R1 مع مسكة L1';OAG.combo.enabled=1;const b=OAG.combo.branches[0],c=OAG.condition();c.control='g5';c.kind=5;b.conditions.push(c);b.then[0].kind=0;b.then[0].control='g5';b.then[0].duration=200;b.then[0].after=0;const a=OAG.action();a.kind=0;a.control='g4';a.duration=350;a.after=0;a.together=1;b.then.push(a);const next=OAG.action();next.control='g3';next.duration=100;b.then.push(next);OAG.combo.cancel={enabled:1,conditions:[{...OAG.condition(),control:'k41',kind:0}]};OAG.paintCombo()});
         await preview.locator('#oag-save-combo').click();await preview.waitForFunction(()=>OAG.demoWrites===1);
         await preview.reload();await preview.waitForFunction(()=>globalThis.OAG?.savedWeapon);
         assert.equal(await preview.locator('#oag-name').inputValue(),'دبل R1 مع مسكة L1');
@@ -117,5 +134,16 @@ try {
         await preview.screenshot({path:path.join(out,'OAG_WEAPON_PREVIEW_MOBILE.png'),fullPage:true});
         console.log('OAG_OFFLINE_PREVIEW=PASS — inline assets, clear demo status, local save survives reload');
     }
-    assert.deepEqual(errors,[]);console.log('OAG_SMART_UI=PASS — real C++ API, RAM preview, isolated explicit saves, all triggers/actions, desktop/mobile');
+    const home=await browser.newPage({viewport:{width:1365,height:1100}});home.on('pageerror',e=>errors.push(e.message));
+    await home.goto(base+'/');await home.waitForFunction(()=>document.querySelector('#home-game option')&&document.querySelector('#home-weapon option'));
+    await home.waitForTimeout(100);assert.equal(await home.locator('#home-game option').count(),20);assert.equal(await home.locator('#home-save-game').isDisabled(),true);
+    await home.locator('#home-game').selectOption('2');await home.waitForFunction(()=>!document.getElementById('home-game').disabled);
+    assert.equal(await home.locator('#home-save-weapon').isDisabled(),true);
+    assert.equal(await home.locator('#home-play').isVisible(),false);
+    assert.equal(await home.locator('#pro-lab,#csteps,#rh').count(),0);
+    await home.evaluate(()=>document.getElementById('home-status').textContent='معاينة لشكل الصفحة — من غير بيكو');
+    await home.screenshot({path:path.join(out,'OAG_HOME_V2_PREVIEW.png'),fullPage:true});
+    await home.setViewportSize({width:320,height:740});assert.equal(await home.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await home.screenshot({path:path.join(out,'OAG_HOME_V2_MOBILE_PREVIEW.png'),fullPage:true});
+    assert.deepEqual(errors,[]);console.log('OAG_SMART_UI=PASS — C++ API, +/THEN groups, optional cancellation, all triggers/sources, isolated explicit saves, desktop/mobile 320px');
 } finally {if(browser)await browser.close();server.close();bridge.kill()}

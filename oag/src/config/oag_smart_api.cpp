@@ -43,9 +43,9 @@ bool number(const char* body,const char* key,std::uint32_t lo,std::uint32_t hi,s
     if (n<lo) return false;
     out=std::uint32_t(n); return true;
 }
-bool decode(const char* body,void* target,std::size_t size) {
+bool decode(const char* body,void* target,std::size_t size,const char* key="wire") {
     char text[2*sizeof(OagBranch)+1]{};
-    if (size>sizeof(OagBranch) || !field(body,"wire",text,sizeof(text)) || std::strlen(text)!=size*2) return false;
+    if (size>sizeof(OagBranch) || !field(body,key,text,sizeof(text)) || std::strlen(text)!=size*2) return false;
     auto* bytes=static_cast<std::uint8_t*>(target);
     for (std::size_t i=0;i<size;++i) {
         const auto h=[](char c)->int { return c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:-1; };
@@ -110,7 +110,7 @@ bool OagSmartApi::handle(const char* method,const char* path,const char* body) {
         }
         number(query,"saved",0,1,saved);
         Json j{response_.data(),response_.size()};
-        j.add("{\"schema\":1,\"game\":%u,\"slot\":%u,",unsigned(game),unsigned(slot));
+        j.add("{\"schema\":2,\"game\":%u,\"slot\":%u,",unsigned(game),unsigned(slot));
         if (weapon) {
             store_.weapon(game-1,slot-1,weapon_,saved!=0);
             j.add("\"wire\":"); j.wire(&weapon_,sizeof(weapon_)); j.add("}");
@@ -120,7 +120,7 @@ bool OagSmartApi::handle(const char* method,const char* path,const char* body) {
             j.add(",\"enabled\":%u,\"mode\":%u,\"cancelable\":%u,\"branches\":[",
                 unsigned(scratch_.enabled),unsigned(scratch_.mode),unsigned(scratch_.cancelable));
             for (std::size_t i=0;i<scratch_.branchCount;++i) { if (i) j.add(","); j.wire(&scratch_.branches[i],sizeof(OagBranch)); }
-            j.add("]}");
+            j.add("],\"cancelWire\":"); j.wire(&scratch_.cancel,sizeof(scratch_.cancel)); j.add("}");
         }
         if (!j.ok) result(500,"البيانات أكبر من مساحة الرد");
         return true;
@@ -152,7 +152,8 @@ bool OagSmartApi::handle(const char* method,const char* path,const char* body) {
             scratch_={}; std::uint32_t enable=0,mode=0,cancel=0,branches=0;
             if (!field(body,"name",scratch_.name.data(),scratch_.name.size()) ||
                 !number(body,"enabled",0,1,enable) || !number(body,"mode",0,5,mode) ||
-                !number(body,"cancelable",0,1,cancel) || !number(body,"branches",1,4,branches)) result(400,"راجع اسم الكومبو وإعدادات التشغيل");
+                !number(body,"cancelable",0,1,cancel) || !number(body,"branches",1,4,branches) ||
+                (std::strstr(body,"cancelWire=") && (!decode(body,&scratch_.cancel,sizeof(scratch_.cancel),"cancelWire") || !oagValidateCancel(scratch_.cancel)))) result(400,"راجع اسم الكومبو وإعدادات التشغيل");
             else {
                 scratch_.enabled=std::uint8_t(enable); scratch_.mode=OagExecution(mode);
                 scratch_.cancelable=std::uint8_t(cancel); scratch_.branchCount=std::uint8_t(branches);

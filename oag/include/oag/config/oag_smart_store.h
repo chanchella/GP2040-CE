@@ -40,6 +40,9 @@ public:
     static bool valid(const OagSmartRecord&, std::size_t game);
     std::uint32_t flashWrites() const { return flashWrites_; }
 private:
+    static void readCombo(const OagSmartRecord*, std::size_t slot, OagSmartCombo&);
+    static OagWeaponSettings readWeapon(const OagSmartRecord*, std::size_t slot);
+    static void readGame(const OagSmartRecord*, OagSmartGame&);
     const OagSmartRecord* newest(std::size_t game) const;
     bool save(std::size_t game, std::size_t slot, bool weapon);
     OagSmartStorage& storage_;

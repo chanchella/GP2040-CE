@@ -13,9 +13,9 @@ if(path==='/api/games')return {names:Array.from({length:20},(_,i)=>i===0?'eFootb
 if(path.startsWith('/api/weapons?'))return {names:Array(24).fill('')};
 if(path.startsWith('/api/recoil?'))return {horizontalRaw:0,verticalRaw:0,tickMs:40};
 if(path==='/api/oag/status')return {ok:true,runtime:false,ready:true,game:OAG.state.game,writes:OAG.demoWrites};
-if(p.pathname==='/api/oag/combo')return OAG.clone((q.get('saved')!=='1'&&OAG.demoDraft['c'+key])||OAG.demoStore['c'+key]||{name:'',enabled:0,mode:0,cancelable:1,branches:[OAG.encodeBranch(OAG.branch())]});
+if(p.pathname==='/api/oag/combo')return OAG.clone((q.get('saved')!=='1'&&OAG.demoDraft['c'+key])||OAG.demoStore['c'+key]||{name:'',enabled:0,mode:0,cancelable:1,cancelWire:OAG.cancelWire({enabled:0,conditions:[]}),branches:[OAG.encodeBranch(OAG.branch())]});
 if(p.pathname==='/api/oag/weapon')return {wire:((q.get('saved')!=='1'&&OAG.demoDraft['w'+key])||OAG.demoStore['w'+key]||OAG.weaponWire(OAG.defaultWeapon()))};
-if(path.endsWith('combo-begin'))OAG.demoStage={name:data.name,enabled:+data.enabled,mode:+data.mode,cancelable:+data.cancelable,branches:[],key,token:data.token};
+if(path.endsWith('combo-begin'))OAG.demoStage={name:data.name,enabled:+data.enabled,mode:+data.mode,cancelable:+data.cancelable,cancelWire:data.cancelWire,branches:[],key,token:data.token};
 if(path.endsWith('combo-branch'))OAG.demoStage.branches[+data.branch]=data.wire;
 if(path.endsWith('combo-apply'))OAG.demoDraft['c'+key]=OAG.clone(OAG.demoStage);
 if(path.endsWith('weapon-preview'))OAG.demoDraft['w'+key]=data.wire;

@@ -11,6 +11,7 @@ add_library(oag_core STATIC
     src/config/oag_smart_store.cpp
     src/config/oag_smart_api.cpp
     src/mapping/oag_smart_combo_engine.cpp
+    src/mapping/oag_auto_input.cpp
     src/mapping/oag_weapon_tuning_engine.cpp
     src/device/device_registry.cpp
     src/device/usb_device_classifier.cpp
@@ -60,6 +61,9 @@ target_compile_options(oag_core PRIVATE
 
 if(OAG_BUILD_HOST_TESTS)
     enable_testing()
+    add_executable(oag_auto_input_tests tests/host/test_oag_auto_input.cpp)
+    target_link_libraries(oag_auto_input_tests PRIVATE oag_core)
+    add_test(NAME oag_auto_input_tests COMMAND oag_auto_input_tests)
     add_compile_options(-UNDEBUG)
     add_executable(oag_smart_logic_tests tests/host/test_oag_smart_logic.cpp)
     target_link_libraries(oag_smart_logic_tests PRIVATE oag_core)
@@ -102,6 +106,17 @@ if(OAG_BUILD_HOST_TESTS)
         tests/host/stubs firmware/include "${CMAKE_CURRENT_BINARY_DIR}")
     target_link_libraries(oag_pro_profile_transition_tests PRIVATE oag_core)
     add_test(NAME oag_pro_profile_transition_tests COMMAND oag_pro_profile_transition_tests)
+
+    set(OAG_SMART_PORTAL_TEST_INCLUDE "${CMAKE_CURRENT_BINARY_DIR}/smart_portal_under_test.inc")
+    add_custom_command(OUTPUT "${OAG_SMART_PORTAL_TEST_INCLUDE}"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/extract_smart_portal_test.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/firmware/src/diamond_wifi_portal.cpp" "${OAG_SMART_PORTAL_TEST_INCLUDE}"
+        DEPENDS firmware/src/diamond_wifi_portal.cpp tools/extract_smart_portal_test.py VERBATIM)
+    add_executable(oag_smart_portal_tests tests/host/test_oag_smart_portal.cpp "${OAG_SMART_PORTAL_TEST_INCLUDE}")
+    target_include_directories(oag_smart_portal_tests PRIVATE firmware/include "${CMAKE_CURRENT_BINARY_DIR}")
+    target_compile_options(oag_smart_portal_tests PRIVATE -Wall -Wextra -Werror -Wno-misleading-indentation)
+    target_link_libraries(oag_smart_portal_tests PRIVATE oag_core)
+    add_test(NAME oag_smart_portal_tests COMMAND oag_smart_portal_tests)
 
     add_executable(oag_pro_portal_tests tests/host/test_pro_portal.cpp)
     target_include_directories(oag_pro_portal_tests PRIVATE firmware/include)

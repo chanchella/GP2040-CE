@@ -76,13 +76,15 @@ bool OagSmartComboEngine::down(OagControl c, const OagSmartInput& in, std::int16
     return false;
 }
 void OagSmartComboEngine::reset() {
-    history_ = {}; conditions_ = {}; previous_ = {}; runs_ = {}; output_ = {};
+    history_ = {}; conditions_ = {}; previous_ = {}; runs_ = {}; cancellation_ = {}; output_ = {};
     enabled_ = false;
     mouseSeen_=false; mouseGeneration_=0; mouseTimestamp_=0;
 }
 void OagSmartComboEngine::configure(const std::array<OagSmartCombo,kDiamondComboSlots>& programs) {
     reset(); programs_ = &programs;
-    for (const auto& p : programs) if (p.enabled && oagValidateCombo(p)) {
+    for (std::size_t slot=0;slot<programs.size();++slot) {
+        const auto& p=programs[slot]; if (!oagValidateCombo(p)) continue;
+        configureCancel(slot); if (!p.enabled) continue;
         enabled_ = true;
         for (std::size_t b=0;b<p.branchCount;++b) if (p.branches[b].enabled) {
             const auto& r = p.branches[b];
@@ -104,6 +106,7 @@ void OagSmartComboEngine::configure(const std::array<OagSmartCombo,kDiamondCombo
 }
 void OagSmartComboEngine::cancel() {
     runs_ = {}; output_ = {};
+    for (auto& c:cancellation_) c.armed=false;
     for (auto& h : history_) { h.taps=h.ready=0; h.cluster=false; h.consumed=h.serial; }
 }
 bool OagSmartComboEngine::active() const {
@@ -114,8 +117,14 @@ bool OagSmartComboEngine::reserves(OagControl c) const {
     return oagValidControl(c) && history_[id(c)].watched;
 }
 OagSmartComboEngine::Verdict OagSmartComboEngine::evaluate(
-    const OagCondition& c, const OagBranch& b, ConditionState& r, const OagSmartInput& in, std::uint64_t now) {
-    auto& h = history_[id(c.control)];
+    const OagCondition& c, const std::array<OagControl,kOagSmartRefs>& refs, ConditionState& r, const OagSmartInput& in, std::uint64_t now,int cancelSlot) {
+    const auto observed=[&](OagControl key)->History& {
+        if (cancelSlot<0) return history_[id(key)];
+        auto& local=cancellation_[cancelSlot];
+        for (std::size_t i=0;i<local.count;++i) if (local.ids[i]==id(key)) return local.history[i];
+        return local.history[0]; // Configuration guarantees that every referenced control is registered.
+    };
+    auto& h = observed(c.control);
     Verdict v {};
     if (c.kind <= OagTrigger::Multi) v.value = v.pulse = h.ready == wanted(c) &&
         h.lastTap-h.clusterSince <= ms(c.windowMs) && h.consumed != h.serial;
@@ -130,21 +139,21 @@ OagSmartComboEngine::Verdict OagSmartComboEngine::evaluate(
     } else if (c.kind == OagTrigger::Sequence) {
         if (r.sequenceIndex && now-r.sequenceSince > ms(c.windowMs)) r.sequenceIndex=0;
         bool anyRise = false;
-        for (std::size_t j=c.refFirst;j<c.refFirst+c.refCount;++j) anyRise |= history_[id(b.refs[j])].rise;
+        for (std::size_t j=c.refFirst;j<c.refFirst+c.refCount;++j) anyRise |= observed(refs[j]).rise;
         if (anyRise) {
-            const auto next = b.refs[c.refFirst+r.sequenceIndex];
-            if (history_[id(next)].rise) {
+            const auto next = refs[c.refFirst+r.sequenceIndex];
+            if (observed(next).rise) {
                 if (!r.sequenceIndex) r.sequenceSince=now;
                 if (++r.sequenceIndex == c.refCount) { v.value=v.pulse=true; r.sequenceIndex=0; }
             } else {
-                r.sequenceIndex=history_[id(b.refs[c.refFirst])].rise?1:0;
+                r.sequenceIndex=observed(refs[c.refFirst]).rise?1:0;
                 r.sequenceSince=now;
             }
         }
     } else if (c.kind == OagTrigger::Chord) {
         auto earliest=now, latest=std::uint64_t(0); v.value=true;
         for (std::size_t j=c.refFirst;j<c.refFirst+c.refCount;++j) {
-            const auto& t = history_[id(b.refs[j])];
+            const auto& t = observed(refs[j]);
             v.value &= t.held;
             earliest=std::min(earliest,t.downSince); latest=std::max(latest,t.downSince);
         }
@@ -177,7 +186,7 @@ void OagSmartComboEngine::start(std::size_t s, std::size_t b, bool fallback, std
     const auto& branch=(*programs_)[s].branches[b]; auto& r=runs_[s]; r={};
     r.running=true; r.branch=std::uint8_t(b); r.fallback=fallback;
     r.begin=fallback?branch.thenCount:0; r.end=fallback?branch.thenCount+branch.elseCount:branch.thenCount;
-    r.step=r.begin; r.deadline=now; ++executionCount_; lastSlot_=std::uint8_t(s);
+    r.step=r.begin; r.deadline=now; cancellation_[s].armed=false; ++executionCount_; lastSlot_=std::uint8_t(s);
 }
 void OagSmartComboEngine::test(std::size_t s, std::size_t b, std::uint64_t now) {
     if (!programs_ || s>=kDiamondComboSlots || b>=(*programs_)[s].branchCount) return;
@@ -185,40 +194,83 @@ void OagSmartComboEngine::test(std::size_t s, std::size_t b, std::uint64_t now) 
     enabled_=true;
     start(s,b,false,now); runs_[s].testRun=true; runs_[s].testEnd=now+10000000; // 10 s bounded test.
 }
+void OagSmartComboEngine::updateHistory(History& h,OagControl c,const OagSmartInput& in,std::uint64_t now,bool newMouse) {
+    h.ready=0; const bool held=down(c,in);
+    h.rise=held && !h.held; h.fall=!held && h.held;
+    if (c.source==OagSource::Wheel) h.rise=held && newMouse;
+    if (h.rise) {
+        ++h.serial; h.downSince=now;
+        if (!h.cluster) { h.cluster=true; h.clusterSince=now; h.taps=0; }
+        h.lastTap=now; if (h.taps<255) ++h.taps;
+    }
+    h.held=held;
+    if (h.cluster && now-h.clusterSince>=ms(h.window)) {
+        if (h.held && h.longLimit && now-h.downSince<ms(h.longLimit)) return;
+        h.ready=h.longLimit && (h.held || h.fall) && now-h.downSince>=ms(h.longLimit)?0:h.taps;
+        h.cluster=false; h.taps=0;
+    }
+}
+void OagSmartComboEngine::configureCancel(std::size_t slot) {
+    auto& runtime=cancellation_[slot]; const auto& rule=(*programs_)[slot].cancel;
+    if (!rule.enabled || !rule.conditionCount) return;
+    const auto watch=[&](OagControl c,const OagCondition& condition) {
+        auto at=std::size_t(0); while (at<runtime.count && runtime.ids[at]!=id(c)) ++at;
+        if (at==runtime.count) runtime.ids[runtime.count++]=std::uint16_t(id(c));
+        auto& h=runtime.history[at]; h.watched=true;
+        if (condition.kind<=OagTrigger::Multi || condition.kind==OagTrigger::Sequence || condition.kind==OagTrigger::Chord)
+            h.window=std::max(h.window,condition.windowMs);
+        if (condition.kind==OagTrigger::Long || condition.kind==OagTrigger::Hold)
+            h.longLimit=h.longLimit?std::min(h.longLimit,condition.holdMs):condition.holdMs;
+    };
+    for (std::size_t i=0;i<rule.conditionCount;++i) {
+        const auto& c=rule.conditions[i]; watch(c.control,c);
+        if (c.kind==OagTrigger::Chord || c.kind==OagTrigger::Sequence)
+            for (std::size_t j=c.refFirst;j<c.refFirst+c.refCount;++j) watch(rule.refs[j],c);
+    }
+}
+bool OagSmartComboEngine::cancelMatched(std::size_t slot,const OagSmartInput& in,std::uint64_t now,bool newMouse) {
+    const auto& rule=(*programs_)[slot].cancel; auto& runtime=cancellation_[slot];
+    if (!rule.enabled || !rule.conditionCount) return false;
+    if (!runtime.armed) {
+        runtime.conditions={};
+        for (std::size_t i=0;i<runtime.count;++i) {
+            auto& h=runtime.history[i]; const auto window=h.window,limit=h.longLimit;
+            h={}; h.window=window; h.longLimit=limit; h.watched=true;
+            h.held=down(control(runtime.ids[i]),in); h.downSince=now; h.serial=h.held?1:0;
+        }
+        runtime.armed=true;
+    } else for (std::size_t i=0;i<runtime.count;++i)
+        updateHistory(runtime.history[i],control(runtime.ids[i]),in,now,newMouse);
+    bool term=false,result=false;
+    for (std::size_t i=0;i<rule.conditionCount;++i) {
+        const auto v=evaluate(rule.conditions[i],rule.refs,runtime.conditions[i],in,now,int(slot));
+        if (!i) term=v.value;
+        else if (rule.conditions[i].join==OagJoin::And) term &= v.value;
+        else { result |= term; term=v.value; }
+    }
+    return result || term;
+}
 void OagSmartComboEngine::tick(const OagSmartInput& in, std::uint64_t now, bool context, std::uint16_t reloadMs) {
     if (!context || !enabled_ || !programs_) { cancel(); return; }
     const bool connected=in.gamepad.connected || (in.keyboard && in.keyboard->connected) || (in.mouse && in.mouse->connected);
     if (!connected) { cancel(); return; }
     const bool newMouse=in.mouse && (!mouseSeen_ || in.mouse->generation!=mouseGeneration_ || in.mouse->timestampUs!=mouseTimestamp_);
     if (in.mouse) { mouseSeen_=true; mouseGeneration_=in.mouse->generation; mouseTimestamp_=in.mouse->timestampUs; }
-    for (std::size_t i=0;i<kControls;++i) if (history_[i].watched) {
-        auto& h=history_[i]; h.ready=0;
-        const auto c=control(i); const bool held=down(c,in);
-        h.rise=held && !h.held; h.fall=!held && h.held;
-        // Wheel/pan reports are events, including consecutive same-direction reports.
-        if (c.source==OagSource::Wheel) h.rise=held && newMouse;
-        if (h.rise) {
-            ++h.serial; h.downSince=now;
-            if (!h.cluster) { h.cluster=true; h.clusterSince=now; h.taps=0; }
-            h.lastTap=now;
-            if (h.taps<255) ++h.taps;
-        }
-        h.held=held;
-        if (h.cluster && now-h.clusterSince >= ms(h.window)) {
-            if (h.held && h.longLimit && now-h.downSince < ms(h.longLimit)) continue;
-            h.ready=h.longLimit && (h.held || h.fall) && now-h.downSince>=ms(h.longLimit) ? 0 : h.taps;
-            h.cluster=false; h.taps=0;
-        }
+    for (std::size_t i=0;i<kControls;++i) if (history_[i].watched)
+        updateHistory(history_[i],control(i),in,now,newMouse);
+    std::array<bool,kDiamondComboSlots> stopped {};
+    for (std::size_t slot=0;slot<runs_.size();++slot) if (runs_[slot].running || runs_[slot].latched) {
+        if (cancelMatched(slot,in,now,newMouse)) { runs_[slot]={}; stopped[slot]=true; }
     }
     auto& candidates=candidates_;
     std::size_t count=0;
     for (std::size_t s=0;s<kDiamondComboSlots;++s) {
-        const auto& p=(*programs_)[s]; if (!p.enabled) { if (!runs_[s].testRun) runs_[s]={}; continue; }
+        const auto& p=(*programs_)[s]; if (stopped[s]) continue; if (!p.enabled) { if (!runs_[s].testRun) runs_[s]={}; continue; }
         for (std::size_t b=0;b<p.branchCount;++b) {
             const auto& r=p.branches[b]; if (!r.enabled) continue;
             std::array<Verdict,kOagSmartConditions> v {};
             for (std::size_t i=0;i<r.conditionCount;++i)
-                v[i]=evaluate(r.conditions[i],r,conditions_[s][b][i],in,now);
+                v[i]=evaluate(r.conditions[i],r.refs,conditions_[s][b][i],in,now);
             bool term=v[0].value, result=false, termPulse=v[0].pulse, pulse=false;
             std::uint8_t termMask=1, conditionMask=0;
             const auto finishTerm=[&] {
@@ -276,6 +328,7 @@ void OagSmartComboEngine::tick(const OagSmartInput& in, std::uint64_t now, bool 
         auto& r=runs_[s];
         if (r.latched && (*programs_)[s].mode==OagExecution::WhileHeld &&
             !heldGate((*programs_)[s].branches[r.branch],in,r.fallback)) r={};
+        if ((r.running || r.latched) && !cancellation_[s].armed && cancelMatched(s,in,now,newMouse)) r={};
         if (r.running) execute(s,in,now,reloadMs);
     }
     rebuildOutput();
@@ -332,60 +385,74 @@ bool OagSmartComboEngine::heldGate(const OagBranch& b, const OagSmartInput& in, 
     }
     return result || term;
 }
-void OagSmartComboEngine::execute(std::size_t s, const OagSmartInput& in, std::uint64_t now, std::uint16_t reloadMs) {
+void OagSmartComboEngine::execute(std::size_t s,const OagSmartInput& in,std::uint64_t now,std::uint16_t reloadMs) {
     auto& r=runs_[s]; const auto& p=(*programs_)[s]; const auto& b=p.branches[r.branch];
     if (r.testRun && now>=r.testEnd) { r={}; return; }
     if (!r.testRun && (p.mode==OagExecution::WhileHeld || p.mode==OagExecution::RepeatWhileHeld ||
-                      p.mode==OagExecution::StopOnRelease) && !heldGate(b,in,r.fallback)) { r={}; return; }
-    for (unsigned budget=0;budget<24;++budget) { // Never block USB/BT on a loop or zero-delay sequence.
+        p.mode==OagExecution::StopOnRelease) && !heldGate(b,in,r.fallback)) { r={}; return; }
+    for (unsigned budget=0;budget<24;++budget) {
         if (now<r.deadline) return;
         if (r.step>=r.end) {
             if (!r.testRun && (p.mode==OagExecution::RepeatWhileHeld || p.mode==OagExecution::LoopUntilAgain)) {
-                r.held={}; r.owns=0; r.repeats={}; r.step=r.begin; r.phase=0; r.deadline=now+1000; return;
+                r.held={}; r.owns=0; r.repeats={}; r.step=r.begin; r.groupStarted=false; r.deadline=now+1000; return;
             }
             if (!r.testRun && (p.mode==OagExecution::Toggle || p.mode==OagExecution::WhileHeld)) {
                 r.latched=true; r.running=false; return;
             }
-            r={}; return; // Releases only generated controls.
+            r={}; return;
         }
-        const auto& a=b.actions[r.step];
-        if (r.phase==0) { r.phase=1; r.deadline=now+ms(a.beforeMs); if (a.beforeMs) return; }
-        if (r.phase==1) {
-            const auto k=a.kind;
-            if (k==OagActionKind::Repeat || k==OagActionKind::Loop) {
-                if (k==OagActionKind::Loop || ++r.repeats[r.step]<a.count) {
-                    r.step=a.first; r.phase=0; r.deadline=now+std::max<std::uint64_t>(1000,ms(a.intervalMs)); return;
-                }
-                r.repeats[r.step]=0; r.phase=3;
-            } else if (k==OagActionKind::ReleaseAll) { r.held={}; r.owns=0; r.phase=3; }
-            else if (k==OagActionKind::Release) { emitAction(a,b,false,r); r.phase=3; }
-            else if (k==OagActionKind::Press || (k==OagActionKind::Hold && !a.durationMs)) {
-                emitAction(a,b,true,r); r.phase=3;
-            } else {
-                if (k!=OagActionKind::Wait && k!=OagActionKind::ReloadWait) emitAction(a,b,true,r);
-                r.phase=2; r.pulses=0; r.pulseDown=true;
-                r.deadline=now+ms(k==OagActionKind::ReloadWait?reloadMs:std::max<std::uint16_t>(a.durationMs,1));
-                return;
+        if (!r.groupStarted) {
+            r.groupEnd=std::uint8_t(r.step+1);
+            while (r.groupEnd<r.end && (b.actions[r.groupEnd].flags & kOagActionTogether)) ++r.groupEnd;
+            for (std::size_t i=r.step;i<r.groupEnd;++i) {
+                r.clocks[i]={}; r.clocks[i].deadline=now+ms(b.actions[i].beforeMs);
             }
+            r.groupStarted=true;
         }
-        if (r.phase==2) {
-            if (a.kind==OagActionKind::Pulse) {
-                if (r.pulseDown) {
-                    emitAction(a,b,false,r); r.pulseDown=false; ++r.pulses;
-                    if (a.count && r.pulses>=a.count) { r.phase=3; r.deadline=now+ms(a.intervalMs); }
-                    else { r.deadline=now+std::max<std::uint64_t>(1000,ms(a.intervalMs)); return; }
-                    if (a.intervalMs) return;
+        bool done=true;
+        for (std::size_t i=r.step;i<r.groupEnd;++i) {
+            auto& clock=r.clocks[i]; const auto& a=b.actions[i]; const auto k=a.kind;
+            if (clock.phase==4) continue;
+            if (now<clock.deadline) { done=false; continue; }
+            if (clock.phase==0) {
+                if (k==OagActionKind::Repeat || k==OagActionKind::Loop) {
+                    if (k==OagActionKind::Loop || ++r.repeats[i]<a.count) {
+                        r.step=a.first; r.groupStarted=false;
+                        r.deadline=now+std::max<std::uint64_t>(1000,ms(a.intervalMs)); return;
+                    }
+                    r.repeats[i]=0; clock.phase=2;
+                } else if (k==OagActionKind::ReleaseAll) { r.held={}; r.owns=0; clock.phase=2; }
+                else if (k==OagActionKind::Release) { emitAction(a,b,false,r); clock.phase=2; }
+                else if ((k==OagActionKind::Press && !(a.flags & kOagActionTimed)) || (k==OagActionKind::Hold && !a.durationMs)) {
+                    emitAction(a,b,true,r); clock.phase=2;
                 } else {
-                    emitAction(a,b,true,r); r.pulseDown=true;
-                    r.deadline=now+std::max<std::uint64_t>(1000,ms(a.durationMs)); return;
+                    if (k!=OagActionKind::Wait && k!=OagActionKind::ReloadWait) emitAction(a,b,true,r);
+                    clock.phase=1; clock.pulseDown=true;
+                    clock.deadline=now+ms(k==OagActionKind::ReloadWait?std::max<std::uint16_t>(1,reloadMs):std::max<std::uint16_t>(1,a.durationMs));
+                    done=false; continue;
                 }
-            } else {
-                if (a.kind!=OagActionKind::Wait && a.kind!=OagActionKind::ReloadWait) emitAction(a,b,false,r);
-                r.phase=3;
             }
+            if (clock.phase==1) {
+                if (k==OagActionKind::Pulse) {
+                    if (clock.pulseDown) {
+                        emitAction(a,b,false,r); clock.pulseDown=false; ++clock.pulses;
+                        if (a.count && clock.pulses>=a.count) { clock.phase=2; clock.deadline=now+ms(a.intervalMs); }
+                        else { clock.deadline=now+std::max<std::uint64_t>(1000,ms(a.intervalMs)); done=false; continue; }
+                        if (a.intervalMs) { done=false; continue; }
+                    } else {
+                        emitAction(a,b,true,r); clock.pulseDown=true;
+                        clock.deadline=now+std::max<std::uint64_t>(1000,ms(a.durationMs)); done=false; continue;
+                    }
+                } else {
+                    if (k!=OagActionKind::Wait && k!=OagActionKind::ReloadWait) emitAction(a,b,false,r);
+                    clock.phase=2;
+                }
+            }
+            if (clock.phase==2) { clock.phase=3; clock.deadline=now+ms(a.afterMs); }
+            if (now>=clock.deadline) clock.phase=4; else done=false;
         }
-        if (r.phase==3) { r.phase=4; r.deadline=now+ms(a.afterMs); if (a.afterMs) return; }
-        if (r.phase==4) { ++r.step; r.phase=0; }
+        if (!done) return;
+        r.step=r.groupEnd; r.groupStarted=false;
     }
     r.deadline=now+1000;
 }

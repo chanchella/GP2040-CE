@@ -5,7 +5,8 @@
 #include "oag/config/diamond_persistent_config.h"
 #include "oag/config/diamond_game_library.h"
 #include "oag/firmware/pc_native_km_output.h"
-#include "oag/mapping/diamond_combo_engine.h"
+#include "oag/mapping/oag_smart_combo_engine.h"
+#include "oag/mapping/oag_auto_input.h"
 #include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 #include "oag/mapping/pro_input_processor.h"
 #include "oag/mapping/pro_profile_shortcut.h"
@@ -48,8 +49,9 @@ struct CoreHarness {
     Store configStore_;
     Library gameLibrary_;
     oag::ProProfileShortcut profileShortcut_;
-    oag::DiamondComboEngine diamondCombos_;
+    oag::OagSmartComboEngine smartCombos_;
     oag::ProInputProcessor proInput_;
+    oag::OagAutoInput autoInput_;
     oag::firmware::PcNativeKmOutput nativeKmOutput_;
     oag::KeyboardState keyboard;
     oag::MouseState mouse;
@@ -64,7 +66,7 @@ struct CoreHarness {
     static constexpr std::uint8_t kOagF1Usage = 0x3a, kModeToggleF4Usage = 0x3d, kModeToggleF5Usage = 0x3e;
     auto combinedKeyboard() const { return keyboard; }
     unsigned smartResets=0,smartActivations=0;
-    void resetOagSmartEffects() { ++smartResets; }
+    void resetOagSmartEffects() { ++smartResets; smartCombos_.cancel(); }
     void resetOagSmartWeaponEffects() {}
     void activateOagSmartGame(std::size_t) { ++smartActivations; }
 
@@ -131,18 +133,17 @@ int main() {
 
             // An old game's generated B/middle-button hold must disappear
             // while the physical A/left-button hold continues without a gap.
-            std::array<oag::DiamondComboProgram, oag::kDiamondComboSlots> oldPrograms {};
-            auto& old = oldPrograms[0];
-            old.enabled = true; old.stepCount = 1;
-            old.activation = oag::DiamondComboActivationMode::WhileHeld;
-            old.triggers[0] = {true, oag::DiamondComboTriggerKind::KeyboardUsage, 0x04, 0};
-            old.steps[0].enabled = true;
-            old.steps[0].kind = oag::DiamondComboStepKind::HoldStart;
-            old.steps[0].control = oag::DiamondLogicalControl::East;
-            old.steps[0].keyboardKeys[0] = 0x05;
-            old.steps[0].mouseButtons = oag::MouseButtonMiddle;
-            h.diamondCombos_.apply(oldPrograms, &h.keyboard, &h.mouse, {}, 1);
-            assert(h.diamondCombos_.active());
+            std::array<oag::OagSmartCombo,oag::kDiamondComboSlots> oldPrograms {};
+            auto& old=oldPrograms[0]; old.enabled=1; old.mode=oag::OagExecution::WhileHeld;
+            auto& branch=old.branches[0]; branch.conditions[0].control={oag::OagSource::Keyboard,0,0x04};
+            branch.conditions[0].kind=oag::OagTrigger::Held; branch.thenCount=3;
+            branch.actions[0].control={oag::OagSource::Gamepad,0,2};
+            branch.actions[1].control={oag::OagSource::Keyboard,0,0x05};
+            branch.actions[2].control={oag::OagSource::Mouse,0,2};
+            for (auto& a:branch.actions) a.kind=oag::OagActionKind::Press;
+            h.smartCombos_.configure(oldPrograms);
+            h.smartCombos_.tick({&h.keyboard,&h.mouse,{}},1,true);
+            assert(h.smartCombos_.active());
             auto generatedKeys = h.keyboard;
             generatedKeys.setPressed(0x05, true);
             auto generatedMouse = h.mouse;
@@ -157,6 +158,7 @@ int main() {
             half.multiplierPermille = 500;
             h.proInput_.processMouse({0, 7}, {1, -1}, half);
             const auto before = h.proInput_.stats(0);
+            h.autoInput_.mouse({0,7},{8,-4},1);
             sent.clear(); ready = false;
 
             select(h, game, 1);
@@ -164,13 +166,14 @@ int main() {
             assert(!h.gameContextInactive_ && !h.configStore_.value.proInput.gameContextInactive);
             assert(h.configStore_.saves == 0 && h.composed == 1);
             assert(h.keyboardDirty_ && h.mouseDirty_ && !h.diamondRecoilActive_);
-            assert(!h.diamondCombos_.active());
-            assert(!h.diamondCombos_.nativeOutput().keyboard.pressed(0x05));
-            assert(h.diamondCombos_.nativeOutput().mouse.buttons == 0);
+            assert(!h.smartCombos_.active());
+            assert(!h.smartCombos_.output().keyboard.pressed(0x05));
+            assert(h.smartCombos_.output().mouse.buttons == 0);
             assert(h.keyboardMouseMode_ == route);
             assert(h.currentMouseMotion_.dx == 321 && h.currentMouseMotion_.dy == -678);
             assert(h.proInput_.stats(0).remainderX == before.remainderX);
             assert(h.proInput_.stats(0).remainderY == before.remainderY);
+            const auto tail=h.autoInput_.flush({0,7},nowUs);assert(tail.dx==2&&tail.dy==-1);
             h.nativeKmOutput_.task(nowUs);
             assert(sent.empty());
 
@@ -192,6 +195,7 @@ int main() {
             assert(h.keyboard.connected && h.mouse.connected && h.keyboard.pressed(0x04));
             assert(h.proInput_.stats(0).remainderX == before.remainderX);
             assert(h.proInput_.stats(0).remainderY == before.remainderY);
+            const auto tail=h.autoInput_.flush({0,7},nowUs);assert(tail.dx==2&&tail.dy==-1);
             ready = true;
             sent.clear();
             h.nativeKmOutput_.task(++nowUs);

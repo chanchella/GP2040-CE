@@ -20,8 +20,8 @@ OAG.options=(list,v)=>list.map((n,i)=>'<option value="'+i+'"'+(Number(v)===i?' s
 OAG.controlOptions=(v,axes=true)=>['الدراع','الكيبورد','الماوس','الأنالوج','القيم التناظرية'].map(g=>'<optgroup label="'+g+'">'+OAG.controls.filter(c=>c.group===g&&(axes||c.id[0]!=='a')).map(c=>'<option value="'+c.id+'"'+(v===c.id?' selected':'')+'>'+OAG.esc(c.name)+'</option>').join('')+'</optgroup>').join('');
 OAG.triggerNames=['دوسة واحدة','دبل تاب — دوستين','تربل تاب — ٣ دوسات','عدد دوسات تختاره','دوسة مطوّلة','طول ما إيدك على الزر','أول ما تسيب الزر','امسك الزر لمدة','كذا زر مع بعض','أزرار بالترتيب','اتجاه الأنالوج','قيمة L2 / R2 أو محور'];
 OAG.modeNames=['مرة واحدة','دوسة تشغّل ودوسة توقف','شغّال طول ما ماسك الزر','كرر طول ما ماسك الزر','وقف أول ما تسيب الزر','لف لحد ما تدوس تاني'];
-OAG.actionNames=['دوس وسيبه ممسوك','سيب الزر','امسك لمدة','دوسة سريعة','نبضات متكررة','استنى','دوس كذا زر مع بعض','كرر خطوات سابقة','لف على خطوات سابقة','اتجاه أنالوج','قيمة أنالوج وقوّته','قيمة L2 / R2','سيب كل أزرار الكومبو','استنى توقيت إعادة التلقيم'];
+OAG.actionNames=['دوس لمدة','سيب الزر','امسك لمدة','دوسة سريعة','نبضات متكررة','استنى','دوس كذا زر مع بعض','كرر خطوات سابقة','لف على خطوات سابقة','اتجاه أنالوج','قيمة أنالوج وقوّته','قيمة L2 / R2','سيب كل أزرار الكومبو','استنى توقيت إعادة التلقيم'];
 OAG.condition=()=>({control:'g6',kind:1,join:0,negate:0,taps:4,window:500,hold:800,threshold:500,refs:[]});
-OAG.action=()=>({control:'g4',kind:3,count:1,first:1,duration:100,before:0,after:50,interval:80,x:1000,y:0,refs:[]});
+OAG.action=()=>({control:'g4',kind:3,count:1,first:1,duration:100,together:0,timed:1,before:0,after:50,interval:80,x:1000,y:0,refs:[]});
 OAG.branch=()=>({enabled:1,conditions:[OAG.condition()],then:[OAG.action()],else:[]});
-OAG.emptyCombo=()=>({name:'',enabled:0,mode:0,cancelable:1,branches:[OAG.branch()]});
+OAG.emptyCombo=()=>({name:'',enabled:0,mode:0,cancelable:1,cancel:{enabled:0,conditions:[]},branches:[OAG.branch()]});

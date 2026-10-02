@@ -45,14 +45,14 @@ if cancel is None:
 else:
     body = re.sub(r"//[^\n]*", "", cancel[1])
     for forbidden in ("requestOutputProfile", "watchdog", "keyboardMouseMode_", "nativeKmOutput_",
-                      "proInput_", "currentMouseMotion_", "pubgMovement", "registry_",
+                      "proInput_", "autoInput_", "currentMouseMotion_", "pubgMovement", "registry_",
                       "bluetoothHost_", "usbHost_", ".save("):
         if forbidden in body:
             errors.append(f"F1+0 must preserve physical input/transport: {forbidden}")
 composed = firmware_text.split("void sendComposedOutput() {", 1)[1].split("void updatePubgTriangleState(", 1)[0]
 selection = firmware_text.split("void serviceOagGameWeaponHotkey() {", 1)[1].split("void maskOagGameWeaponHotkey(", 1)[0]
 selection = re.sub(r"//[^\n]*", "", selection)
-for forbidden in (".save(", "nativeKmOutput_", "proInput_", "keyboardMouseMode_",
+for forbidden in (".save(", "nativeKmOutput_", "proInput_", "autoInput_", "keyboardMouseMode_",
                   "requestOutputProfile", "watchdog", "currentMouseMotion_", "registry_",
                   "bluetoothHost_", "usbHost_"):
     if forbidden in selection:

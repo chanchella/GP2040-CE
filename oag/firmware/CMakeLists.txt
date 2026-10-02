@@ -46,6 +46,7 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     ../src/config/oag_smart_store.cpp
     ../src/config/oag_smart_api.cpp
     ../src/mapping/oag_smart_combo_engine.cpp
+    ../src/mapping/oag_auto_input.cpp
     ../src/mapping/oag_weapon_tuning_engine.cpp
     src/net/dhcpserver.c
     src/net/dnsserver.c
@@ -66,8 +67,6 @@ add_executable(OAG_UI5K_MULTIPROFILE_V1_Pico2W
     ../src/mapping/digital_binding_engine.cpp
     ../src/mapping/mouse_to_stick_mapper.cpp
     ../src/mapping/keyboard_mouse_gamepad_mapper.cpp
-    ../src/mapping/native_km_combo_engine.cpp
-    ../src/mapping/diamond_combo_engine.cpp
     ../src/output/xinput/xinput_report_encoder.cpp
     ../src/output/xinput/xinput_feedback_decoder.cpp
     ../src/output/touch/mobile_touch_mapper.cpp
@@ -113,7 +112,7 @@ pico_set_program_name(
     OAG_UI5K_MULTIPROFILE_V1_Pico2W
     "OAG Abo Gemi Ultra Gaming"
 )
-pico_set_program_version(OAG_UI5K_MULTIPROFILE_V1_Pico2W "DIAMOND-RS8-FIX2-SMART-COMBO-WEAPON-V1-EXPERIMENTAL")
+pico_set_program_version(OAG_UI5K_MULTIPROFILE_V1_Pico2W "DIAMOND-RS8-FIX2-SMART-COMBO-WEAPON-V2-EXPERIMENTAL")
 
 target_link_options(OAG_UI5K_MULTIPROFILE_V1_Pico2W PRIVATE
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/OAG_UI5K_MULTIPROFILE_V1_Pico2W.map"
