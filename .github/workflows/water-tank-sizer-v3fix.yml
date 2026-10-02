@@ -1,0 +1,61 @@
+name: Build Water Tank Sizer V3 Fix
+
+on:
+  push:
+    branches:
+      - water-tank-sizer-apk-v3fix
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat water-tank-sizer-build-v3/chunk_*.txt | base64 -d > /tmp/wts-v3-fix.zip
+          mkdir -p wts-v3-fix
+          unzip -q /tmp/wts-v3-fix.zip -d wts-v3-fix
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        shell: bash
+        run: gradle -p wts-v3-fix --no-daemon assembleDebug
+
+      - name: Verify APK signature and alignment
+        shell: bash
+        run: |
+          APK="wts-v3-fix/app/build/outputs/apk/debug/app-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 "$APK"
+          file "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Water-Tank-Sizer-Android-V3-Fix
+          path: wts-v3-fix/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
