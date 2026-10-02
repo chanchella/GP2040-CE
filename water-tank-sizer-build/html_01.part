@@ -1,0 +1,101 @@
+f:center}
+}
+@media(max-width:540px){
+  h1{font-size:16px}.brand p{display:none}.logo{width:38px;height:38px;border-radius:11px;font-size:20px}.header-actions{gap:5px}
+  .header-actions button{font-size:11px;padding:7px 8px}.card{padding:14px;border-radius:15px}.project-grid,.inputs-grid{grid-template-columns:1fr}
+  .result-grid{grid-template-columns:1fr 1fr}.result-grid strong{font-size:19px}.responsive-head{align-items:stretch;flex-direction:column}.demand-tools{align-items:stretch;justify-content:stretch;flex-direction:column}.view-toggle{width:100%}.toggle-btn{flex:1}.search{max-width:none}
+}
+@media print{
+  .appbar,.header-actions,.tools-card,footer,#search,.button-row,.view-toggle{display:none!important}
+  body{background:#fff}.layout{width:100%;margin:0;display:block}.card{box-shadow:none;border:1px solid #bbb;margin:0 0 10px;break-inside:avoid}
+  .demand-row{break-inside:avoid}.qty{border:0;padding:0}.result-grid{grid-template-columns:repeat(4,1fr)}
+}
+</style>
+</head>
+<body>
+  <header class="appbar">
+    <div class="brand">
+      <div class="logo">💧</div>
+      <div><h1>Water Supply Tank Sizing</h1><p>Engineering Calculator • Offline Ready</p></div>
+    </div>
+    <div class="header-actions">
+      <button id="saveBtn" class="ghost">Save</button>
+      <button id="printBtn" class="ghost">Print / PDF</button>
+      <button id="resetBtn" class="danger-ghost">Reset</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="card hero-card">
+      <div class="field grow">
+        <label for="standard">Design reference</label>
+        <select id="standard"></select>
+        <small id="standardSubtitle"></small>
+      </div>
+      <div class="metric"><span>Daily Demand</span><strong id="heroDaily">0</strong><em id="heroDailyUnit"></em></div>
+      <div class="metric accent"><span>Tank Volume</span><strong id="heroM3">0.0</strong><em>m³</em></div>
+    </section>
+
+    <details class="card" open>
+      <summary>Project Information</summary>
+      <div class="grid project-grid">
+        <label>Project Name<input id="projectName" type="text" placeholder="Project name"></label>
+        <label>Project No.<input id="projectNo" type="text" placeholder="Project number"></label>
+        <label>Building Name<input id="buildingName" type="text" placeholder="Building name"></label>
+        <label>Building No.<input id="buildingNo" type="text" placeholder="Building number"></label>
+        <label>Tank Tag<input id="tankTag" type="text" placeholder="WT-01"></label>
+        <label>Tank Location<input id="tankLocation" type="text" placeholder="Roof / Ground / Basement"></label>
+        <label>Axes<input id="axes" type="text" placeholder="A-B / 1-2"></label>
+        <label>Revision<input id="revision" type="text" placeholder="00"></label>
+      </div>
+    </details>
+
+    <section class="card">
+      <div class="section-head">
+        <div><h2>Design Inputs</h2><p>Values matching the workbook logic.</p></div>
+      </div>
+      <div class="grid inputs-grid">
+        <label>Demand Type<select id="demandType"><option>Maximum</option><option>Minimum</option><option>Average</option></select></label>
+        <label>Storage Days<input id="storageDays" type="number" step="0.1" min="0"></label>
+        <label>Additional Demand <span id="additionalUnit"></span><input id="additionalDemand" type="number" step="0.1" min="0"></label>
+        <label>Safety Factor<select id="safetyFactor"></select></label>
+        <label>Tank Access<select id="access"><option>Tank Side</option><option>Tank Top</option></select></label>
+        <label>Filling Time (hr)<input id="fillHours" type="number" step="0.1" min="0.01"></label>
+        <label>Filling Pipe Material<select id="material"><option>PPR - PN16</option><option>PPR - PN20</option><option>PPR - PN25</option><option>Copper</option></select></label>
+        <label>Filling Velocity (m/s)<input id="velocity" type="number" step="0.1" min="0.1"></label>
+        <label>Suction Pit Depth (m)<input id="suctionPit" type="number" step="0.05" min="0"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-head responsive-head">
+        <div><h2>Water Demand</h2><p>Enter quantities only for the building types used in the project.</p></div>
+        <div class="demand-tools">
+          <div class="view-toggle" role="group" aria-label="Demand rows visibility">
+            <button id="hideUnusedBtn" type="button" class="toggle-btn">Hide Unused</button>
+            <button id="showAllBtn" type="button" class="toggle-btn active">Show All</button>
+          </div>
+          <input id="search" class="search" type="search" placeholder="Search building type…">
+        </div>
+      </div>
+      <div class="demand-header">
+        <span>Building Type</span><span>Description</span><span>Qty</span><span>Rate</span><span>Total</span>
+      </div>
+      <div id="demandRows" class="demand-rows"></div>
+      <div class="total-line"><span>Total Daily Demand</span><strong id="dailyTotal">0</strong></div>
+    </section>
+
+    <section class="card">
+      <div class="section-head"><div><h2>Tank Geometry</h2><p>Used to determine effective and total tank depth.</p></div></div>
+      <div class="grid inputs-grid">
+        <label>Tank Section Shape<select id="shape"><option>Rectangular</option><option>Circular</option></select></label>
+        <label id="dim1Label">Length (m)<input id="dim1" type="number" step="0.1" min="0.01" value="2"></label>
+        <label id="dim2Label">Width (m)<input id="dim2" type="number" step="0.1" min="0.01" value="3"></label>
+      </div>
+    </section>
+
+    <section class="results card">
+      <div class="section-head"><div><h2>Calculated Results</h2><p>Calculated locally on your device.</p></div><span id="statusBadge" class="badge">Ready</span></div>
+      <div class="result-grid">
+        <article><span>Tank Volume</span><strong id="rGal">0</strong><em>gal</em></article>
+        <article><span>Tank Volume</span><strong id="rM3">0.0
