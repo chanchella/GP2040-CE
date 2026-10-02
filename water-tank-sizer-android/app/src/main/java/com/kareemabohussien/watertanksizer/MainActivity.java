@@ -155,7 +155,7 @@ public class MainActivity extends Activity {
                 int sourcePageHeight = Math.max(1, (int) Math.floor(printableHeight / scale));
                 int pageCount = Math.max(1, (int) Math.ceil((double) contentHeight / sourcePageHeight));
 
-                Bitmap watermark = BitmapFactory.decodeResource(getResources(), R.drawable.app_icon);
+                Bitmap watermark = BitmapFactory.decodeResource(getResources(), R.drawable.app_watermark);
                 Paint watermarkPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
                 watermarkPaint.setAlpha(24);
 
