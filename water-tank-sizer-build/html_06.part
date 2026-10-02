@@ -1,0 +1,88 @@
+t std=activeStd(), q=$("search").value.trim().toLowerCase();
+  const box=$("demandRows"); box.innerHTML="";
+  let visible=0;
+  for(const row of std.rows){
+    const qty=Number(state.quantities[row.id]||0);
+    if(state.demandView==="used" && qty<=0) continue;
+    if(q && !(row.buildingType+" "+row.description).toLowerCase().includes(q)) continue;
+    const div=document.createElement("div"); div.className="demand-row"; div.dataset.id=row.id;
+    div.innerHTML=`<div class="name"></div><div class="desc"></div><input class="qty" type="number" min="0" step="1" inputmode="decimal"><div class="rate"></div><div class="line-total"></div>`;
+    div.querySelector(".name").textContent=row.buildingType;
+    div.querySelector(".desc").textContent=row.description;
+    const inp=div.querySelector(".qty"); inp.value=state.quantities[row.id] ?? "";
+    inp.addEventListener("input",()=>{state.quantities[row.id]=Number(inp.value)||0; calculate();});
+    inp.addEventListener("change",()=>{if(state.demandView==="used" && (Number(inp.value)||0)<=0) renderRows();});
+    box.appendChild(div); visible++;
+  }
+  if(!visible){
+    const empty=document.createElement("div"); empty.className="demand-empty";
+    empty.textContent=state.demandView==="used" ? "No used building types to show. Tap Show All to add demand." : "No building types match your search.";
+    box.appendChild(empty);
+  }
+  syncDemandViewButtons();
+  refreshLineTotals();
+}
+function applyStandard(key, resetQuantities=true){
+  state.standard=key; const std=activeStd();
+  if(resetQuantities) state.quantities={};
+  $("standardSubtitle").textContent=std.subtitle;
+  $("additionalUnit").textContent=`(${std.inputUnit})`;
+  $("heroDailyUnit").textContent=std.demandUnit;
+  $("demandType").disabled=!std.selectableDemand;
+  $("demandType").value=std.defaults.demandType;
+  $("storageDays").value=std.defaults.storageDays;
+  $("additionalDemand").value=std.defaults.additionalDemand;
+  $("safetyFactor").value=String(std.defaults.safetyFactor);
+  $("access").value=std.defaults.access; $("fillHours").value=std.defaults.fillHours; $("material").value=std.defaults.material;
+  $("velocity").value=std.defaults.velocity; $("suctionPit").value=std.defaults.suctionPit;
+  const geometryDefaults={practical:[2,3],aspe:[2,3],egypt:[5,4],qatar:[2,3],saudi:[4,4]};
+  $("shape").value="Rectangular"; $("dim1").value=geometryDefaults[key][0]; $("dim2").value=geometryDefaults[key][1];
+  renderRows(); updateGeometryLabels(); calculate();
+}
+function updateGeometryLabels(){
+  const circular=$("shape").value==="Circular";
+  $("dim1Label").childNodes[0].nodeValue=circular?"Diameter (m)":"Length (m)";
+  $("dim2Label").style.display=circular?"none":"flex";
+}
+function collectProject(){
+  return ["projectName","projectNo","buildingName","buildingNo","tankTag","tankLocation","axes","revision"].reduce((o,id)=>(o[id]=$(id).value,o),{});
+}
+function snapshot(){
+  const calc=calculate();
+  return {
+    version:1, savedAt:new Date().toISOString(), standard:state.standard, quantities:state.quantities, demandView:state.demandView,
+    project:collectProject(),
+    inputs:{
+      demandType:$("demandType").value,storageDays:$("storageDays").value,additionalDemand:$("additionalDemand").value,
+      safetyFactor:$("safetyFactor").value,access:$("access").value,fillHours:$("fillHours").value,material:$("material").value,
+      velocity:$("velocity").value,suctionPit:$("suctionPit").value,shape:$("shape").value,dim1:$("dim1").value,dim2:$("dim2").value
+    },results:calc
+  };
+}
+function loadSnapshot(s){
+  if(!s || !DATA.standards[s.standard]) throw new Error("Unsupported project file.");
+  state.standard=s.standard; state.quantities=s.quantities||{}; state.demandView=s.demandView==="used"?"used":"all";
+  $("standard").value=s.standard; applyStandard(s.standard,false);
+  if(s.project) Object.entries(s.project).forEach(([id,v])=>{if($(id))$(id).value=v??""});
+  if(s.inputs) Object.entries(s.inputs).forEach(([id,v])=>{if($(id))$(id).value=v});
+  updateGeometryLabels(); renderRows(); calculate();
+}
+function init(){
+  Object.entries(DATA.standards).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=v.name;$("standard").appendChild(o)});
+  for(let p=0;p<=40;p+=5){const o=document.createElement("option");o.value=String(p/100);o.textContent=p+"%";$("safetyFactor").appendChild(o)}
+  $("standard").value=state.standard; applyStandard(state.standard,true);
+  $("standard").addEventListener("change",e=>applyStandard(e.target.value,true));
+  ["demandType","storageDays","additionalDemand","safetyFactor","access","fillHours","material","velocity","suctionPit","dim1","dim2"].forEach(id=>$(id).addEventListener("input",calculate));
+  $("shape").addEventListener("change",()=>{updateGeometryLabels();calculate()});
+  $("search").addEventListener("input",renderRows);
+  $("hideUnusedBtn").addEventListener("click",()=>{state.demandView="used";renderRows();});
+  $("showAllBtn").addEventListener("click",()=>{state.demandView="all";renderRows();});
+  $("saveBtn").addEventListener("click",()=>{localStorage.setItem("wts-project",JSON.stringify(snapshot()));$("statusBadge").textContent="Saved";});
+  $("printBtn").addEventListener("click",()=>{if(window.Android?.printPage) window.Android.printPage(); else window.print();});
+  $("resetBtn").addEventListener("click",()=>{if(confirm("Reset current calculation?")){localStorage.removeItem("wts-project");document.querySelectorAll(".project-grid input").forEach(x=>x.value="");applyStandard(state.standard,true);}});
+  $("exportBtn").addEventListener("click",()=>{
+    const content=JSON.stringify(snapshot(),null,2);
+    const fileName=(($("projectName").value||"Water-Tank-Project").replace(/[^\w-]+/g,"_"))+".json";
+    if(window.Android?.saveTextFile){window.Android.saveTextFile(content,fileName);return;}
+    const blob=new Blob([content],{type:"application/json"});const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);a.download=fileName;a.click();U
