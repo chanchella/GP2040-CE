@@ -1,0 +1,112 @@
+""},{"dn":200,"di":143.4,"inch":"8\""},{"dn":250,"di":183.4,"inch":"10\""}],"PPR - PN25":[{"dn":20,"di":13.2,"inch":"1/2\""},{"dn":25,"di":16.6,"inch":"3/4\""},{"dn":32,"di":21.2,"inch":"1\""},{"dn":40,"di":26.6,"inch":"1 1/4\""},{"dn":50,"di":33.2,"inch":"1 1/2\""},{"dn":63,"di":42,"inch":"2\""},{"dn":75,"di":50,"inch":"2 1/2\""},{"dn":90,"di":60,"inch":"3\""},{"dn":110,"di":73.2,"inch":"4\""},{"dn":160,"di":106.8,"inch":"6\""},{"dn":200,"di":143.4,"inch":"8\""},{"dn":250,"di":183.4,"inch":"10\""}],"Copper":[{"dn":15,"di":13.6,"inch":"1/2\""},{"dn":22,"di":20.2,"inch":"3/4\""},{"dn":28,"di":26.2,"inch":"1\""},{"dn":35,"di":32.6,"inch":"1 1/4\""},{"dn":42,"di":39.6,"inch":"1 1/2\""},{"dn":54,"di":51.6,"inch":"2\""},{"dn":67,"di":64.6,"inch":"2 1/2\""},{"dn":76,"di":73,"inch":"3\""},{"dn":108,"di":105,"inch":"4\""},{"dn":133,"di":130,"inch":"5\""},{"dn":159,"di":155,"inch":"6\""}]}};
+
+</script>
+<script>
+const DATA = window.WTS_DATA;
+const $ = id => document.getElementById(id);
+const state = {standard:"egypt", quantities:{}, project:{}, geometry:{shape:"Rectangular",dim1:5,dim2:4}, demandView:"all"};
+
+function roundUp(value, decimals=0){
+  const p = 10 ** decimals;
+  return Math.ceil((Number(value)||0)*p - 1e-12)/p;
+}
+function fmt(n,d=2){
+  if(!Number.isFinite(n)) return "—";
+  return n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
+}
+function smart(n,d=2){
+  if(!Number.isFinite(n)) return "—";
+  return n.toLocaleString(undefined,{maximumFractionDigits:d});
+}
+function getRate(row, std, demandType){
+  if(!std.selectableDemand) return Number(row.fixed ?? row.max ?? 0);
+  if(demandType==="Maximum") return Number(row.max ?? 0);
+  if(demandType==="Minimum") return Number(row.min ?? 0);
+  return Number(row.avg ?? 0);
+}
+function nextThreshold(value, thresholds, over){
+  for(const item of thresholds){ if(value < item.limit) return item.size; }
+  return over;
+}
+function selectPipe(material, requiredDi){
+  const arr = DATA.pipes[material] || DATA.pipes["PPR - PN20"];
+  const minDN = material==="Copper" ? 15 : 20;
+  let picked = arr.find(x => x.di > requiredDi + 1e-9);
+  let warning = "";
+  if(!picked){
+    picked = arr[arr.length-1];
+    warning = `Required internal diameter ${requiredDi.toFixed(1)} mm exceeds the largest ${material} size stored in the workbook table.`;
+  }
+  if(picked.dn < minDN) picked = arr.find(x=>x.dn>=minDN) || picked;
+  return {picked,warning};
+}
+function activeStd(){ return DATA.standards[state.standard]; }
+
+function calculate(){
+  const std=activeStd();
+  const demandType=$("demandType").value;
+  let daily=0;
+  for(const row of std.rows){
+    const q = Number(state.quantities[row.id] || 0);
+    daily += q * getRate(row,std,demandType);
+  }
+  const storage=Math.max(0,Number($("storageDays").value)||0);
+  const additional=Math.max(0,Number($("additionalDemand").value)||0);
+  const sf=Number($("safetyFactor").value)||0;
+  const base=(daily+additional)*storage*(1+sf);
+  let gal,m3;
+  if(std.inputUnit==="gal"){
+    gal=roundUp(base,0);
+    m3=roundUp(base*3.785/1000,1);
+  }else{
+    gal=roundUp(base/3.785,0);
+    m3=roundUp(base/1000,1);
+  }
+
+  const shape=$("shape").value;
+  const d1=Math.max(0,Number($("dim1").value)||0);
+  const d2=Math.max(0,Number($("dim2").value)||0);
+  const area = shape==="Circular" ? Math.PI*d1*d1/4 : d1*d2;
+  const effective = area>0 ? m3/area : 0;
+  const suction=Math.max(0,Number($("suctionPit").value)||0);
+  const accessDepth=$("access").value==="Tank Side" ? 0.8 : 0;
+  const totalDepth=effective+0.5+accessDepth+suction;
+
+  const fillHours=Math.max(0.01,Number($("fillHours").value)||0.01);
+  const flow=gal/(fillHours*60);
+  const drain=gal>0 ? nextThreshold(gal,[{limit:3000,size:2},{limit:5000,size:2.5},{limit:7500,size:3}],4):0;
+  const overflow=gal>0 ? nextThreshold(flow,[{limit:50,size:2},{limit:150,size:2.5},{limit:200,size:3},{limit:400,size:4},{limit:1000,size:6}],8):0;
+  const velocity=Math.max(.01,Number($("velocity").value)||2);
+  const requiredDi = Math.sqrt((4*((flow*0.0000630902)/velocity))/Math.PI)*1000;
+  const {picked,warning}=selectPipe($("material").value,requiredDi);
+
+  $("heroDaily").textContent=smart(daily,1); $("heroDailyUnit").textContent=std.demandUnit;
+  $("heroM3").textContent=fmt(m3,1); $("dailyTotal").textContent=`${smart(daily,2)} ${std.demandUnit}`;
+  $("rGal").textContent=smart(gal,0); $("rM3").textContent=fmt(m3,1); $("rArea").textContent=fmt(area,2);
+  $("rEffective").textContent=fmt(effective,2); $("rDepth").textContent=fmt(totalDepth,2); $("rDrain").textContent=smart(drain,1);
+  $("rFlow").textContent=fmt(flow,2); $("rOverflow").textContent=smart(overflow,1); $("rRequiredDi").textContent=fmt(requiredDi,2);
+  $("rPipeIn").textContent=gal>0 ? picked.inch : "—"; $("rPipeMm").textContent=gal>0 ? String(picked.dn) : "—";
+  const warnings=[];
+  if(area<=0 && m3>0) warnings.push("Enter valid tank dimensions to calculate depth.");
+  if(warning && gal>0) warnings.push(warning);
+  if(fillHours<=0) warnings.push("Filling time must be greater than zero.");
+  $("warnings").hidden=warnings.length===0; $("warnings").innerHTML=warnings.map(x=>`• ${x}`).join("<br>");
+  $("statusBadge").textContent=warnings.length ? "Check inputs" : "Calculated";
+  refreshLineTotals();
+  return {daily,gal,m3,area,effective,totalDepth,drain,flow,overflow,requiredDi,pipe:picked};
+}
+function refreshLineTotals(){
+  const std=activeStd(), type=$("demandType").value;
+  document.querySelectorAll(".demand-row").forEach(el=>{
+    const row=std.rows.find(r=>r.id===el.dataset.id); if(!row)return;
+    const rate=getRate(row,std,type), q=Number(state.quantities[row.id]||0);
+    el.querySelector(".rate").textContent=`${smart(rate,2)} ${std.demandUnit}`;
+    el.querySelector(".line-total").textContent=smart(q*rate,2);
+  });
+}
+function syncDemandViewButtons(){
+  $("hideUnusedBtn").classList.toggle("active", state.demandView==="used");
+  $("showAllBtn").classList.toggle("active", state.demandView==="all");
+}
+function renderRows(){
+  cons
