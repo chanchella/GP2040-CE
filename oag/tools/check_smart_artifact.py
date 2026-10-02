@@ -41,8 +41,19 @@ result={'gate':'OAG_SMART_ARTIFACT_PASS','sha256':hashlib.sha256(data).hexdigest
 if a.elf:
     line=subprocess.check_output([a.size_tool,str(a.elf)],text=True).splitlines()[1].split()
     text,ramdata,bss=map(int,line[:3]);assert ramdata+bss<=480*1024,'مساحة RAM المتبقية قليلة'
-    result.update(text_bytes=text,bss_bytes=bss,ram_data_bytes=ramdata,
-                  ram_remaining_before_stacks_heap=512*1024-ramdata-bss)
+    nmtool=a.size_tool.removesuffix('size')+'nm'
+    symbols={}
+    for row in subprocess.check_output([nmtool,str(a.elf)],text=True).splitlines():
+        fields=row.split()
+        if len(fields)==3:symbols[fields[2]]=int(fields[0],16)
+    # GNU size counts executable .data as text. Linker symbols include RAM code,
+    # alignment and vectors, and exclude the two reserved scratch-bank stacks.
+    free=symbols['__HeapLimit']-symbols['__bss_end__']
+    assert free>=24*1024,'مساحة Heap المتبقية قليلة'
+    result.update(text_bytes=text,bss_bytes=bss,
+                  initialized_ram_bytes=symbols['__data_end__']-symbols['__data_start__'],
+                  heap_headroom_bytes=free,
+                  reserved_stack_bytes=symbols['__StackTop']-symbols['__HeapLimit'])
 if a.stack_dir:
     frames=[]
     for f in a.stack_dir.rglob('*.su'):
