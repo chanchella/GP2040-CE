@@ -15,7 +15,8 @@ constexpr std::size_t headerBytes = offsetof(oag::OagSmartProgram, branches);
 bool uintValue(const char* body, const char* key, std::uint32_t lo, std::uint32_t hi, std::uint32_t& v) {
     char s[16] {}; if (!formValue(body, key, s, sizeof(s)) || !s[0]) return false;
     std::uint64_t n = 0; for (const char* p = s; *p; ++p) { if (*p < '0' || *p > '9') return false; n = n * 10 + (*p - '0'); if (n > hi) return false; }
-    if (n < lo) return false; v = static_cast<std::uint32_t>(n); return true;
+    if (n < lo) return false;
+    v = static_cast<std::uint32_t>(n); return true;
 }
 void encodeHex(const void* raw, std::size_t size, char* out) {
     static constexpr char chars[] = "0123456789abcdef"; const auto* bytes = static_cast<const std::uint8_t*>(raw);

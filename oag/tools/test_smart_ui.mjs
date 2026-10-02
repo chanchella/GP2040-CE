@@ -73,6 +73,8 @@ try{
  assert.equal(await page.locator('#enabled').isChecked(),false);assert(await page.evaluate(()=>OAGS.dirty));
  await page.locator('#reload').click();await page.waitForFunction(()=>!OAGS.dirty&&!document.body.classList.contains('busy'));
  assert.equal(await page.locator('#enabled').isChecked(),true);assert.equal(await page.locator('.branch').count(),3);
+ await page.locator('.branch > .itemhead button').first().click();await page.evaluate(()=>OAGS.flush());assert.equal(await page.locator('.branch').count(),2);
+ await page.locator('#reload').click();await page.waitForFunction(()=>!OAGS.dirty&&!document.body.classList.contains('busy'));assert.equal(await page.locator('.branch').count(),3);
  await page.setViewportSize({width:390,height:844});
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.locator('.branch').first().scrollIntoViewIfNeeded();

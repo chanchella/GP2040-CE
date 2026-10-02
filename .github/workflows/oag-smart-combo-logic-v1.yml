@@ -59,7 +59,7 @@ jobs:
           mkdir -p artifacts
           cp build/oag-fw/OAG_UI5K_MULTIPROFILE_V1_Pico2W.uf2 artifacts/OAG_SMART_COMBO_LOGIC_V1_FIX2_BASE_Pico2W.uf2
           cp build/oag-fw/OAG_UI5K_MULTIPROFILE_V1_Pico2W.elf artifacts/
-          cp build/oag-fw/OAG_UI5K_MULTIPROFILE_V1_Pico2W.map artifacts/
+          cp build/oag-fw/*.map artifacts/
           cp oag/docs/OAG_SMART_COMBO_LOGIC_V1.md artifacts/
           sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4.3.1
