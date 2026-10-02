@@ -13,7 +13,7 @@ constexpr std::array<std::uint64_t,14> buttons {
 constexpr std::array<std::int16_t,8> dirX {1000,-1000,0,0,707,-707,707,-707};
 constexpr std::array<std::int16_t,8> dirY {0,0,-1000,1000,-707,-707,707,707};
 constexpr bool temporal(OagTrigger t) {
-    return t != OagTrigger::Held && t != OagTrigger::Analog && t != OagTrigger::Threshold;
+    return t != OagTrigger::Held && t != OagTrigger::Hold && t != OagTrigger::Analog && t != OagTrigger::Threshold;
 }
 std::uint8_t wanted(const OagCondition& c) {
     return c.kind == OagTrigger::Single ? 1 : c.kind == OagTrigger::Double ? 2 :
@@ -120,10 +120,11 @@ OagSmartComboEngine::Verdict OagSmartComboEngine::evaluate(
     if (c.kind <= OagTrigger::Multi) v.value = v.pulse = h.ready == wanted(c) &&
         h.lastTap-h.clusterSince <= ms(c.windowMs) && h.consumed != h.serial;
     else if (c.kind == OagTrigger::Long || c.kind == OagTrigger::Hold) {
-        v.value = (h.held || h.fall) && now-h.downSince >= ms(c.holdMs) && h.consumed != h.serial;
-        v.pulse = v.value && r.holdSerial != h.serial;
+        v.value = (h.held || (c.kind==OagTrigger::Long && h.fall)) &&
+            now-h.downSince >= ms(c.holdMs) && (c.kind==OagTrigger::Hold || h.consumed != h.serial);
+        v.pulse = v.value && h.consumed != h.serial && r.holdSerial != h.serial;
         if (v.pulse) r.holdSerial = h.serial;
-        v.value = v.pulse;
+        if (c.kind==OagTrigger::Long) v.value = v.pulse;
     } else if (c.kind == OagTrigger::Release) {
         v.value = v.pulse = h.fall && h.consumed != h.serial;
     } else if (c.kind == OagTrigger::Sequence) {

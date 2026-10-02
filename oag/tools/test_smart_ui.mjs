@@ -15,7 +15,7 @@ const request=(method,url,body='')=>new Promise(resolve=>{replies.push(resolve);
 const names=n=>JSON.stringify({names:Array.from({length:n},(_,i)=>i===0?'OAG تجربة':'')});
 const server=http.createServer(async(req,res)=>{
     let body='';for await(const chunk of req)body+=chunk;
-    if(req.url.startsWith('/api/oag/')){const line=await request(req.method,req.url,body),at=line.indexOf('\t');res.writeHead(+line.slice(0,at),{'Content-Type':'application/json'});res.end(line.slice(at+1));return}
+    if(req.url.startsWith('/api/oag/')){if(req.url.startsWith('/api/oag/weapon?game=1&slot=4&'))await new Promise(r=>setTimeout(r,100));const line=await request(req.method,req.url,body),at=line.indexOf('\t');res.writeHead(+line.slice(0,at),{'Content-Type':'application/json'});res.end(line.slice(at+1));return}
     if(req.url==='/api/games'||req.url.startsWith('/api/weapons?')){res.end(names(req.url==='/api/games'?20:24));return}
     if(req.url.startsWith('/api/recoil?')){res.end(JSON.stringify({horizontalRaw:0,verticalRaw:0,tickMs:40,enabled:0}));return}
     const name=req.url.split('?')[0],f=path.join(root,name==='/oag-smart'||name==='/oag-weapons'?'oag.html':path.basename(name));
@@ -69,7 +69,7 @@ try {
     assert.equal((await api('/api/oag/status')).writes,2);assert.equal(await page.evaluate(()=>OAG.weapon.vertical),6);
     await page.locator('[data-oag-fine="vertical:10"]').click();await page.locator('#oag-restore-weapon').click();await page.waitForFunction(()=>!OAG.state.weaponDirty);
     assert.equal(await page.evaluate(()=>OAG.weapon.vertical),6);
-    await page.locator('#oag-weapon-slot').selectOption('2');await page.waitForFunction(()=>OAG.state.weaponSlot===2&&!OAG.state.weaponDirty);
+    await page.locator('#oag-weapon-slot').selectOption('2');await page.waitForFunction(()=>OAG.state.weaponSlot===2&&!OAG.contextLoading&&!OAG.state.weaponDirty);
     assert.equal(await page.evaluate(()=>OAG.weapon.vertical),0);
     await page.locator('#oag-copy-weapon').selectOption('1');await page.locator('#oag-copy-settings').click();await page.waitForFunction(()=>OAG.weapon.vertical===6);
     assert.equal((await api('/api/oag/status')).writes,2);
@@ -77,6 +77,12 @@ try {
     await page.locator('#oag-save-weapon').click();await page.waitForFunction(()=>OAG.weapon.configured===1);
     assert.equal(await page.evaluate(()=>OAG.state.weaponDirty),false);
     assert.equal((await api('/api/oag/status')).writes,3);
+    await page.locator('#oag-weapon-slot').selectOption('4');
+    assert.equal(await page.locator('#oag-main').evaluate(el=>el.inert),true);
+    assert.equal(await page.evaluate(()=>OAG.state.weaponSlot),2);
+    await page.waitForFunction(()=>OAG.state.weaponSlot===4&&!OAG.contextLoading);
+    assert.equal(await page.evaluate(()=>OAG.weapon.vertical),0);
+    await page.locator('#oag-weapon-slot').selectOption('2');await page.waitForFunction(()=>OAG.state.weaponSlot===2&&!OAG.contextLoading);
     // A weapon save must leave an unsaved combo in RAM and out of Flash.
     await page.locator('#oag-tab-combo').click();await page.locator('#oag-name').fill('لسه مش محفوظ');await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);
     await page.locator('#oag-tab-weapon').click();await page.locator('#oag-save-weapon').click();await page.waitForFunction(()=>OAG.message&&OAG.state.weaponDirty===false);await page.evaluate(()=>OAG.chain);
@@ -85,10 +91,10 @@ try {
     assert.equal(await page.evaluate(()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return new Set(ids).size===ids.length}),true);
     // Every action and trigger can be serialized by the UI and validated by C++.
     await page.evaluate(async()=>{for(let kind=0;kind<12;kind++){const c=OAG.emptyCombo();c.enabled=1;const q=c.branches[0].conditions[0];q.kind=kind;if(kind===8)q.refs=['g6','g5'];if(kind===9)q.refs=['g6','g6','g4'];if(kind===10)q.control='s12';if(kind===11)q.control='a5';await OAG.applyComboSnapshot(c,1,16)}for(let kind=0;kind<14;kind++){const c=OAG.emptyCombo();c.enabled=1;const a=OAG.action();a.kind=kind;if(kind===6)a.refs=['g5','k4'];if(kind===9)a.control='s12';if(kind===10)a.control='a1';if(kind===11)a.control='g8';if(kind===7||kind===8)c.branches[0].then.push(a);else c.branches[0].then=[a];await OAG.applyComboSnapshot(c,1,16)}});
-    await page.locator('#oag-tab-combo').click();await page.locator('#oag-slot').selectOption('1');await page.waitForFunction(()=>OAG.state.slot===1&&!OAG.state.dirty);
+    await page.locator('#oag-tab-combo').click();await page.locator('#oag-slot').selectOption('1');await page.waitForFunction(()=>OAG.state.slot===1&&!OAG.contextLoading&&!OAG.state.dirty);
     const out=process.env.OAG_UI_OUTPUT||'build/smart-ui';fs.mkdirSync(out,{recursive:true});
     await page.screenshot({path:path.join(out,'OAG_SMART_COMBO_DESKTOP.png'),fullPage:true});
-    await page.locator('#oag-tab-weapon').click();await page.locator('#oag-weapon-slot').selectOption('1');await page.waitForFunction(()=>OAG.state.weaponSlot===1&&!OAG.state.weaponDirty);
+    await page.locator('#oag-tab-weapon').click();await page.locator('#oag-weapon-slot').selectOption('1');await page.waitForFunction(()=>OAG.state.weaponSlot===1&&!OAG.contextLoading&&!OAG.state.weaponDirty);
     await page.screenshot({path:path.join(out,'OAG_WEAPON_TUNING_DESKTOP.png'),fullPage:true});
     await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:path.join(out,'OAG_WEAPON_TUNING_MOBILE.png'),fullPage:true});

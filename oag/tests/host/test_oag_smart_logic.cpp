@@ -59,6 +59,17 @@ void logic() {
     Fixture f;f.p=single(OagTrigger::Double);auto& b=f.p[0].branches[0];b.conditionCount=2;
     b.conditions[1].control=g(5);b.conditions[1].kind=OagTrigger::Held;f.load();
     f.down(1,ButtonLeftBumper|ButtonRightBumper);f.down(40,ButtonLeftBumper);f.down(100,ButtonLeftBumper|ButtonRightBumper);f.down(140,ButtonLeftBumper);f.tick(501);assert(f.e.executionCount()==1);
+    Fixture duration;duration.p=single(OagTrigger::Double);auto& db=duration.p[0].branches[0];db.conditions[0].control=g(4);db.conditionCount=2;
+    db.conditions[1].control=g(5);db.conditions[1].kind=OagTrigger::Hold;db.conditions[1].holdMs=800;duration.load();duration.down(1,ButtonLeftBumper);
+    duration.down(850,ButtonLeftBumper|ButtonNorth);duration.down(880,ButtonLeftBumper);duration.down(950,ButtonLeftBumper|ButtonNorth);duration.down(980,ButtonLeftBumper);duration.tick(1350);assert(duration.e.executionCount()==1);
+    duration.down(1700,ButtonLeftBumper|ButtonNorth);duration.down(1730,ButtonLeftBumper);duration.down(1800,ButtonLeftBumper|ButtonNorth);duration.down(1830,ButtonLeftBumper);duration.tick(2200);assert(duration.e.executionCount()==2);
+    Fixture holdFirst;holdFirst.p=duration.p;std::swap(holdFirst.p[0].branches[0].conditions[0],holdFirst.p[0].branches[0].conditions[1]);
+    holdFirst.load();holdFirst.down(1,ButtonLeftBumper);
+    holdFirst.down(850,ButtonLeftBumper|ButtonNorth);holdFirst.down(880,ButtonLeftBumper);holdFirst.down(950,ButtonLeftBumper|ButtonNorth);holdFirst.down(980,ButtonLeftBumper);holdFirst.tick(1350);
+    holdFirst.down(1700,ButtonLeftBumper|ButtonNorth);holdFirst.down(1730,ButtonLeftBumper);holdFirst.down(1800,ButtonLeftBumper|ButtonNorth);holdFirst.down(1830,ButtonLeftBumper);holdFirst.tick(2200);assert(holdFirst.e.executionCount()==2);
+    Fixture noDuplicate;noDuplicate.p=single(OagTrigger::Long);noDuplicate.p[0].branchCount=2;
+    noDuplicate.p[0].branches[1]=branch(OagTrigger::Hold);noDuplicate.p[0].branches[1].conditions[0].holdMs=1200;
+    noDuplicate.load();noDuplicate.down(1);noDuplicate.tick(801);noDuplicate.tick(1201);assert(noDuplicate.e.executionCount()==1);
     Fixture negative;negative.p=f.p;negative.p[0].branches[0].conditions[1].negate=1;negative.load();
     negative.down(1);negative.up(30);negative.down(100);negative.up(130);negative.tick(501);assert(negative.e.executionCount()==1);
     Fixture fallback;fallback.p=f.p;auto& r=fallback.p[0].branches[0];r.elseCount=1;r.actions[1]=r.actions[0];r.actions[1].control=g(2);fallback.load();
