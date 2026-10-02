@@ -1,0 +1,50 @@
+name: Build Water Tank Sizer APK
+
+on:
+  push:
+    branches: [ water-tank-sizer-apk-v2 ]
+    paths:
+      - 'water-tank-sizer-build/**'
+      - '.github/workflows/water-tank-sizer-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout payload
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Clone Android WebView shell
+        run: git clone --depth=1 https://github.com/Karzzzzz520/HtmlWrapper.git wrapper
+
+      - name: Inject Water Tank Sizer V2
+        shell: bash
+        run: |
+          cat water-tank-sizer-build/html_*.part > wrapper/app/src/main/assets/index.html
+          printf '%s\n' '<resources><string name="app_name">Water Tank Sizer</string></resources>' > wrapper/app/src/main/res/values/strings.xml
+          sed -i 's/applicationId "com.htmlwrapper"/applicationId "com.watertanksizer.app"/' wrapper/app/build.gradle
+
+      - name: Build APK
+        shell: bash
+        run: |
+          cd wrapper
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../Water-Tank-Sizer-Android-V2.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Water-Tank-Sizer-Android-V2
+          path: Water-Tank-Sizer-Android-V2.apk
+          if-no-files-found: error
