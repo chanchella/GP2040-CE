@@ -34,7 +34,7 @@ label span{display:flex;align-items:center;gap:6px}
 label em{font-style:normal;color:var(--muted);font-weight:600}
 .appbar{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;gap:16px;align-items:center;padding:14px 24px;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:12px}
-.logo{width:46px;height:46px;border-radius:10px;background:var(--soft);display:grid;place-items:center;font-size:24px}
+.logo{width:52px;height:52px;border-radius:11px;background:var(--soft);display:grid;place-items:center;overflow:hidden;border:1px solid #b8cce0}.app-logo{width:100%;height:100%;object-fit:cover;display:block}
 h1{font-size:20px;margin:0}
 .brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
 .header-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -93,7 +93,7 @@ small,.muted{color:var(--muted);font-weight:400}
 .button-row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
 .button-like{display:inline-flex;align-items:center}
 footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 15px 30px}
-.print-watermark{display:none;pointer-events:none}
+.print-watermark{display:none;pointer-events:none}\n.report-hidden{display:none!important}\nbody.pdf-mode{background:#fff}.pdf-mode .appbar,.pdf-mode .tools-card,.pdf-mode footer,.pdf-mode #search,.pdf-mode .button-row,.pdf-mode .view-toggle{display:none!important}.pdf-mode .layout{width:100%;margin:0;display:block}.pdf-mode .sheet-card{box-shadow:none;border:1px solid #8b9db0;margin:0 0 10px;background:#fff}.pdf-mode .qty{border:0;padding:0;background:transparent}.pdf-mode .result-grid{grid-template-columns:repeat(4,1fr)}
 
 @media(max-width:980px){
   .project-grid-excel,.inputs-grid-excel,.tank-inputs-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -112,7 +112,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 15px 30px
   .responsive-head{align-items:stretch;flex-direction:column}
 }
 @media(max-width:540px){
-  h1{font-size:16px}.brand p{display:none}.logo{width:38px;height:38px;border-radius:11px;font-size:20px}
+  h1{font-size:16px}.brand p{display:none}.logo{width:42px;height:42px;border-radius:9px}
   .header-actions button{font-size:11px;padding:7px 8px}
   .sheet-card{padding:12px}
   .project-grid-excel,.inputs-grid-excel,.tank-inputs-grid,.result-grid{grid-template-columns:1fr}
@@ -127,7 +127,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 15px 30px
   .layout{width:100%;margin:0;display:block;position:relative;z-index:2}
   .sheet-card{box-shadow:none;border:1px solid #8b9db0;margin:0 0 10px;break-inside:avoid}
   .print-watermark{display:block!important;position:fixed;left:50%;top:48%;width:58vw;max-width:180mm;height:auto;transform:translate(-50%,-50%);opacity:.075;z-index:10;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .demand-row{break-inside:avoid}.qty{border:0;padding:0;background:transparent}
+  .demand-row{break-inside:avoid}.report-hidden{display:none!important}.qty{border:0;padding:0;background:transparent}
   .result-grid{grid-template-columns:repeat(4,1fr)}
   .top-strip{padding-top:6px}
 }
@@ -135,11 +135,11 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 15px 30px
 </style>
 </head>
 <body>
-  <img class="print-watermark" src="kareem-logo.png" alt="" aria-hidden="true">
+  <img class="print-watermark" src="file:///android_res/drawable/app_icon.jpg" alt="" aria-hidden="true">
 
   <header class="appbar">
     <div class="brand">
-      <div class="logo">💧</div>
+      <div class="logo"><img class="app-logo" src="file:///android_res/drawable/app_icon.jpg" alt="Water Tank Sizer logo"></div>
       <div>
         <h1>Water Supply Tank Sizing</h1>
         <p>Workbook Style • Print Ready • V3</p>
@@ -147,7 +147,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 15px 30px
     </div>
     <div class="header-actions">
       <button id="saveBtn" class="ghost">Save</button>
-      <button id="printBtn" class="ghost">Print / PDF</button>
+      <button id="printBtn" class="ghost">Print</button>\n      <button id="savePdfBtn" class="ghost">Save PDF</button>
       <button id="resetBtn" class="danger-ghost">Reset</button>
     </div>
   </header>
@@ -501,6 +501,16 @@ function loadSnapshot(s){
   if(s.inputs) Object.entries(s.inputs).forEach(([id,v])=>{if($(id))$(id).value=v});
   updateGeometryLabels(); renderRows(); calculate();
 }
+function prepareReportMode(on){
+  document.body.classList.toggle("pdf-mode", !!on);
+  document.querySelectorAll(".demand-row").forEach(el=>{
+    const qty=Number(state.quantities[el.dataset.id]||0);
+    el.classList.toggle("report-hidden", !!on && qty<=0);
+  });
+}
+window.prepareReportMode=prepareReportMode;
+window.addEventListener("beforeprint",()=>prepareReportMode(true));
+window.addEventListener("afterprint",()=>prepareReportMode(false));
 function init(){
   Object.entries(DATA.standards).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=v.name;$("standard").appendChild(o)});
   for(let p=0;p<=40;p+=5){const o=document.createElement("option");o.value=String(p/100);o.textContent=p+"%";$("safetyFactor").appendChild(o)}
@@ -512,7 +522,20 @@ function init(){
   $("hideUnusedBtn").addEventListener("click",()=>{state.demandView="used";renderRows();});
   $("showAllBtn").addEventListener("click",()=>{state.demandView="all";renderRows();});
   $("saveBtn").addEventListener("click",()=>{localStorage.setItem("wts-project",JSON.stringify(snapshot()));$("statusBadge").textContent="Saved";});
-  $("printBtn").addEventListener("click",()=>{if(window.Android?.printPage) window.Android.printPage(); else window.print();});
+  $("printBtn").addEventListener("click",()=>{
+    prepareReportMode(true);
+    try{
+      if(window.Android && typeof window.Android.printPage==="function") window.Android.printPage();
+      else window.print();
+    }catch(e){ prepareReportMode(false); alert("Print error: "+e.message); }
+  });
+  $("savePdfBtn").addEventListener("click",()=>{
+    prepareReportMode(true);
+    try{
+      if(window.Android && typeof window.Android.savePdf==="function") window.Android.savePdf();
+      else { window.print(); }
+    }catch(e){ prepareReportMode(false); alert("PDF error: "+e.message); }
+  });
   $("resetBtn").addEventListener("click",()=>{if(confirm("Reset current calculation?")){localStorage.removeItem("wts-project");document.querySelectorAll(".project-grid-excel input").forEach(x=>x.value="");applyStandard(state.standard,true);}});
   $("exportBtn").addEventListener("click",()=>{
     const content=JSON.stringify(snapshot(),null,2);
