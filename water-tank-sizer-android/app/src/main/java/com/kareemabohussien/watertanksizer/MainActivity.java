@@ -143,118 +143,73 @@ public class MainActivity extends Activity {
 
     private void writePdf(Uri uri) {
         webView.postDelayed(() -> {
-            ParcelFileDescriptor destination = null;
+            PdfDocument document = new PdfDocument();
+            Bitmap bitmap = null;
             try {
-                destination = getContentResolver().openFileDescriptor(uri, "w");
-                if (destination == null) {
-                    throw new IllegalStateException("Cannot open selected PDF location");
-                }
+                // The report HTML is authored at the exact A4-landscape aspect ratio.
+                // Temporarily render the WebView at that report size so the PDF is not
+                // a tiny screenshot inside a huge white page.
+                final int renderWidth = 1123;
+                final int renderHeight = 794;
 
-                final ParcelFileDescriptor finalDestination = destination;
-                final PrintDocumentAdapter adapter =
-                        webView.createPrintDocumentAdapter("Water Tank Sizing - Kareem abo Hussien");
+                int widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(
+                        renderWidth, android.view.View.MeasureSpec.EXACTLY);
+                int heightSpec = android.view.View.MeasureSpec.makeMeasureSpec(
+                        renderHeight, android.view.View.MeasureSpec.EXACTLY);
 
-                final PrintAttributes attrs = new PrintAttributes.Builder()
-                        .setMediaSize(PrintAttributes.MediaSize.ISO_A4.asLandscape())
-                        .setResolution(new PrintAttributes.Resolution("v8pdf", "V8 PDF", 300, 300))
-                        .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-                        .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
-                        .build();
+                webView.measure(widthSpec, heightSpec);
+                webView.layout(0, 0, renderWidth, renderHeight);
 
-                final CancellationSignal cancellationSignal = new CancellationSignal();
-
-                adapter.onLayout(
-                        null,
-                        attrs,
-                        cancellationSignal,
-                        new PrintDocumentAdapter.LayoutResultCallback() {
-                            @Override
-                            public void onLayoutFinished(PrintDocumentInfo info, boolean changed) {
-                                adapter.onWrite(
-                                        new PageRange[]{PageRange.ALL_PAGES},
-                                        finalDestination,
-                                        cancellationSignal,
-                                        new PrintDocumentAdapter.WriteResultCallback() {
-                                            @Override
-                                            public void onWriteFinished(PageRange[] pages) {
-                                                try {
-                                                    finalDestination.close();
-                                                } catch (Exception ignored) {
-                                                }
-                                                Toast.makeText(
-                                                        MainActivity.this,
-                                                        "A4 landscape PDF saved successfully",
-                                                        Toast.LENGTH_LONG
-                                                ).show();
-                                                restoreReportMode();
-                                            }
-
-                                            @Override
-                                            public void onWriteFailed(CharSequence error) {
-                                                try {
-                                                    finalDestination.close();
-                                                } catch (Exception ignored) {
-                                                }
-                                                Toast.makeText(
-                                                        MainActivity.this,
-                                                        "PDF save failed" + (error == null ? "" : ": " + error),
-                                                        Toast.LENGTH_LONG
-                                                ).show();
-                                                restoreReportMode();
-                                            }
-
-                                            @Override
-                                            public void onWriteCancelled() {
-                                                try {
-                                                    finalDestination.close();
-                                                } catch (Exception ignored) {
-                                                }
-                                                restoreReportMode();
-                                            }
-                                        }
-                                );
-                            }
-
-                            @Override
-                            public void onLayoutFailed(CharSequence error) {
-                                try {
-                                    finalDestination.close();
-                                } catch (Exception ignored) {
-                                }
-                                Toast.makeText(
-                                        MainActivity.this,
-                                        "PDF layout failed" + (error == null ? "" : ": " + error),
-                                        Toast.LENGTH_LONG
-                                ).show();
-                                restoreReportMode();
-                            }
-
-                            @Override
-                            public void onLayoutCancelled() {
-                                try {
-                                    finalDestination.close();
-                                } catch (Exception ignored) {
-                                }
-                                restoreReportMode();
-                            }
-                        },
-                        null
+                bitmap = Bitmap.createBitmap(
+                        renderWidth,
+                        renderHeight,
+                        Bitmap.Config.ARGB_8888
                 );
-            } catch (Exception e) {
-                if (destination != null) {
-                    try {
-                        destination.close();
-                    } catch (Exception ignored) {
+                Canvas webCanvas = new Canvas(bitmap);
+                webCanvas.drawColor(Color.WHITE);
+                webView.draw(webCanvas);
+
+                final int pageWidth = 842;   // A4 landscape at 72 dpi
+                final int pageHeight = 595;
+
+                PdfDocument.PageInfo pageInfo =
+                        new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create();
+                PdfDocument.Page page = document.startPage(pageInfo);
+                Canvas pdfCanvas = page.getCanvas();
+                pdfCanvas.drawColor(Color.WHITE);
+
+                Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+                RectF destination = new RectF(0, 0, pageWidth, pageHeight);
+                pdfCanvas.drawBitmap(bitmap, null, destination, paint);
+
+                document.finishPage(page);
+
+                try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                    if (out == null) {
+                        throw new IllegalStateException("Cannot open selected PDF location");
                     }
+                    document.writeTo(out);
+                    out.flush();
                 }
+
                 Toast.makeText(
-                        MainActivity.this,
+                        this,
+                        "A4 landscape PDF saved successfully",
+                        Toast.LENGTH_LONG
+                ).show();
+            } catch (Exception e) {
+                Toast.makeText(
+                        this,
                         "PDF save failed: " + e.getMessage(),
                         Toast.LENGTH_LONG
                 ).show();
+            } finally {
+                if (bitmap != null) bitmap.recycle();
+                document.close();
                 restoreReportMode();
+                webView.requestLayout();
             }
-        }, 500);
+        }, 650);
     }
 
     private void restoreReportMode() {
