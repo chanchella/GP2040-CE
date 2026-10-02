@@ -2,7 +2,7 @@
 :root{--blue:#075baf;--navy:#083968;--ink:#14283a;--muted:#64788b;--line:#b9c8d7;--soft:#eef5fb;--soft2:#f8fbfe;--ok:#168352;--bad:#b64242;font-family:Arial,Segoe UI,sans-serif;color-scheme:light}
 *{box-sizing:border-box}body{margin:0;background:#eaf1f7;color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}
 .topbar{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fff;border-bottom:3px solid var(--blue);position:sticky;top:0;z-index:20}
-.brand-logo{width:62px;height:62px;object-fit:cover;border-radius:14px;border:1px solid #9fb7ce;box-shadow:0 2px 8px #0002;flex:0 0 auto}
+.brand-logo{width:62px;height:62px;border-radius:14px;box-shadow:0 2px 8px #0002;flex:0 0 auto}.brand-logo svg{display:block;width:100%;height:100%}
 .brand-copy{min-width:0}.brand-copy h1{font-size:20px;line-height:1.05;margin:0;color:var(--navy)}.brand-copy strong{display:block;font-size:13px;color:var(--blue);margin-top:4px}.brand-copy small{display:block;color:var(--muted);font-size:10px;margin-top:2px}
 .actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.actions button{border:1px solid var(--blue);background:#fff;color:var(--blue);border-radius:8px;padding:8px 11px;font-weight:700;font-size:12px}.actions .primary{background:var(--blue);color:#fff}.actions .danger{color:var(--bad);border-color:#e1bcbc}
 .app-sheet{width:min(1180px,calc(100% - 12px));margin:8px auto 18px;background:#fff;border:1px solid #9fb4c8;border-radius:12px;box-shadow:0 6px 24px #19334f12;overflow:hidden}
@@ -25,13 +25,22 @@
 @media(max-width:560px){.topbar{padding:8px}.brand-logo{width:48px;height:48px}.brand-copy small{display:none}.actions button{padding:6px 8px;font-size:10px}.sheet-head{grid-template-columns:1fr}.ref-row{grid-template-columns:1fr 1fr}.inputs-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.work-grid{grid-template-columns:1fr}.results{grid-template-columns:repeat(3,1fr)}.demand-add{grid-template-columns:1fr 70px auto}}
 body.report-mode{background:#fff}.report-mode .app-shell{display:none!important}.report-mode .print-sheet{display:block!important}
 .print-sheet{position:relative;width:1120px;height:760px;margin:0 auto;background:#fff;color:#172a3b;padding:18px 20px;overflow:hidden;font-family:Arial,Segoe UI,sans-serif}
-.pr-wm{position:absolute;width:430px;height:430px;object-fit:contain;left:345px;top:165px;opacity:.055;z-index:0}.pr-content{position:relative;z-index:2}.pr-head{display:grid;grid-template-columns:86px 1fr 1fr;gap:12px;align-items:center;border-bottom:3px solid #075baf;padding-bottom:8px}.pr-logo{width:82px;height:82px;object-fit:cover;border-radius:12px}.pr-title h1{margin:0;color:#083968;font-size:27px}.pr-title b{display:block;color:#075baf;font-size:16px;margin-top:3px}.pr-title small{color:#6b7b89}.pr-meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:10px}.pr-meta div{border-bottom:1px solid #c4d0da;padding:2px}.pr-main{display:grid;grid-template-columns:1.08fr .92fr;gap:10px;margin-top:9px}.pr-box{border:1px solid #9fb4c8;border-radius:7px;padding:7px;background:#fff9}.pr-box h3{margin:0 0 5px;color:#075baf;font-size:12px;border-bottom:1px solid #d1dce5;padding-bottom:4px}.pr-kv{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;font-size:9px}.pr-kv div{border:1px solid #d4dee7;border-radius:4px;padding:4px}.pr-kv span{display:block;color:#64778a;font-size:8px}.pr-kv b{font-size:10px}.pr-demand{margin-top:6px}.pr-demand-row{display:grid;grid-template-columns:1.8fr .45fr .65fr .7fr;gap:3px;font-size:8.5px;border-bottom:1px solid #e1e8ef;padding:3px}.pr-demand-row.head{font-weight:800;background:#eff5fa}.pr-demand-row b:last-child{text-align:right}.pr-right{display:grid;grid-template-rows:auto auto;gap:8px}.pr-tank-svg{width:100%;height:235px}.pr-results{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.pr-res{border:1px solid #c9d5df;border-radius:5px;padding:5px;background:#fff}.pr-res span{display:block;color:#66798a;font-size:8px}.pr-res b{font-size:13px;color:#12324e}.pr-res em{display:block;font-size:8px;font-style:normal;color:#66798a}.pr-footer{position:absolute;left:20px;right:20px;bottom:9px;border-top:1px solid #c7d3dd;padding-top:4px;display:flex;justify-content:space-between;color:#617586;font-size:8px}
+.pr-wm{position:absolute;width:430px;height:470px;left:345px;top:145px;opacity:.055;z-index:0;text-align:center;color:#075baf;font-weight:800;font-size:27px}.pr-wm svg{width:390px;height:390px;display:block;margin:0 auto}.pr-wm span{display:block;margin-top:-6px}.pr-content{position:relative;z-index:2}.pr-head{display:grid;grid-template-columns:86px 1fr 1fr;gap:12px;align-items:center;border-bottom:3px solid #075baf;padding-bottom:8px}.pr-logo{width:82px;height:82px;border-radius:12px}.pr-logo svg{width:100%;height:100%;display:block}.pr-title h1{margin:0;color:#083968;font-size:27px}.pr-title b{display:block;color:#075baf;font-size:16px;margin-top:3px}.pr-title small{color:#6b7b89}.pr-meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:10px}.pr-meta div{border-bottom:1px solid #c4d0da;padding:2px}.pr-main{display:grid;grid-template-columns:1.08fr .92fr;gap:10px;margin-top:9px}.pr-box{border:1px solid #9fb4c8;border-radius:7px;padding:7px;background:#fff9}.pr-box h3{margin:0 0 5px;color:#075baf;font-size:12px;border-bottom:1px solid #d1dce5;padding-bottom:4px}.pr-kv{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;font-size:9px}.pr-kv div{border:1px solid #d4dee7;border-radius:4px;padding:4px}.pr-kv span{display:block;color:#64778a;font-size:8px}.pr-kv b{font-size:10px}.pr-demand{margin-top:6px}.pr-demand-row{display:grid;grid-template-columns:1.8fr .45fr .65fr .7fr;gap:3px;font-size:8.5px;border-bottom:1px solid #e1e8ef;padding:3px}.pr-demand-row.head{font-weight:800;background:#eff5fa}.pr-demand-row b:last-child{text-align:right}.pr-right{display:grid;grid-template-rows:auto auto;gap:8px}.pr-tank-svg{width:100%;height:235px}.pr-results{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.pr-res{border:1px solid #c9d5df;border-radius:5px;padding:5px;background:#fff}.pr-res span{display:block;color:#66798a;font-size:8px}.pr-res b{font-size:13px;color:#12324e}.pr-res em{display:block;font-size:8px;font-style:normal;color:#66798a}.pr-footer{position:absolute;left:20px;right:20px;bottom:9px;border-top:1px solid #c7d3dd;padding-top:4px;display:flex;justify-content:space-between;color:#617586;font-size:8px}
 @page{size:A4 landscape;margin:5mm}@media print{html,body{margin:0!important;background:#fff!important}.app-shell{display:none!important}.print-sheet{display:block!important;width:1120px;height:760px;transform-origin:top left;page-break-after:avoid!important}.pr-wm{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head>
 <body>
 <div class="app-shell">
 <header class="topbar">
-  <img src="app_logo.jpg" class="brand-logo" alt="Water Tank Sizer logo">
+  <div class="brand-logo"><svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<rect x="3" y="3" width="114" height="114" rx="22" fill="#075baf"/>
+<rect x="61" y="27" width="34" height="47" rx="4" fill="#eef8ff"/>
+<path d="M66 20h7v7h-7zm10-8h8v15h-8zm11 5h7v10h-7z" fill="#fff"/>
+<path d="M66 34h24M66 44h24M66 54h24M66 64h24" stroke="#0b3f73" stroke-width="3"/>
+<path d="M31 27C24 38 18 47 18 57c0 10 6 18 13 18s13-8 13-18c0-10-6-19-13-30z" fill="#fff"/>
+<path d="M24 59c4 4 11 4 16-1-1 7-5 12-9 12-4 0-7-4-7-11z" fill="#42c4ff"/>
+<path d="M10 84c18-10 33-4 47 1 15 6 28 6 48-4v10c-19 10-34 9-49 3-13-5-28-10-46 0z" fill="#fff"/>
+<text x="12" y="109" font-family="Arial, sans-serif" font-size="16" font-weight="800" fill="#fff">KH</text>
+</svg></div>
   <div class="brand-copy"><h1>Water Tank Sizer</h1><strong>Kareem abo Hussien</strong><small>Water Supply Tank Sizing Engineering Tool</small></div>
   <div class="actions">
     <button id="saveBtn">Save</button><button id="printBtn" class="primary">Print</button><button id="savePdfBtn" class="primary">Save PDF</button><button id="resetBtn" class="danger">Reset</button>
@@ -123,10 +132,28 @@ body.report-mode{background:#fff}.report-mode .app-shell{display:none!important}
 </div>
 
 <section id="printSheet" class="print-sheet">
-  <img src="app_watermark.jpg" class="pr-wm" aria-hidden="true">
+  <div class="pr-wm" aria-hidden="true"><svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<rect x="3" y="3" width="114" height="114" rx="22" fill="#075baf"/>
+<rect x="61" y="27" width="34" height="47" rx="4" fill="#eef8ff"/>
+<path d="M66 20h7v7h-7zm10-8h8v15h-8zm11 5h7v10h-7z" fill="#fff"/>
+<path d="M66 34h24M66 44h24M66 54h24M66 64h24" stroke="#0b3f73" stroke-width="3"/>
+<path d="M31 27C24 38 18 47 18 57c0 10 6 18 13 18s13-8 13-18c0-10-6-19-13-30z" fill="#fff"/>
+<path d="M24 59c4 4 11 4 16-1-1 7-5 12-9 12-4 0-7-4-7-11z" fill="#42c4ff"/>
+<path d="M10 84c18-10 33-4 47 1 15 6 28 6 48-4v10c-19 10-34 9-49 3-13-5-28-10-46 0z" fill="#fff"/>
+<text x="12" y="109" font-family="Arial, sans-serif" font-size="16" font-weight="800" fill="#fff">KH</text>
+</svg><span>Kareem abo Hussien</span></div>
   <div class="pr-content">
     <div class="pr-head">
-      <img src="app_logo.jpg" class="pr-logo">
+      <div class="pr-logo"><svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<rect x="3" y="3" width="114" height="114" rx="22" fill="#075baf"/>
+<rect x="61" y="27" width="34" height="47" rx="4" fill="#eef8ff"/>
+<path d="M66 20h7v7h-7zm10-8h8v15h-8zm11 5h7v10h-7z" fill="#fff"/>
+<path d="M66 34h24M66 44h24M66 54h24M66 64h24" stroke="#0b3f73" stroke-width="3"/>
+<path d="M31 27C24 38 18 47 18 57c0 10 6 18 13 18s13-8 13-18c0-10-6-19-13-30z" fill="#fff"/>
+<path d="M24 59c4 4 11 4 16-1-1 7-5 12-9 12-4 0-7-4-7-11z" fill="#42c4ff"/>
+<path d="M10 84c18-10 33-4 47 1 15 6 28 6 48-4v10c-19 10-34 9-49 3-13-5-28-10-46 0z" fill="#fff"/>
+<text x="12" y="109" font-family="Arial, sans-serif" font-size="16" font-weight="800" fill="#fff">KH</text>
+</svg></div>
       <div class="pr-title"><h1>Water Supply Tank Sizing</h1><b>Kareem abo Hussien</b><small id="prStandard"></small></div>
       <div class="pr-meta"><div><b>Project:</b> <span id="prProject"></span></div><div><b>Project No:</b> <span id="prProjectNo"></span></div><div><b>Building:</b> <span id="prBuilding"></span></div><div><b>Building No:</b> <span id="prBuildingNo"></span></div><div><b>Tank Tag:</b> <span id="prTag"></span></div><div><b>Location:</b> <span id="prLocation"></span></div><div><b>Axes:</b> <span id="prAxes"></span></div><div><b>Rev:</b> <span id="prRev"></span></div></div>
     </div>
@@ -186,7 +213,7 @@ function renderRows(){
 }
 function applyStandard(k,reset){state.standard=k;var s=std();if(reset)state.quantities={};$("standardSubtitle").textContent=s.subtitle;$("additionalUnit").textContent="("+s.inputUnit+")";$("demandType").disabled=!s.selectableDemand;$("demandType").value=s.defaults.demandType;$("storageDays").value=s.defaults.storageDays;$("additionalDemand").value=s.defaults.additionalDemand;$("safetyFactor").value=String(s.defaults.safetyFactor);$("access").value=s.defaults.access;$("fillHours").value=s.defaults.fillHours;$("material").value=s.defaults.material;$("velocity").value=s.defaults.velocity;$("suctionPit").value=s.defaults.suctionPit;var g={practical:[2,3],aspe:[2,3],egypt:[5,4],qatar:[2,3],saudi:[4,4]};$("shape").value="Rectangular";$("dim1").value=g[k][0];$("dim2").value=g[k][1];fillPicker();geometryLabels();calc()}
 function geometryLabels(){var c=$("shape").value==="Circular";$("dim1Label").querySelector("label").textContent=c?"Diameter (m)":"Length (m)";$("dim2Label").style.display=c?"none":"flex"}
-function snap(){return{version:5,standard:state.standard,quantities:state.quantities,view:state.view,project:project(),inputs:{demandType:$("demandType").value,storageDays:$("storageDays").value,additionalDemand:$("additionalDemand").value,safetyFactor:$("safetyFactor").value,access:$("access").value,fillHours:$("fillHours").value,material:$("material").value,velocity:$("velocity").value,suctionPit:$("suctionPit").value,shape:$("shape").value,dim1:$("dim1").value,dim2:$("dim2").value}}}
+function snap(){return{version:5.1,standard:state.standard,quantities:state.quantities,view:state.view,project:project(),inputs:{demandType:$("demandType").value,storageDays:$("storageDays").value,additionalDemand:$("additionalDemand").value,safetyFactor:$("safetyFactor").value,access:$("access").value,fillHours:$("fillHours").value,material:$("material").value,velocity:$("velocity").value,suctionPit:$("suctionPit").value,shape:$("shape").value,dim1:$("dim1").value,dim2:$("dim2").value}}}
 function load(s){if(!s||!DATA.standards[s.standard])throw Error("Unsupported project file");state.standard=s.standard;state.quantities=s.quantities||{};state.view=s.view||"used";$("standard").value=s.standard;applyStandard(s.standard,false);if(s.project)Object.keys(s.project).forEach(function(id){if($(id))$(id).value=s.project[id]||""});if(s.inputs)Object.keys(s.inputs).forEach(function(id){if($(id))$(id).value=s.inputs[id]});geometryLabels();fillPicker();calc()}
 function buildPrint(){
  var c=calc(),s=std(),p=project();$("prStandard").textContent=s.name+" • "+s.subtitle;$("prProject").textContent=p.projectName||"—";$("prProjectNo").textContent=p.projectNo||"—";$("prBuilding").textContent=p.buildingName||"—";$("prBuildingNo").textContent=p.buildingNo||"—";$("prTag").textContent=p.tankTag||"—";$("prLocation").textContent=p.tankLocation||"—";$("prAxes").textContent=p.axes||"—";$("prRev").textContent=p.revision||"—";
