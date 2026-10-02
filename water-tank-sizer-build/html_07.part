@@ -1,0 +1,10 @@
+RL.revokeObjectURL(a.href);
+  });
+  $("importFile").addEventListener("change",async e=>{const f=e.target.files[0];if(!f)return;try{loadSnapshot(JSON.parse(await f.text()));localStorage.setItem("wts-project",JSON.stringify(snapshot()));}catch(err){alert(err.message)}e.target.value="";});
+  try{const saved=JSON.parse(localStorage.getItem("wts-project")); if(saved) loadSnapshot(saved);}catch(_){}
+  if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
+init();
+</script>
+</body>
+</html>
