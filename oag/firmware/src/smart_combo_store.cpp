@@ -43,6 +43,26 @@ void __not_in_flash_func(writeSmart)(void* p) {
 }
 }
 namespace oag::firmware {
+bool OagSmartComboStore::empty(std::size_t slot) const {
+    if (slot >= kOagSmartCombos) return false;
+    const auto& p = record_.payload.programs[slot];
+    if (p.name[0] || p.enabled || p.branchCount != 1 || p.consumeInput) return false;
+    const auto& b = p.branches[0];
+    if (!b.enabled || b.otherwise || b.mode != OagSmartMode::Once || !b.cancelable || b.priority || b.conditionCount != 1 || b.actionCount != 1) return false;
+    const auto& c = b.conditions[0]; const auto& a = b.actions[0];
+    OagSmartCondition dc; OagSmartAction da;
+    const auto blankTarget = [](const OagSmartTarget& t, unsigned code) {
+        return t.kind == OagSmartTargetKind::Pad && (!t.code || t.code == code) && t.strength == 100;
+    };
+    // Both the fresh firmware template and the UI's deleted-slot template
+    // are empty. Unnamed disabled custom definitions are still occupied.
+    return c.trigger == dc.trigger && c.join == dc.join && !c.negate && c.targetCount == 1 && c.taps == dc.taps &&
+        c.windowMs == dc.windowMs && c.holdMs == dc.holdMs && c.sequenceMs == dc.sequenceMs && c.chordMs == dc.chordMs &&
+        c.thresholdPermille == dc.thresholdPermille && blankTarget(c.targets[0], 6) &&
+        a.kind == da.kind && a.targetCount == 1 && !a.loopFrom && !a.lifetime && a.durationMs == da.durationMs &&
+        a.releaseMs == da.releaseMs && !a.beforeMs && !a.afterMs && a.repeatCount == da.repeatCount && !a.intervalMs &&
+        !a.valueX && !a.valueY && blankTarget(a.targets[0], 4);
+}
 bool OagSmartComboStore::ready() const {
     return reinterpret_cast<std::uintptr_t>(&__flash_binary_end) <= XIP_BASE + smartStart;
 }

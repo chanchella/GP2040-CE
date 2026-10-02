@@ -57,6 +57,9 @@ bool OagSmartComboPortal::handle(void* client, const char* method, const char* p
             char hex[headerBytes * 2 + 1] {}; encodeHex(&store_->editor().programs[i], headerBytes, hex);
             used += std::snprintf(json + used, jsonSize - used, "%s\"%s\"", i ? "," : "", hex);
         }
+        used += std::snprintf(json + used, jsonSize - used, "],\"empty\":[");
+        for (std::size_t i = 0; i < kOagSmartCombos; ++i)
+            used += std::snprintf(json + used, jsonSize - used, "%s%s", i ? "," : "", store_->empty(i) ? "true" : "false");
         std::snprintf(json + used, jsonSize - used, "]}"); return respond("200 OK", "application/json", json);
     }
     if (get && pathMatches(path, "/api/oag-smart/branch")) {
@@ -92,7 +95,7 @@ bool OagSmartComboPortal::handle(void* client, const char* method, const char* p
         const char* error = nullptr; if (!oagSmartValidate(pending_, error)) { transaction_ = false; return bad(error); }
         if (!store_->preview(pendingGame_, pendingSlot_, pending_)) return respond("409 Conflict", "text/plain", "OAG preview failed");
         transaction_ = false; testing_ = false; test_->reset();
-        std::snprintf(json, jsonSize, "{\"revision\":%lu,\"dirty\":true}", static_cast<unsigned long>(store_->revision()));
+        std::snprintf(json, jsonSize, "{\"revision\":%lu,\"dirty\":true,\"empty\":%s}", static_cast<unsigned long>(store_->revision()), store_->empty(pendingSlot_) ? "true" : "false");
         return respond("200 OK", "application/json", json);
     }
     if (post && (pathMatches(path, "/api/oag-smart/save") || pathMatches(path, "/api/oag-smart/discard"))) {

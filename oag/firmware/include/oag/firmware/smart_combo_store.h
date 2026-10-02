@@ -12,6 +12,7 @@ public:
     const OagSmartGame& editor() const { return record_.payload; }
     std::size_t editorGame() const { return editorGame_; }
     bool dirty() const { return dirty_; }
+    bool empty(std::size_t slot) const;
     bool discard(std::size_t game);
     bool preview(std::size_t game, std::size_t slot, const OagSmartProgram&);
     bool save(std::size_t game); // only called by the explicit SAVE endpoint

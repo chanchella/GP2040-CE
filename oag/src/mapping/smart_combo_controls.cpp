@@ -36,7 +36,7 @@ bool oagSmartDown(const OagSmartTarget& t, const OagSmartInput& in, std::uint16_
     if (t.code >= 18 && t.code <= 33) {
         const auto tx = std::int64_t(std::numeric_limits<std::int32_t>::max()) * threshold / 1000;
         const auto x = t.code >= 26 ? in.pad.lx : in.pad.rx, y = t.code >= 26 ? in.pad.ly : in.pad.ry;
-        const int sx = x > tx ? 1 : (x < -tx ? -1 : 0), sy = y > tx ? 1 : (y < -tx ? -1 : 0);
+        const int sx = x >= tx ? 1 : (x <= -tx ? -1 : 0), sy = y >= tx ? 1 : (y <= -tx ? -1 : 0);
         int dx = 0, dy = 0; directions(t.code, dx, dy); return sx == dx && sy == dy;
     }
     return false;

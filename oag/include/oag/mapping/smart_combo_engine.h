@@ -22,7 +22,6 @@ private:
         std::uint8_t previous = 0, taps = 0, sequence = 0;
         bool session = false, longFired = false, blocked = false;
         std::uint16_t resolveMs = 0, longLimitMs = 60000;
-        std::uint8_t maxTaps = 1;
         std::uint64_t firstUs = 0, downUs = 0, lastTapUs = 0;
         std::uint32_t wheelGeneration = 0;
         bool wheelSeen = false;
@@ -44,6 +43,10 @@ private:
     bool overlaps(const OagSmartBranch&, const OagSmartBranch&) const;
     void execute(const OagSmartBranch&, Runner&, const OagSmartInput&, std::uint64_t);
     void start(std::size_t, std::size_t, std::uint64_t, bool test = false);
+    struct Horizon { std::uint16_t windowMs = 0, longMs = 60000; };
+    void compileHorizons(const OagSmartGame&);
+    std::array<Horizon, 307> horizons_ {}; // 34 pad + 255 key + 16 mouse + 2 wheel
+    bool compiled_ = false;
     std::array<std::array<std::array<Detector, kOagSmartConditions>, kOagSmartBranches>, kOagSmartCombos> detectors_ {};
     std::array<std::array<bool, kOagSmartBranches>, kOagSmartCombos> previousBranches_ {};
     std::array<Runner, kOagSmartCombos> runners_ {};

@@ -8,6 +8,20 @@ bool level(OagSmartTrigger t) { return t == OagSmartTrigger::Held || t == OagSma
 unsigned count(const OagSmartCondition& c) {
     return c.trigger == OagSmartTrigger::Double ? 2 : c.trigger == OagSmartTrigger::Triple ? 3 : c.trigger == OagSmartTrigger::Multi ? c.taps : 1;
 }
+std::size_t horizonIndex(const OagSmartTarget& t) {
+    switch (t.kind) {
+    case OagSmartTargetKind::Pad: if (t.code >= 1 && t.code <= 34) return t.code - 1; break;
+    case OagSmartTargetKind::Key: if (t.code >= 1 && t.code <= 255) return 34 + t.code - 1; break;
+    case OagSmartTargetKind::Mouse:
+        if (t.code && !(t.code & (t.code - 1))) {
+            unsigned bit = 0; for (auto v = t.code; v > 1; v >>= 1) ++bit;
+            return 289 + bit;
+        }
+        break;
+    case OagSmartTargetKind::Wheel: if (t.code == 1 || t.code == 2) return 305 + t.code - 1; break;
+    }
+    return 307;
+}
 std::uint64_t ms(std::uint16_t v) { return std::uint64_t(v) * 1000; }
 unsigned specificity(const OagSmartBranch& b) {
     unsigned score = b.priority * 4096u + b.conditionCount * 256u;
@@ -27,7 +41,26 @@ void OagSmartComboEngine::reset() {
     for (auto& p : detectors_) for (auto& b : p) for (auto& d : b) d = Detector {};
     for (auto& b : previousBranches_) b.fill(false);
     for (auto& r : runners_) r = Runner {};
-    output_ = {}; filtered_ = {}; game_ = nullptr;
+    output_ = {}; filtered_ = {}; game_ = nullptr; compiled_ = false;
+}
+void OagSmartComboEngine::compileHorizons(const OagSmartGame& g) {
+    horizons_.fill(Horizon {});
+    // Configuration is immutable until reset (the firmware uses its RAM
+    // revision). Recognition does no quadratic scan on a button edge.
+    for (const auto& p : g.programs) if (p.enabled)
+        for (std::size_t b = 0; b < p.branchCount; ++b) if (p.branches[b].enabled && !p.branches[b].otherwise)
+            for (std::size_t c = 0; c < p.branches[b].conditionCount; ++c) {
+                const auto& cond = p.branches[b].conditions[c]; if (cond.negate) continue;
+                for (std::size_t t = 0; t < cond.targetCount; ++t) {
+                    const auto index = horizonIndex(cond.targets[t]); if (index >= horizons_.size()) continue;
+                    auto& h = horizons_[index];
+                    if (tap(cond.trigger)) h.windowMs = std::max(h.windowMs, cond.windowMs);
+                    if (cond.trigger == OagSmartTrigger::Sequence) h.windowMs = std::max(h.windowMs, cond.sequenceMs);
+                    if (cond.trigger == OagSmartTrigger::Chord) h.windowMs = std::max(h.windowMs, cond.chordMs);
+                    if (cond.trigger == OagSmartTrigger::Long || cond.trigger == OagSmartTrigger::Hold) h.longMs = std::min(h.longMs, cond.holdMs);
+                }
+            }
+    compiled_ = true;
 }
 void OagSmartComboEngine::consumeNativeWheel() {
     output_.mouse.wheel = 0;
@@ -49,10 +82,11 @@ void OagSmartComboEngine::start(std::size_t s, std::size_t b, std::uint64_t now,
 bool OagSmartComboEngine::test(const OagSmartGame& g, std::size_t s, std::size_t b, std::uint64_t now) {
     if (s >= g.programs.size() || b >= g.programs[s].branchCount || !g.programs[s].enabled || !g.programs[s].branches[b].enabled) return false;
     const char* error = nullptr; if (!oagSmartValidate(g.programs[s], error)) return false;
+    if (game_ != &g) compiled_ = false;
     game_ = &g; start(s, b, now, true); return true;
 }
 OagSmartComboEngine::Result OagSmartComboEngine::detect(const OagSmartCondition& c, Detector& d,
-    const OagSmartGame& g, const OagSmartInput& input, std::uint64_t now) {
+    const OagSmartGame&, const OagSmartInput& input, std::uint64_t now) {
     std::uint8_t down = 0;
     for (std::size_t t = 0; t < c.targetCount; ++t) if (oagSmartDown(c.targets[t], input, c.thresholdPermille)) down |= 1u << t;
     auto rising = static_cast<std::uint8_t>(down & ~d.previous);
@@ -111,22 +145,9 @@ OagSmartComboEngine::Result OagSmartComboEngine::detect(const OagSmartCondition&
         d.downUs = now;
         d.lastTapUs = now;
         if (!d.session) {
-            d.session = true; d.firstUs = now; d.taps = 0; d.resolveMs = c.windowMs; d.longLimitMs = 60000; d.maxTaps = static_cast<std::uint8_t>(count(c));
-            // Compile the recognition horizon on gesture start, not every
-            // scheduler tick. A single waits for competing taps/sequences.
-            for (const auto& p : g.programs) if (p.enabled)
-                for (std::size_t b = 0; b < p.branchCount; ++b) if (p.branches[b].enabled && !p.branches[b].otherwise)
-                    for (std::size_t k = 0; k < p.branches[b].conditionCount; ++k) {
-                        const auto& rival = p.branches[b].conditions[k];
-                        if (rival.negate) continue;
-                        bool shared = false;
-                        for (std::size_t t = 0; t < rival.targetCount; ++t) shared |= oagSmartSame(c.targets[0], rival.targets[t]);
-                        if (!shared) continue;
-                        if (tap(rival.trigger)) { d.resolveMs = std::max(d.resolveMs, rival.windowMs); d.maxTaps = std::max(d.maxTaps, static_cast<std::uint8_t>(count(rival))); }
-                        if (rival.trigger == OagSmartTrigger::Sequence) d.resolveMs = std::max(d.resolveMs, rival.sequenceMs);
-                        if (rival.trigger == OagSmartTrigger::Chord) d.resolveMs = std::max(d.resolveMs, rival.chordMs);
-                        if (rival.trigger == OagSmartTrigger::Long || rival.trigger == OagSmartTrigger::Hold) d.longLimitMs = std::min(d.longLimitMs, rival.holdMs);
-                    }
+            d.session = true; d.firstUs = now; d.taps = 0; d.resolveMs = c.windowMs; d.longLimitMs = 60000;
+            const auto index = horizonIndex(c.targets[0]);
+            if (index < horizons_.size()) { d.resolveMs = std::max(d.resolveMs, horizons_[index].windowMs); d.longLimitMs = horizons_[index].longMs; }
         }
     }
     if ((wheel ? rising != 0 : falling != 0) && d.session) {
@@ -269,6 +290,7 @@ void OagSmartComboEngine::execute(const OagSmartBranch& b, Runner& r, const OagS
     }
 }
 void OagSmartComboEngine::tick(const OagSmartGame& g, const OagSmartInput& input, std::uint64_t now) {
+    if (!compiled_ || game_ != &g) compileHorizons(g);
     game_ = &g; filtered_ = input; output_ = {};
     struct Candidate { std::uint8_t slot = 0, branch = 0, anchor = 0; unsigned score = 0; };
     std::array<Candidate, kOagSmartCombos * kOagSmartBranches> candidates {}; std::size_t size = 0;

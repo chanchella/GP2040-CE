@@ -33,6 +33,13 @@ void validation() {
     assert(oagSmartValidate(game.programs[0], e)); b.conditions[0].negate = 1; assert(!oagSmartValidate(game.programs[0], e));
     b.conditions[0].negate = 0; b.actions[0].kind = OagSmartActionKind::Loop; b.actions[0].loopFrom = 0; assert(!oagSmartValidate(game.programs[0], e));
     b.actions[0].kind = OagSmartActionKind::Tap; b.actions[0].targets[0].code = 35; assert(!oagSmartValidate(game.programs[0], e));
+    b.actions[0].targets[0] = pad(1); b.conditionCount = 2;
+    b.conditions[1].trigger = OagSmartTrigger::Held; b.conditions[1].targets[0] = pad(5);
+    b.conditions[1].join = OagSmartJoin::Or; b.conditions[1].negate = 1;
+    assert(!oagSmartValidate(game.programs[0], e)); // An OR group needs a positive input.
+    b.conditionCount = 3; b.conditions[1].negate = 0;
+    b.conditions[2].trigger = OagSmartTrigger::Held; b.conditions[2].targets[0] = pad(8); b.conditions[2].negate = 1;
+    assert(oagSmartValidate(game.programs[0], e));
     OagSmartRecord record; record.game = 2; record.crc = oagSmartCrc(&record.payload, sizeof(record.payload));
     assert(oagSmartRecordValid(record, 2)); assert(!oagSmartRecordValid(record, 1)); record.payload.programs[0].name[0] = 'x'; assert(!oagSmartRecordValid(record, 2));
 }
@@ -106,6 +113,8 @@ void analogAndNative() {
         OagSmartOutput out; oagSmartSet(pad(c), true, out); OagSmartInput in; in.pad = out.pad;
         assert(oagSmartDown(pad(c), in, 500)); oagSmartSet(pad(c), false, out); in.pad = out.pad; assert(!oagSmartDown(pad(c), in, 500));
     }
+    OagSmartOutput full; oagSmartSet(pad(18),true,full); OagSmartInput fullInput;fullInput.pad=full.pad;
+    assert(oagSmartDown(pad(18),fullInput,1000));
 }
 void resetIsolation() {
     clear(); auto& b = branch(0, OagSmartTrigger::Held, 6, 1); b.actions[0].kind = OagSmartActionKind::Hold; b.actions[0].durationMs = 0; b.mode = OagSmartMode::Toggle;
@@ -138,6 +147,19 @@ void legacyAndAllModes() {
     clear();auto& b=branch(0,OagSmartTrigger::Held,6,1);std::array<DiamondComboProgram,kDiamondComboSlots> old{};
     old[0].enabled=1;old[0].triggers[0].enabled=1;old[0].triggers[0].code=6;old[0].triggers[0].kind=DiamondComboTriggerKind::LogicalControl;
     assert(oagSmartLegacyMask(game,old)==1);game.programs[0].enabled=0;assert(oagSmartLegacyMask(game,old)==0);
+    clear(); auto& modified=branch(0,OagSmartTrigger::Held,5,1); modified.conditionCount=2;
+    modified.conditions[1].trigger=OagSmartTrigger::Double;modified.conditions[1].targets[0]=pad(4);
+    old[0].triggers[0].code=5;old[1]=old[0];old[1].triggers[0].code=4;
+    assert(oagSmartLegacyMask(game,old)==2); // Shared L1 modifier does not reserve L1.
+    modified.conditions[1].join=OagSmartJoin::Or;assert(oagSmartLegacyMask(game,old)==3);
+    modified.conditionCount=1;modified.conditions[0].trigger=OagSmartTrigger::Chord;
+    modified.conditions[0].targetCount=2;modified.conditions[0].targets[1]=pad(4);
+    assert(oagSmartLegacyMask(game,old)==3);
+    clear();auto& km=branch(0,OagSmartTrigger::Held,5,1);km.conditions[0].targets[0]=key(224);km.conditionCount=2;
+    km.conditions[1].trigger=OagSmartTrigger::Double;km.conditions[1].targets[0]=key(4);
+    old={};old[0].enabled=old[0].triggers[0].enabled=1;old[0].triggers[0].kind=DiamondComboTriggerKind::KeyboardUsage;
+    old[0].triggers[0].code=5;old[0].triggers[0].modifiers=1;old[1]=old[0];old[1].triggers[0].code=4;
+    assert(oagSmartLegacyMask(game,old)==2); // Ctrl+A reserves A, not Ctrl+B.
     for(auto mode:{OagSmartMode::WhileHeld,OagSmartMode::StopOnRelease}){clear();auto& m=branch(0,OagSmartTrigger::Held,6,1);m.mode=mode;m.actions[0].kind=OagSmartActionKind::Hold;m.actions[0].durationMs=mode==OagSmartMode::WhileHeld?0:1000;button(6,true,0);assert(generated(1));button(6,false,1);assert(!generated(1)&&!engine.active());}
     clear();auto& again=branch(0,OagSmartTrigger::Held,6,1);again.mode=OagSmartMode::LoopUntilAgain;again.actions[0].durationMs=10;again.actions[0].releaseMs=10;
     button(6,true,0);button(6,false,1);tick(10);tick(20);tick(21);assert(generated(1));button(6,true,22);assert(!engine.active());
@@ -145,8 +167,21 @@ void legacyAndAllModes() {
     button(6,true,0);button(6,false,1);auto starts=engine.starts();button(6,true,2);button(6,false,3);assert(engine.starts()==starts);
     (void)b;
 }
+void fullCapacityRecognition() {
+    clear(); const auto before = engine.starts();
+    for (unsigned s = 0; s < kOagSmartCombos; ++s) {
+        auto& p = game.programs[s];p.enabled=1;p.branchCount=kOagSmartBranches;
+        for (unsigned b = 0; b < kOagSmartBranches; ++b) {
+            auto& v=p.branches[b];v.conditionCount=kOagSmartConditions;v.actions[0].targets[0]=pad(1+s%4);
+            for(unsigned c=0;c<kOagSmartConditions;++c){v.conditions[c].targets[0]=pad(6);v.conditions[c].windowMs=500+s*20+b*50+c*25;}
+        }
+    }
+    tapAt(0);tick(1024);assert(engine.starts()==before);tick(1025);
+    assert(engine.starts()==before+1&&engine.lastSlot()==0&&engine.lastBranch()==0&&generated(1));
+    tick(1100);assert(engine.starts()==before+1);
+}
 }
 int main() {
-    validation(); tapArbitration(); longAndRelease(); logicAndPriority(); chordSequence(); modeAndActions(); analogAndNative(); resetIsolation(); branchesElseLoopsAndWheel(); legacyAndAllModes();
+    validation(); tapArbitration(); longAndRelease(); logicAndPriority(); chordSequence(); modeAndActions(); analogAndNative(); resetIsolation(); branchesElseLoopsAndWheel(); legacyAndAllModes(); fullCapacityRecognition();
     std::cout << "OAG_SMART_LOGIC_TESTS=PASS program=" << sizeof(OagSmartProgram) << " bank=" << sizeof(OagSmartGame) << " engine=" << sizeof(OagSmartComboEngine) << '\n';
 }

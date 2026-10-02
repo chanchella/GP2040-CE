@@ -39,6 +39,10 @@ try{
  let palette=await page.locator('.condition .target select option').evaluateAll(es=>es.map(e=>({value:e.value,label:e.textContent})));
  for(let code=1;code<=34;code++)assert(palette.some(v=>v.value==='0:'+code));for(let code=1;code<=255;code++)assert(palette.some(v=>v.value==='1:'+code));
  assert(palette.some(v=>v.label==='OAG Right Stick ↗'));assert(palette.some(v=>v.label==='OAG Left Stick ↙'));assert(palette.some(v=>v.value==='2:32768'));assert(palette.some(v=>v.value==='3:2'));
+ await page.locator('#slot').selectOption('2');await page.waitForFunction(()=>OAGS.slot===2&&!document.body.classList.contains('busy'));
+ await page.locator('.action input[data-field=durationMs]').fill('123');await page.evaluate(()=>OAGS.flush());
+ assert.equal(await page.evaluate(()=>OAGS.empty[1]),false);
+ await page.locator('#slot').selectOption('1');await page.waitForFunction(()=>OAGS.slot===1&&!document.body.classList.contains('busy'));
  await page.locator('#name').fill('OAG R1 double');await page.locator('#enabled').check();
  await page.locator('.condition select[data-field=trigger]').selectOption('1');
  await page.locator('.condition input[data-field=windowMs]').fill('500');
@@ -61,7 +65,7 @@ try{
  await page.locator('#testbranch').selectOption('0');await page.locator('#test').click();
  await page.waitForFunction(()=>document.getElementById('trace').textContent.includes('simulation'));
  await page.locator('#stoptest').click();assert.match(await page.locator('#trace').textContent(),/STOPPED/);
- await page.locator('#duplicate').click();await page.waitForFunction(()=>OAGS.slot===2&&!OAGS.edited&&!document.body.classList.contains('busy'));
+ await page.locator('#duplicate').click();await page.waitForFunction(()=>OAGS.slot===3&&!OAGS.edited&&!document.body.classList.contains('busy'));
  assert.equal(await page.locator('.branch').count(),3);
  await page.locator('#save').click();await page.waitForFunction(()=>!OAGS.dirty&&!document.body.classList.contains('busy'));
  await page.locator('#game').selectOption('2');await page.waitForFunction(()=>OAGS.game===2&&!document.body.classList.contains('busy'));
@@ -69,6 +73,9 @@ try{
  await page.locator('#game').selectOption('1');await page.waitForFunction(()=>OAGS.game===1&&!document.body.classList.contains('busy'));
  assert.equal(await page.locator('#name').inputValue(),'OAG R1 double');assert.equal(await page.locator('.branch').count(),3);
  await page.locator('#slot').selectOption('2');await page.waitForFunction(()=>OAGS.slot===2&&!document.body.classList.contains('busy'));
+ assert.equal(await page.locator('#name').inputValue(),'');assert.equal(await page.locator('#enabled').isChecked(),false);
+ assert.equal(await page.locator('.action input[data-field=durationMs]').inputValue(),'123');
+ await page.locator('#slot').selectOption('3');await page.waitForFunction(()=>OAGS.slot===3&&!document.body.classList.contains('busy'));
  await page.locator('#delete').click();await page.waitForFunction(()=>!OAGS.p.enabled&&!OAGS.edited&&!document.body.classList.contains('busy'));
  assert.equal(await page.locator('#enabled').isChecked(),false);assert(await page.evaluate(()=>OAGS.dirty));
  await page.locator('#reload').click();await page.waitForFunction(()=>!OAGS.dirty&&!document.body.classList.contains('busy'));

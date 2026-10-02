@@ -2151,8 +2151,13 @@ private:
         smartCombos_.tick(smartStore_.active(), input, nowUs); smartWheelEvent_ = 0;
         smartHasInput_ = true;
         const auto& filtered = smartCombos_.filteredInput();
+        auto legacyMouse = filtered.mouse;
+        // SMART sees raw wheel events; the legacy engine keeps the exact
+        // wheel/generation supplied by the stable composition path.
+        legacyMouse.wheel = mouse ? mouse->wheel : 0;
+        legacyMouse.generation = mouse ? mouse->generation : 0;
         auto output = diamondCombos_.apply(programs, keyboard ? &filtered.keyboard : nullptr,
-            mouse ? &filtered.mouse : nullptr, filtered.pad, nowUs, true, smartLegacyMask_);
+            mouse ? &legacyMouse : nullptr, filtered.pad, nowUs, true, smartLegacyMask_);
         oag::oagSmartCompose(smartCombos_.output(), output);
         return output;
     }

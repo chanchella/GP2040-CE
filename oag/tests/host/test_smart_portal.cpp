@@ -26,10 +26,12 @@ void initialize() {std::memset(oagTestFlash,0xff,sizeof(oagTestFlash));std::mems
 unsigned begin() {call("POST","/api/oag-smart/begin","game=1&slot=1&revision="+std::to_string(store.revision())+"&header="+hex(&p,36));assert(status=="200 OK");return jsonNumber("token");}
 void stage(unsigned token) {call("POST","/api/oag-smart/part","token="+std::to_string(token)+"&branch=0&hex="+hex(&p.branches[0],792));assert(status=="200 OK");}
 void tests() {
-    assert(writes==0&&erases==0);call("GET","/api/oag-smart/program?game=1&slot=1");assert(status=="200 OK"&&response.size()<1800);
+    assert(writes==0&&erases==0&&store.empty(0)&&store.empty(1));call("GET","/api/oag-smart/program?game=1&slot=1");assert(status=="200 OK"&&response.size()<1800&&response.find("\"empty\":[true,true")!=std::string::npos);
+    auto unnamed=p;unnamed.enabled=0;unnamed.name.fill(0);unnamed.branches[0].actions[0].durationMs=123;
+    assert(store.preview(0,1,unnamed)&&!store.empty(1));assert(store.discard(0)&&store.empty(1)&&writes==0);
     auto token=begin();call("POST","/api/oag-smart/preview","token="+std::to_string(token));assert(status=="400 Bad Request"&&!store.dirty());
     call("POST","/api/oag-smart/part","token="+std::to_string(token)+"&branch=0&hex=zz");assert(status=="400 Bad Request"&&!store.dirty());
-    stage(token);call("POST","/api/oag-smart/preview","token="+std::to_string(token));assert(status=="200 OK"&&store.dirty()&&writes==0&&erases==0);
+    stage(token);call("POST","/api/oag-smart/preview","token="+std::to_string(token));assert(status=="200 OK"&&store.dirty()&&writes==0&&erases==0&&response.find("\"empty\":false")!=std::string::npos);
     call("POST","/api/oag-smart/preview","token="+std::to_string(token));assert(status=="409 Conflict");
     call("POST","/api/oag-smart/save","game=1&revision=0");assert(status=="409 Conflict"&&writes==0);
     call("GET","/api/oag-smart/program?game=2&slot=1");assert(status=="409 Conflict"&&store.editorGame()==0);

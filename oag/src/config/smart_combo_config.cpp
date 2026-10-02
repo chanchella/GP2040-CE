@@ -59,8 +59,14 @@ bool oagSmartValidate(const OagSmartProgram& p, const char*& error) {
             hasIf = true;
             if (!branch.conditionCount) return fail("WHEN needs a condition");
             bool positive = false;
+            bool groupPositive = false;
             for (std::size_t c = 0; c < branch.conditionCount; ++c) {
                 const auto& cond = branch.conditions[c];
+                if (c && cond.join == OagSmartJoin::Or) {
+                    if (!groupPositive) return fail("Every OR group needs a positive OAG input alongside NOT");
+                    groupPositive = false;
+                }
+                groupPositive |= !cond.negate;
                 if (static_cast<unsigned>(cond.trigger) > 11 || static_cast<unsigned>(cond.join) > 1 || cond.negate > 1)
                     return fail("Invalid OAG condition logic");
                 if (!cond.targetCount || cond.targetCount > kOagSmartSequence || !cond.windowMs || !cond.holdMs ||
@@ -91,6 +97,7 @@ bool oagSmartValidate(const OagSmartProgram& p, const char*& error) {
                     return fail("Stick trigger needs one of the 16 stick directions");
             }
             if (!positive) return fail("WHEN needs a positive input condition alongside NOT");
+            if (!groupPositive) return fail("Every OR group needs a positive OAG input alongside NOT");
         }
         for (std::size_t a = 0; a < branch.actionCount; ++a) {
             const auto& action = branch.actions[a];
