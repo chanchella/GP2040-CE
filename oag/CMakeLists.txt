@@ -7,6 +7,11 @@ option(OAG_BUILD_HOST_TESTS "Build host-side OAG core tests" ON)
 add_library(oag_core STATIC
     src/config/controller_calibration.cpp
     src/config/diamond_config_record.cpp
+    src/config/oag_smart_config.cpp
+    src/config/oag_smart_store.cpp
+    src/config/oag_smart_api.cpp
+    src/mapping/oag_smart_combo_engine.cpp
+    src/mapping/oag_weapon_tuning_engine.cpp
     src/device/device_registry.cpp
     src/device/usb_device_classifier.cpp
     src/protocol/xusb/xusb_input_driver.cpp
@@ -56,6 +61,17 @@ target_compile_options(oag_core PRIVATE
 if(OAG_BUILD_HOST_TESTS)
     enable_testing()
     add_compile_options(-UNDEBUG)
+    add_executable(oag_smart_logic_tests tests/host/test_oag_smart_logic.cpp)
+    target_link_libraries(oag_smart_logic_tests PRIVATE oag_core)
+    add_test(NAME oag_smart_logic_tests COMMAND oag_smart_logic_tests)
+    add_executable(oag_smart_storage_tests tests/host/test_oag_smart_storage.cpp)
+    target_link_libraries(oag_smart_storage_tests PRIVATE oag_core)
+    add_test(NAME oag_smart_storage_tests COMMAND oag_smart_storage_tests)
+    add_executable(oag_weapon_tuning_tests tests/host/test_oag_weapon_tuning.cpp)
+    target_link_libraries(oag_weapon_tuning_tests PRIVATE oag_core)
+    add_test(NAME oag_weapon_tuning_tests COMMAND oag_weapon_tuning_tests)
+    add_executable(oag_smart_api_bridge tests/host/oag_smart_api_bridge.cpp)
+    target_link_libraries(oag_smart_api_bridge PRIVATE oag_core)
 
     add_executable(oag_pro_input_tests tests/host/test_pro_input.cpp)
     target_link_libraries(oag_pro_input_tests PRIVATE oag_core)

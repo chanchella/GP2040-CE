@@ -1,0 +1,115 @@
+// اختبار الواجهة الفعلية مع API الـC++ الحقيقي؛ الحفظ متحاكي في RAM.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+const require=createRequire(import.meta.url),{chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'smart_ui');
+const bridge=spawn(process.env.OAG_SMART_API_TEST||'build/host/oag_smart_api_bridge',[],{stdio:['pipe','pipe','inherit']});
+const replies=[];createInterface({input:bridge.stdout}).on('line',line=>{const resolve=replies.shift();if(resolve)resolve(line)});
+const request=(method,url,body='')=>new Promise(resolve=>{replies.push(resolve);bridge.stdin.write(method+'\t'+url+'\t'+body+'\n')});
+const names=n=>JSON.stringify({names:Array.from({length:n},(_,i)=>i===0?'OAG تجربة':'')});
+const server=http.createServer(async(req,res)=>{
+    let body='';for await(const chunk of req)body+=chunk;
+    if(req.url.startsWith('/api/oag/')){const line=await request(req.method,req.url,body),at=line.indexOf('\t');res.writeHead(+line.slice(0,at),{'Content-Type':'application/json'});res.end(line.slice(at+1));return}
+    if(req.url==='/api/games'||req.url.startsWith('/api/weapons?')){res.end(names(req.url==='/api/games'?20:24));return}
+    if(req.url.startsWith('/api/recoil?')){res.end(JSON.stringify({horizontalRaw:0,verticalRaw:0,tickMs:40,enabled:0}));return}
+    const name=req.url.split('?')[0],f=path.join(root,name==='/oag-smart'||name==='/oag-weapons'?'oag.html':path.basename(name));
+    if(!fs.existsSync(f)){res.writeHead(404);res.end('missing');return}
+    res.setHeader('Content-Type',f.endsWith('.js')?'application/javascript':f.endsWith('.css')?'text/css':'text/html; charset=utf-8');res.end(fs.readFileSync(f));
+});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const base='http://127.0.0.1:'+server.address().port;
+const errors=[];let browser;
+try {
+    browser=await chromium.launch({headless:true,...(process.env.OAG_BROWSER?{executablePath:process.env.OAG_BROWSER}:{}),args:['--no-sandbox','--disable-dev-shm-usage']});
+    const page=await browser.newPage({viewport:{width:1365,height:1100}});page.on('pageerror',e=>errors.push(e.message));
+    page.on('dialog',d=>d.accept(d.type()==='prompt'?'2':undefined));
+    await page.goto(base+'/oag-smart');await page.waitForFunction(()=>globalThis.OAG?.savedWeapon);
+    assert.equal(await page.locator('#oag-game option').count(),20);
+    assert.equal(await page.locator('[data-oag-condition="0:0"][data-field="control"] option[value^="k"]').count(),228);
+    assert.equal(await page.locator('[data-oag-condition="0:0"][data-field="control"] option[value^="s"]').count(),16);
+    assert.equal(await page.locator('#oag-demo').isVisible(),false);
+    await page.locator('#oag-name').fill('دبل R1 مع مسكة L1');await page.locator('#oag-enabled').check();
+    await page.locator('[data-oag-add-condition="0"]').click();
+    await page.locator('[data-oag-condition="0:1"][data-field="kind"]').selectOption('5');
+    await page.locator('[data-oag-add-action="0:then"]').click();
+    await page.locator('[data-oag-action="0:then:1"][data-field="kind"]').selectOption('9');
+    await page.locator('[data-oag-action="0:then:1"][data-field="x"]').fill('600');
+    await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);
+    const api=async p=>(await page.request.get(base+p)).json();
+    assert.equal((await api('/api/oag/status')).writes,0);
+    const draft=await api('/api/oag/combo?game=1&slot=1');assert.equal(draft.enabled,1);assert.equal(draft.branches[0].length,848);
+    assert.equal((await api('/api/oag/combo?game=1&slot=1&saved=1')).name,'');
+    await page.locator('#oag-save-combo').click();await page.waitForFunction(()=>OAG.state.dirty===false);
+    assert.equal((await api('/api/oag/status')).writes,1);
+    assert.equal((await api('/api/oag/combo?game=1&slot=1&saved=1')).name,'دبل R1 مع مسكة L1');
+    assert.equal((await api('/api/oag/combo?game=2&slot=1&saved=1')).enabled,0);
+    await page.locator('#oag-name').fill('تعديل مؤقت');await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);
+    await page.reload();await page.waitForFunction(()=>globalThis.OAG?.savedWeapon);
+    assert.equal(await page.locator('#oag-name').inputValue(),'تعديل مؤقت');
+    assert.equal(await page.evaluate(()=>OAG.savedCombo.name),'دبل R1 مع مسكة L1');
+    assert.equal(await page.evaluate(()=>OAG.state.dirty),true);
+    await page.locator('#oag-undo-combo').click();await page.waitForFunction(()=>!OAG.state.dirty);
+    assert.equal(await page.locator('#oag-name').inputValue(),'دبل R1 مع مسكة L1');
+    await page.locator('#oag-duplicate').click();await page.waitForFunction(()=>OAG.state.slot===2);await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);
+    await page.locator('#oag-undo-combo').click();await page.waitForFunction(()=>!OAG.state.dirty);
+    assert.equal(await page.locator('#oag-name').inputValue(),'');
+    await page.locator('#oag-tab-weapon').click();assert.equal(await page.locator('#oag-advanced').evaluate(el=>el.open),false);
+    await page.locator('[data-oag-fine="vertical:5"]').click();await page.locator('[data-oag-fine="vertical:1"]').click();
+    await page.locator('[data-oag-weapon="smoothing"]').evaluate(el=>{el.value='50';el.dispatchEvent(new Event('input',{bubbles:true}))});
+    await page.locator('[data-oag-weapon="rpm"]').fill('600');await page.locator('[data-oag-weapon="enabled"]').check();
+    assert.match(await page.locator('#oag-shot').innerText(),/100\.00 ms/);
+    await page.waitForTimeout(250);await page.evaluate(()=>OAG.chain);assert.equal((await api('/api/oag/status')).writes,1);
+    await page.locator('#oag-save-weapon').click();await page.waitForFunction(()=>!OAG.state.weaponDirty);
+    assert.equal((await api('/api/oag/status')).writes,2);assert.equal(await page.evaluate(()=>OAG.weapon.vertical),6);
+    await page.locator('[data-oag-fine="vertical:10"]').click();await page.locator('#oag-restore-weapon').click();await page.waitForFunction(()=>!OAG.state.weaponDirty);
+    assert.equal(await page.evaluate(()=>OAG.weapon.vertical),6);
+    await page.locator('#oag-weapon-slot').selectOption('2');await page.waitForFunction(()=>OAG.state.weaponSlot===2&&!OAG.state.weaponDirty);
+    assert.equal(await page.evaluate(()=>OAG.weapon.vertical),0);
+    await page.locator('#oag-copy-weapon').selectOption('1');await page.locator('#oag-copy-settings').click();await page.waitForFunction(()=>OAG.weapon.vertical===6);
+    assert.equal((await api('/api/oag/status')).writes,2);
+    await page.locator('#oag-restore-weapon').click();await page.waitForFunction(()=>!OAG.state.weaponDirty);
+    await page.locator('#oag-save-weapon').click();await page.waitForFunction(()=>OAG.weapon.configured===1);
+    assert.equal(await page.evaluate(()=>OAG.state.weaponDirty),false);
+    assert.equal((await api('/api/oag/status')).writes,3);
+    // A weapon save must leave an unsaved combo in RAM and out of Flash.
+    await page.locator('#oag-tab-combo').click();await page.locator('#oag-name').fill('لسه مش محفوظ');await page.waitForTimeout(350);await page.evaluate(()=>OAG.chain);
+    await page.locator('#oag-tab-weapon').click();await page.locator('#oag-save-weapon').click();await page.waitForFunction(()=>OAG.message&&OAG.state.weaponDirty===false);await page.evaluate(()=>OAG.chain);
+    assert.equal((await api('/api/oag/combo?game=1&slot=2&saved=1')).name,'');
+    assert.equal((await api('/api/oag/combo?game=1&slot=2')).name,'لسه مش محفوظ');
+    assert.equal(await page.evaluate(()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return new Set(ids).size===ids.length}),true);
+    // Every action and trigger can be serialized by the UI and validated by C++.
+    await page.evaluate(async()=>{for(let kind=0;kind<12;kind++){const c=OAG.emptyCombo();c.enabled=1;const q=c.branches[0].conditions[0];q.kind=kind;if(kind===8)q.refs=['g6','g5'];if(kind===9)q.refs=['g6','g6','g4'];if(kind===10)q.control='s12';if(kind===11)q.control='a5';await OAG.applyComboSnapshot(c,1,16)}for(let kind=0;kind<14;kind++){const c=OAG.emptyCombo();c.enabled=1;const a=OAG.action();a.kind=kind;if(kind===6)a.refs=['g5','k4'];if(kind===9)a.control='s12';if(kind===10)a.control='a1';if(kind===11)a.control='g8';if(kind===7||kind===8)c.branches[0].then.push(a);else c.branches[0].then=[a];await OAG.applyComboSnapshot(c,1,16)}});
+    await page.locator('#oag-tab-combo').click();await page.locator('#oag-slot').selectOption('1');await page.waitForFunction(()=>OAG.state.slot===1&&!OAG.state.dirty);
+    const out=process.env.OAG_UI_OUTPUT||'build/smart-ui';fs.mkdirSync(out,{recursive:true});
+    await page.screenshot({path:path.join(out,'OAG_SMART_COMBO_DESKTOP.png'),fullPage:true});
+    await page.locator('#oag-tab-weapon').click();await page.locator('#oag-weapon-slot').selectOption('1');await page.waitForFunction(()=>OAG.state.weaponSlot===1&&!OAG.state.weaponDirty);
+    await page.screenshot({path:path.join(out,'OAG_WEAPON_TUNING_DESKTOP.png'),fullPage:true});
+    await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.screenshot({path:path.join(out,'OAG_WEAPON_TUNING_MOBILE.png'),fullPage:true});
+    await page.locator('#oag-tab-combo').click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.screenshot({path:path.join(out,'OAG_SMART_COMBO_MOBILE.png'),fullPage:true});
+    if(process.env.OAG_PREVIEW_FILE){
+        const preview=await browser.newPage({viewport:{width:1365,height:1100}});preview.on('pageerror',e=>errors.push(e.message));
+        await preview.goto('file://'+path.resolve(process.env.OAG_PREVIEW_FILE));await preview.waitForFunction(()=>globalThis.OAG?.savedWeapon);
+        assert.equal(await preview.locator('#oag-demo').isVisible(),true);
+        await preview.evaluate(()=>{OAG.combo.name='دبل R1 مع مسكة L1';OAG.combo.enabled=1;const b=OAG.combo.branches[0],c=OAG.condition();c.control='g5';c.kind=5;b.conditions.push(c);const a=OAG.action();a.kind=9;a.control='s12';a.x=600;b.then.push(a);OAG.paintCombo()});
+        await preview.locator('#oag-save-combo').click();await preview.waitForFunction(()=>OAG.demoWrites===1);
+        await preview.reload();await preview.waitForFunction(()=>globalThis.OAG?.savedWeapon);
+        assert.equal(await preview.locator('#oag-name').inputValue(),'دبل R1 مع مسكة L1');
+        await preview.screenshot({path:path.join(out,'OAG_COMBO_PREVIEW_DESKTOP.png'),fullPage:true});
+        await preview.locator('#oag-tab-weapon').click();
+        await preview.evaluate(()=>{OAG.weapon=OAG.defaultWeapon();Object.assign(OAG.weapon,{configured:1,enabled:1,vertical:30,horizontal:-5,smoothing:50,antiShake:20,syncRpm:1});OAG.paintWeapon()});
+        await preview.locator('#oag-save-weapon').click();await preview.waitForFunction(()=>OAG.demoWrites===1);
+        await preview.screenshot({path:path.join(out,'OAG_WEAPON_PREVIEW_DESKTOP.png'),fullPage:true});
+        await preview.setViewportSize({width:390,height:844});assert.equal(await preview.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+        await preview.screenshot({path:path.join(out,'OAG_WEAPON_PREVIEW_MOBILE.png'),fullPage:true});
+        console.log('OAG_OFFLINE_PREVIEW=PASS — inline assets, clear demo status, local save survives reload');
+    }
+    assert.deepEqual(errors,[]);console.log('OAG_SMART_UI=PASS — real C++ API, RAM preview, isolated explicit saves, all triggers/actions, desktop/mobile');
+} finally {if(browser)await browser.close();server.close();bridge.kill()}

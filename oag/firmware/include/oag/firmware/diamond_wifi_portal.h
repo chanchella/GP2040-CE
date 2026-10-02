@@ -5,6 +5,7 @@
 
 #include "oag/config/diamond_game_library.h"
 #include "oag/mapping/pro_input_processor.h"
+#include "oag/config/oag_smart_api.h"
 
 namespace oag::firmware {
 
@@ -13,7 +14,8 @@ class DiamondGameLibraryStore;
 
 class DiamondWifiPortal {
 public:
-    bool start(DiamondConfigStore& store, DiamondGameLibraryStore& games);
+    bool start(DiamondConfigStore& store, DiamondGameLibraryStore& games, bool radioReady=false);
+    void attachSmart(oag::OagSmartApi& api) { smart_=&api; }
     void attachProInput(oag::ProInputProcessor& p, const oag::DeviceRegistry& r) { proInput_ = &p; proRegistry_ = &r; }
     void task();
     bool started() const { return started_; }
@@ -38,6 +40,8 @@ private:
     std::uint64_t playRebootAtUs_ = 0;
     bool playRebootPending_ = false;
     bool started_ = false;
+    bool liveMode_ = false;
+    oag::OagSmartApi* smart_ = nullptr;
 };
 
 } // namespace oag::firmware

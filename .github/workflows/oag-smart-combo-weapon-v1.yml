@@ -1,0 +1,66 @@
+name: OAG Smart Combo Weapon V1 Experimental
+on:
+  push:
+    branches: [chatgpt/oag-smart-combo-weapon-v1]
+    paths: ['oag/**', '.github/workflows/oag-smart-combo-weapon-v1.yml']
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with: {fetch-depth: 0}
+      - name: اتأكد من أصل النسخة والمسارات المستقرة
+        run: |
+          git merge-base --is-ancestor 2c7434a772b498ee7a8d53b3d45d87defb0c5231 HEAD
+          python3 oag/tools/check_smart_baseline.py
+          python3 oag/tools/check_architecture.py
+          node oag/tools/test_combo_editor.js
+          python3 oag/tools/embed_smart_ui.py
+          git diff --exit-code -- oag/firmware/src/oag_smart_assets.h
+      - name: ابني وشغّل اختبارات الكمبيوتر
+        run: |
+          cmake -S oag -B build/host -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/host --parallel 2
+          ctest --test-dir build/host --output-on-failure
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: اختبر الصفحة القديمة والجديدة في المتصفح
+        run: |
+          npm install --prefix build/ui --no-audit --no-fund playwright@1.62.1
+          build/ui/node_modules/.bin/playwright install --with-deps chromium
+          PLAYWRIGHT_MODULE="$GITHUB_WORKSPACE/build/ui/node_modules/playwright" OAG_SMART_API_TEST="$GITHUB_WORKSPACE/build/host/oag_smart_api_bridge" node oag/tools/test_smart_ui.mjs
+          PLAYWRIGHT_MODULE="$GITHUB_WORKSPACE/build/ui/node_modules/playwright" OAG_PRO_API_TEST="$GITHUB_WORKSPACE/build/host/oag_pro_portal_tests" node oag/tools/test_pro_ui.mjs
+  firmware:
+    needs: verify
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with: {fetch-depth: 0, submodules: recursive}
+      - uses: jwlawson/actions-setup-cmake@v2
+        with: {cmake-version: '3.24.x'}
+      - uses: Fortinbra/RaspberryPiPicoBuild@v7
+      - uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-oag-smart
+          submodules: recursive
+          fetch-depth: 1
+      - name: ابني نسخة Pico 2 W مستقلة
+        run: |
+          export PICO_SDK_PATH="$GITHUB_WORKSPACE/pico-sdk-oag-smart"
+          python3 oag/tools/prepare_dependencies.py
+          cmake -S oag/firmware -B build/fw -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=pico2_w -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/fw --parallel 2
+          mkdir -p artifacts
+          cp build/fw/*.uf2 artifacts/OAG_DIAMOND_RS8_FIX2_SMART_COMBO_WEAPON_V1_EXPERIMENTAL_Pico2W.uf2
+          python3 oag/tools/check_smart_artifact.py artifacts/*.uf2 --elf build/fw/OAG_UI5K_MULTIPROFILE_V1_Pico2W.elf > artifacts/ARTIFACT_CHECK.json
+          python3 oag/tools/make_smart_preview.py artifacts/OAG_SMART_COMBO_WEAPON_WIFI_PREVIEW.html
+          cp oag/docs/OAG_SMART_COMBO_WEAPON_V1_AR.md artifacts/
+          sha256sum artifacts/* > artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-SMART-COMBO-WEAPON-V1-EXPERIMENTAL
+          path: artifacts/*
+          if-no-files-found: error

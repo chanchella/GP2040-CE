@@ -24,7 +24,7 @@ public:
 private:std::uint32_t generation_=0;
 };
 class DiamondGameLibraryStore {};
-bool DiamondWifiPortal::start(DiamondConfigStore& s,DiamondGameLibraryStore& g){store_=&s;games_=&g;return true;}
+bool DiamondWifiPortal::start(DiamondConfigStore& s,DiamondGameLibraryStore& g,bool){store_=&s;games_=&g;return true;}
 #include "../../firmware/src/pro_input_portal.inc"
 void DiamondWifiPortal::handleHttpRequest(void* client,const char* request,std::size_t){
  char method[8]{},path[96]{};assert(std::sscanf(request,"%7s %95s",method,path)==2);

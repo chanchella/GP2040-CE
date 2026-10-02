@@ -1,0 +1,22 @@
+'use strict';
+OAG.switchTab=tab=>{OAG.state.tab=tab;OAG.$('combo-page').hidden=tab!=='combo';OAG.$('weapon-page').hidden=tab!=='weapon';OAG.$('tab-combo').classList.toggle('oag-selected',tab==='combo');OAG.$('tab-weapon').classList.toggle('oag-selected',tab==='weapon')};
+OAG.boot=async()=>{
+OAG.$('demo').hidden=!OAG.preview;OAG.$('connection').textContent=OAG.preview?'معاينة تفاعلية':'متصل بالبيكو';
+const games=await OAG.api('/api/games');OAG.selectNames(OAG.$('game'),games.names,'لعبة OAG');OAG.selectNames(OAG.$('slot'),Array(16).fill(''),'كومبو OAG');
+OAG.weaponNames=(await OAG.api('/api/weapons?game='+OAG.state.game)).names;await OAG.loadCombo();await OAG.loadWeapon();
+OAG.$('tab-combo').onclick=()=>OAG.switchTab('combo');OAG.$('tab-weapon').onclick=()=>OAG.switchTab('weapon');
+OAG.$('save-combo').onclick=OAG.safe(OAG.saveCombo);OAG.$('test').onclick=OAG.safe(OAG.testCombo);OAG.$('undo-combo').onclick=OAG.safe(OAG.undoCombo);OAG.$('duplicate').onclick=OAG.safe(OAG.duplicateCombo);
+OAG.$('stop').onclick=OAG.safe(async()=>{await OAG.serial(()=>OAG.post('/api/oag/cancel',{}));OAG.message('تم إيقاف المخرجات الخاصة بالكومبو')});
+OAG.$('delete').onclick=()=>{OAG.combo=OAG.emptyCombo();OAG.changed(true);OAG.message('الكومبو اتعطّل واتمسح من المحرر؛ اضغط احفظ لتثبيت التغيير')};
+OAG.$('add-branch').onclick=()=>{if(OAG.combo.branches.length<4){OAG.combo.branches.push(OAG.branch());OAG.changed(true)}};
+OAG.$('name').oninput=()=>{OAG.combo.name=OAG.$('name').value;OAG.changed(false)};
+for(const k of ['mode','enabled','cancelable'])OAG.$(k).onchange=()=>{OAG.combo[k]=OAG.$(k).type==='checkbox'?+OAG.$(k).checked:Number(OAG.$(k).value);OAG.changed(false)};
+OAG.$('slot').onchange=OAG.safe(async()=>{if(OAG.state.dirty&&!confirm('فيه كومبو مش محفوظ. تسيبه وتفتح الخانة التانية؟')){OAG.$('slot').value=OAG.state.slot;return}clearTimeout(OAG.comboTimer);await OAG.serial(()=>OAG.post('/api/oag/discard-combo',{}));OAG.state.slot=+OAG.$('slot').value;await OAG.loadCombo()});
+OAG.$('game').onchange=OAG.safe(async()=>{if((OAG.state.dirty||OAG.state.weaponDirty)&&!confirm('فيه تعديلات مش محفوظة. تسيبها وتفتح اللعبة التانية؟')){OAG.$('game').value=OAG.state.game;return}clearTimeout(OAG.comboTimer);clearTimeout(OAG.weaponTimer);await OAG.serial(async()=>{await OAG.post('/api/oag/discard-combo',{});await OAG.post('/api/oag/discard-weapon',{})});OAG.state.game=+OAG.$('game').value;OAG.weaponNames=(await OAG.api('/api/weapons?game='+OAG.state.game)).names;await OAG.loadCombo();await OAG.loadWeapon()});
+OAG.$('activate').onclick=OAG.safe(async()=>{await OAG.serial(()=>OAG.post('/api/oag/context',{game:OAG.state.game,weapon:OAG.state.tab==='weapon'?OAG.state.weaponSlot:0}));OAG.$('active').textContent='اللعبة المختارة اتفعّلت في الجلسة'});
+document.addEventListener('input',e=>{const el=e.target;if(el.dataset.oagCondition)OAG.conditionChanged(el);else if(el.dataset.oagAction)OAG.actionChanged(el);else if(el.dataset.oagWeapon)OAG.weaponInput(el)});
+document.addEventListener('change',e=>{const el=e.target;if(el.dataset.oagEnableBranch!==undefined){OAG.combo.branches[+el.dataset.oagEnableBranch].enabled=+el.checked;OAG.changed(false)}});
+document.addEventListener('click',e=>{const el=e.target.closest('button');if(!el)return;OAG.clicked=el;if(el.dataset.oagFine){const [k,v]=el.dataset.oagFine.split(':');OAG.weaponHistoryPush();OAG.weapon[k]=Math.max(-200,Math.min(200,OAG.weapon[k]+(+v)));OAG.paintWeapon();OAG.weaponChanged()}else if(el.dataset.oagPreset){OAG.weaponHistoryPush();OAG.weapon=OAG.defaultWeapon();if(el.dataset.oagPreset!=='reset'){OAG.weapon.enabled=1;OAG.weapon.vertical=30;OAG.weapon.smoothing=el.dataset.oagPreset==='smooth'?50:0;OAG.weapon.antiShake=el.dataset.oagPreset==='smooth'?20:0}OAG.paintWeapon();OAG.weaponChanged()}else OAG.builderClick()});
+if(location.pathname==='/oag-weapons')OAG.switchTab('weapon');
+};
+OAG.boot().catch(e=>{OAG.$('connection').textContent='الاتصال ما نجحش';OAG.message(e.message)});

@@ -63,6 +63,10 @@ struct CoreHarness {
     unsigned composed = 0;
     static constexpr std::uint8_t kOagF1Usage = 0x3a, kModeToggleF4Usage = 0x3d, kModeToggleF5Usage = 0x3e;
     auto combinedKeyboard() const { return keyboard; }
+    unsigned smartResets=0,smartActivations=0;
+    void resetOagSmartEffects() { ++smartResets; }
+    void resetOagSmartWeaponEffects() {}
+    void activateOagSmartGame(std::size_t) { ++smartActivations; }
 
     void sendComposedOutput() {
         ++composed;

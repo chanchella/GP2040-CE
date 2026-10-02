@@ -50,9 +50,11 @@ struct HttpClientState {
 std::array<HttpClientState, kHttpClientSlots> gClients {};
 
 #include "pro_input_portal_assets.h"
+#include "oag_smart_assets.h"
 
 constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>OAG ABO GEMI</title><link rel=stylesheet href=/app.css><link rel=stylesheet href=/combo.css><link rel=stylesheet href=/pro.css></head><body>
 <header><h1>OAG ABO GEMI</h1><span>Controller Lab • Smart Anti-Drift • Profiles</span></header><main>
+<section class=card dir=rtl><h2>أدوات OAG الجديدة</h2><p><a href=/oag-smart>افتح الكومبو الذكي — OAG SMART COMBO LOGIC</a></p><p><a href=/oag-weapons>افتح ضبط السلاح — OAG WEAPON TUNING</a></p></section>
 <section class=card><h2>OAG Games & Weapons</h2><label>OAG Game</label><select id=gs></select><input id=gn maxlength=32 placeholder="Type your OAG game name"><button id=sg>ADD OAG GAME 1</button>
 <label>OAG Weapon for selected game</label><select id=ws></select><input id=wn maxlength=32 placeholder="Type your OAG weapon name"><button id=sw>ADD OAG WEAPON 1</button>
 <h3>OAG WEAPON RECOIL</h3><p class=hint>Move the sliders while testing. No number typing required.</p><div class=two><div><label>Horizontal • Left ↔ Right</label><input id=rh type=range min=-200 max=200 step=1 value=0><div class=rangeval id=rhv>0.00</div><div class=ends><span>-2.00 LEFT</span><span>+2.00 RIGHT</span></div></div><div><label>Vertical • Up ↔ Down</label><input id=rv type=range min=-200 max=200 step=1 value=0><div class=rangeval id=rvv>0.00</div><div class=ends><span>-2.00 UP</span><span>+2.00 DOWN</span></div></div></div>
@@ -195,8 +197,8 @@ err_t httpAccept(void*,tcp_pcb* client,err_t error){
 
 namespace oag::firmware {
 
-bool DiamondWifiPortal::start(DiamondConfigStore& store, DiamondGameLibraryStore& games){
-    if(started_)return true;store_=&store;games_=&games;if(cyw43_arch_init()!=0)return false;
+bool DiamondWifiPortal::start(DiamondConfigStore& store, DiamondGameLibraryStore& games,bool radioReady){
+    if(started_)return true;store_=&store;games_=&games;liveMode_=radioReady;if(!radioReady && cyw43_arch_init()!=0)return false;
     cyw43_arch_enable_ap_mode("OAG ABO GEMI",nullptr,CYW43_AUTH_OPEN);
     ip_addr_t gateway{},mask{};
 #if LWIP_IPV6
@@ -210,7 +212,7 @@ bool DiamondWifiPortal::start(DiamondConfigStore& store, DiamondGameLibraryStore
     gHttpListener=tcp_listen(gHttpListener);if(!gHttpListener){cyw43_arch_lwip_end();return false;}gPortal=this;tcp_accept(gHttpListener,httpAccept);cyw43_arch_lwip_end();started_=true;return true;
 }
 void DiamondWifiPortal::schedulePlayReboot(std::uint32_t ms){playRebootAtUs_=time_us_64()+static_cast<std::uint64_t>(ms)*1000ull;playRebootPending_=true;}
-void DiamondWifiPortal::task(){if(playRebootPending_&&time_us_64()>=playRebootAtUs_){playRebootPending_=false;requestOutputProfile(OutputProfileId::Pc);}}
+void DiamondWifiPortal::task(){if(smart_){cyw43_arch_lwip_begin();smart_->task();cyw43_arch_lwip_end();}if(playRebootPending_&&time_us_64()>=playRebootAtUs_){playRebootPending_=false;requestOutputProfile(OutputProfileId::Pc);}}
 
 #include "pro_input_portal.inc"
 
@@ -218,6 +220,14 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
     auto* client=static_cast<tcp_pcb*>(rawClient);if(!client||!request||!store_)return;char method[8]{},path[96]{};
     if(std::sscanf(request,"%7s %95s",method,path)!=2){sendResponse(client,"400 Bad Request","text/plain","Bad request");return;}
     const char* body=std::strstr(request,"\r\n\r\n");body=body?body+4:"";auto& pc=store_->config();auto& runtime=pc.runtime;
+    if(smart_ && smart_->handle(method,path,body)){
+        const auto status=smart_->status();
+        const char* reason=status==200?"200 OK":status==202?"202 Accepted":status==400?"400 Bad Request":status==409?"409 Conflict":status==404?"404 Not Found":"500 Internal Server Error";
+        sendResponse(client,reason,"application/json; charset=utf-8",smart_->response());return;
+    }
+    if(liveMode_ && !std::strcmp(method,"POST")){
+        sendResponse(client,"409 Conflict","text/plain; charset=utf-8","أثناء اللعب عدّل من أدوات OAG الجديدة. إعدادات الأجهزة القديمة ليها وضع الإعدادات المعتاد");return;
+    }
     if(handleProInputRequest(rawClient,method,path,body))return;
     if(!games_){sendResponse(client,"503 Service Unavailable","text/plain","OAG game library unavailable");return;}
     const auto loadGame=[&](std::uint32_t oneBased)->bool{
@@ -225,6 +235,12 @@ void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,st
             games_->loadGame(oneBased-1,pc,scratchGame_);
     };
 
+    if(!std::strcmp(method,"GET")) {
+        const char* assetPath=(!std::strcmp(path,"/oag-smart") || !std::strcmp(path,"/oag-weapons"))?"/oag.html":path;
+        for(const auto& asset:kOagSmartAssets) if(staticPath(assetPath,asset.path)) {
+            sendResponse(client,"200 OK",asset.mime,asset.body);return;
+        }
+    }
     if(!std::strcmp(method,"GET")&&!std::strcmp(path,"/")){sendResponse(client,"200 OK","text/html; charset=utf-8",kDashboardHtml);return;}
     if(!std::strcmp(method,"GET")&&staticPath(path,"/app.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kAppCss);return;}
     if(!std::strcmp(method,"GET")&&staticPath(path,"/combo.css")){sendResponse(client,"200 OK","text/css; charset=utf-8",kComboCss);return;}
