@@ -4,7 +4,7 @@
         android:allowBackup="true"
         android:icon="@drawable/app_icon"
         android:roundIcon="@drawable/app_icon"
-        android:label="Water Tank Sizer V7 - Kareem"
+        android:label="Water Tank Sizer V8 - Kareem"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
