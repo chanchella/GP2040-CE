@@ -1,555 +1,214 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0b6b73">
-  <meta name="description" content="Water Supply Tank Sizing calculator based on the supplied engineering workbook.">
-  <title>Water Supply Tank Sizing - V4</title>
-  
-  
-  <style>
-:root{
-  --bg:#edf3f7;
-  --card:#ffffff;
-  --ink:#1a2833;
-  --muted:#617080;
-  --line:#ccd8e4;
-  --line-strong:#9fb3c7;
-  --brand:#0d5eb7;
-  --brand-dark:#083f7c;
-  --soft:#eff5fb;
-  --accent:#1f6bd7;
-  --danger:#b63a3a;
-  font-family:Calibri,Segoe UI,Arial,sans-serif;
-  color-scheme:light;
-}
-*{box-sizing:border-box}
-body{margin:0;background:linear-gradient(180deg,#f3f7fb 0,#eaf0f6 340px);color:var(--ink);position:relative}
-button,input,select{font:inherit}
-input,select{width:100%;border:1px solid var(--line-strong);border-radius:4px;padding:8px 10px;background:#fff;color:var(--ink);outline:none}
-input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(13,94,183,.10)}
-label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700;color:#33485d}
-label span{display:flex;align-items:center;gap:6px}
-label em{font-style:normal;color:var(--muted);font-weight:600}
-.appbar{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;gap:16px;align-items:center;padding:14px 24px;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
-.brand{display:flex;align-items:center;gap:12px}
-.logo{width:52px;height:52px;border-radius:11px;background:var(--soft);display:grid;place-items:center;overflow:hidden;border:1px solid #b8cce0}.app-logo{width:100%;height:100%;object-fit:cover;display:block}
-h1{font-size:20px;margin:0}
-.brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
-.header-actions{display:flex;gap:8px;flex-wrap:wrap}
-button,.button-like{border:1px solid var(--brand);border-radius:6px;padding:9px 14px;background:var(--brand);color:#fff;cursor:pointer;font-weight:700}
-.ghost{background:#fff;color:var(--brand)}
-.danger-ghost{background:#fff3f3;color:var(--danger);border-color:#e7b8b8}
-.layout{width:min(1260px,calc(100% - 24px));margin:18px auto 34px;display:grid;gap:14px}
-.sheet-card{background:var(--card);border:1px solid var(--line-strong);border-radius:8px;padding:16px;box-shadow:0 4px 16px rgba(15,35,55,.05)}
-.top-strip{display:flex;justify-content:space-between;align-items:center;gap:14px;border-top:4px solid var(--brand)}
-.sheet-title h2{margin:0 0 4px;font-size:20px;color:var(--brand-dark)}
-.sheet-title p{margin:0;color:var(--muted);font-size:13px}
-.sheet-kpis{display:flex;gap:14px;flex-wrap:wrap}
-.sheet-kpi{min-width:150px;border:1px solid var(--line);padding:10px 12px;border-radius:6px;background:linear-gradient(180deg,#fdfefe,#f2f7fc)}
-.sheet-kpi span,.sheet-kpi em{display:block;color:var(--muted);font-size:12px;font-style:normal}
-.sheet-kpi strong{display:inline-block;font-size:26px;margin:4px 6px 0 0;color:var(--brand-dark)}
-.sheet-header-row{display:flex;align-items:end;gap:16px}
-.grow{flex:1}
-small,.muted{color:var(--muted);font-weight:400}
-.workbook-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
-.workbook-head h3{margin:0;color:var(--brand-dark);font-size:16px}
-.workbook-head p{margin:4px 0 0;color:var(--muted);font-size:13px}
-.excel-grid{display:grid;gap:10px}
-.project-grid-excel{grid-template-columns:repeat(4,minmax(0,1fr))}
-.inputs-grid-excel{grid-template-columns:repeat(3,minmax(0,1fr))}
-.tank-inputs-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-.demand-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-.view-toggle{display:flex;gap:6px;padding:4px;background:#ebf2fb;border:1px solid var(--line);border-radius:8px}
-.toggle-btn{padding:7px 10px;background:transparent;color:var(--brand-dark);font-size:12px;border-color:transparent}
-.toggle-btn.active{background:var(--brand);color:#fff;border-color:var(--brand)}
-.search{width:min(320px,100%)}
-.demand-header,.demand-row{display:grid;grid-template-columns:2.2fr 1.5fr .7fr .85fr .9fr;gap:10px;align-items:center}
-.excel-header{background:#e8f0fb;border:1px solid var(--line);padding:10px 12px;color:#35506b;font-size:11px;font-weight:800;text-transform:uppercase}
-.demand-rows{border:1px solid var(--line);border-top:0}
-.demand-row{padding:10px 12px;border-bottom:1px solid #e8eef5;background:#fff}
-.demand-row:nth-child(even){background:#fafcff}
-.demand-row:last-child{border-bottom:0}
-.demand-row .name{font-weight:700;font-size:13px}.demand-row .desc,.demand-row .rate,.demand-row .line-total{font-size:12px;color:#587477}.demand-empty{padding:22px 12px;text-align:center;color:var(--muted);font-size:13px;border-bottom:1px solid #eef3f3;background:#fff}
-.qty{padding:8px 9px;border-radius:4px}.line-total{font-weight:800;color:var(--ink)!important;text-align:right}
-.total-line{display:flex;justify-content:flex-end;gap:18px;padding:12px 4px 0;font-size:14px}.total-line strong{font-size:18px;color:var(--brand-dark)}
-.tank-layout{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:stretch}
-.tank-drawing-wrap{border:1px solid var(--line);background:linear-gradient(180deg,#fcfdff,#f5f8fc);border-radius:6px;padding:10px;display:flex;align-items:center;justify-content:center}
-.tank-svg{width:100%;height:auto;max-height:320px}
-.tank-outline{fill:#f6fbff;stroke:#41576d;stroke-width:3}
-.water-line{stroke:#1b82c5;stroke-width:4;stroke-dasharray:8 6}
-.base-line{stroke:#8aa0b5;stroke-width:2}
-.dim-line{stroke:#1b5fae;stroke-width:2}
-.svg-label{font-size:18px;font-weight:700;fill:#16395e;text-anchor:middle}
-.svg-value{font-size:14px;font-weight:700;fill:#1b5fae;text-anchor:middle}
-.svg-inner{font-size:16px;font-weight:700;fill:#22303f;text-anchor:middle}
-.rotate-90{transform-box:fill-box;transform-origin:center;transform:rotate(-90deg)}
-.result-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.result-grid article{border:1px solid var(--line);background:#fbfdff;border-radius:6px;padding:12px}
-.result-grid span,.result-grid em{display:block;color:var(--muted);font-size:11px;font-style:normal}.result-grid strong{font-size:21px;display:inline-block;margin:5px 5px 1px 0}
-.badge{padding:6px 10px;border-radius:999px;background:#e7f7ee;color:#21704a;font-size:12px;font-weight:800;white-space:nowrap}
-.warnings{margin-top:12px;padding:12px;border-radius:6px;background:#fff7e8;color:#855e16;font-size:13px;border:1px solid #efd9a7}
-.button-row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
-.button-like{display:inline-flex;align-items:center}
-footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 15px 30px}
-.print-watermark{display:none;pointer-events:none}\n.report-hidden{display:none!important}\nbody.pdf-mode{background:#fff}.pdf-mode .appbar,.pdf-mode .tools-card,.pdf-mode footer,.pdf-mode #search,.pdf-mode .button-row,.pdf-mode .view-toggle{display:none!important}.pdf-mode .layout{width:100%;margin:0;display:block}.pdf-mode .sheet-card{box-shadow:none;border:1px solid #8b9db0;margin:0 0 10px;background:#fff}.pdf-mode .qty{border:0;padding:0;background:transparent}.pdf-mode .result-grid{grid-template-columns:repeat(4,1fr)}
-
-@media(max-width:980px){
-  .project-grid-excel,.inputs-grid-excel,.tank-inputs-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .tank-layout{grid-template-columns:1fr}
-  .result-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
-@media(max-width:760px){
-  .appbar{padding:11px 14px;align-items:flex-start}
-  .layout{width:min(100% - 12px,1260px);margin-top:12px}
-  .top-strip{flex-direction:column;align-items:flex-start}
-  .sheet-kpis{width:100%}
-  .sheet-kpi{flex:1}
-  .demand-header{display:none}
-  .demand-row{grid-template-columns:1fr 82px 82px;grid-template-areas:"name qty total" "desc rate total";padding:12px 8px}
-  .demand-row .name{grid-area:name}.demand-row .desc{grid-area:desc}.demand-row .qty{grid-area:qty}.demand-row .rate{grid-area:rate}.demand-row .line-total{grid-area:total;align-self:center}
-  .responsive-head{align-items:stretch;flex-direction:column}
-}
-@media(max-width:540px){
-  h1{font-size:16px}.brand p{display:none}.logo{width:42px;height:42px;border-radius:9px}
-  .header-actions button{font-size:11px;padding:7px 8px}
-  .sheet-card{padding:12px}
-  .project-grid-excel,.inputs-grid-excel,.tank-inputs-grid,.result-grid{grid-template-columns:1fr}
-  .demand-tools{align-items:stretch;justify-content:stretch;flex-direction:column}
-  .view-toggle{width:100%}.toggle-btn{flex:1}.search{max-width:none}
-}
-
-@page{size:auto;margin:10mm}
-@media print{
-  .appbar,.header-actions,.tools-card,footer,#search,.button-row,.view-toggle{display:none!important}
-  body{background:#fff}
-  .layout{width:100%;margin:0;display:block;position:relative;z-index:2}
-  .sheet-card{box-shadow:none;border:1px solid #8b9db0;margin:0 0 10px;break-inside:avoid}
-  .print-watermark{display:block!important;position:fixed;left:50%;top:48%;width:58vw;max-width:180mm;height:auto;transform:translate(-50%,-50%);opacity:.075;z-index:10;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .demand-row{break-inside:avoid}.report-hidden{display:none!important}.qty{border:0;padding:0;background:transparent}
-  .result-grid{grid-template-columns:repeat(4,1fr)}
-  .top-strip{padding-top:6px}
-}
-
-</style>
-</head>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#075baf"><title>Water Tank Sizer - Kareem abo Hussien</title><style>
+:root{--blue:#075baf;--navy:#083968;--ink:#14283a;--muted:#64788b;--line:#b9c8d7;--soft:#eef5fb;--soft2:#f8fbfe;--ok:#168352;--bad:#b64242;font-family:Arial,Segoe UI,sans-serif;color-scheme:light}
+*{box-sizing:border-box}body{margin:0;background:#eaf1f7;color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fff;border-bottom:3px solid var(--blue);position:sticky;top:0;z-index:20}
+.brand-logo{width:62px;height:62px;object-fit:cover;border-radius:14px;border:1px solid #9fb7ce;box-shadow:0 2px 8px #0002;flex:0 0 auto}
+.brand-copy{min-width:0}.brand-copy h1{font-size:20px;line-height:1.05;margin:0;color:var(--navy)}.brand-copy strong{display:block;font-size:13px;color:var(--blue);margin-top:4px}.brand-copy small{display:block;color:var(--muted);font-size:10px;margin-top:2px}
+.actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.actions button{border:1px solid var(--blue);background:#fff;color:var(--blue);border-radius:8px;padding:8px 11px;font-weight:700;font-size:12px}.actions .primary{background:var(--blue);color:#fff}.actions .danger{color:var(--bad);border-color:#e1bcbc}
+.app-sheet{width:min(1180px,calc(100% - 12px));margin:8px auto 18px;background:#fff;border:1px solid #9fb4c8;border-radius:12px;box-shadow:0 6px 24px #19334f12;overflow:hidden}
+.sheet-head{display:grid;grid-template-columns:1.5fr 1fr;gap:10px;padding:12px;background:linear-gradient(180deg,#fbfdff,#f0f6fb);border-bottom:1px solid var(--line)}
+.sheet-title h2{margin:0;color:var(--navy);font-size:18px}.sheet-title p{margin:4px 0 0;color:var(--muted);font-size:11px}.summary{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.kpi{border:1px solid #c5d3e0;border-radius:8px;background:#fff;padding:8px 10px}.kpi span{display:block;color:var(--muted);font-size:10px}.kpi b{font-size:23px;color:var(--blue)}.kpi em{font-style:normal;color:var(--muted);font-size:11px;margin-left:4px}
+.section{padding:10px 12px;border-bottom:1px solid #d8e1ea}.section:last-child{border-bottom:0}.section-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.section-title h3{margin:0;color:var(--navy);font-size:14px}.section-title small{color:var(--muted);font-size:10px}
+.ref-row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:7px}.field{display:flex;flex-direction:column;gap:3px}.field label{font-size:10px;font-weight:700;color:#355068}.field input,.field select{height:34px;border:1px solid #aebfce;border-radius:6px;background:#fff;padding:5px 8px;color:#1d2e3e;min-width:0}.field input:focus,.field select:focus{outline:2px solid #a8cff5;border-color:var(--blue)}
+.inputs-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}.project-field{grid-column:span 1}.wide2{grid-column:span 2}
+.work-grid{display:grid;grid-template-columns:1.25fr 1fr;gap:10px}.panel{border:1px solid #c2d0dd;border-radius:9px;background:#fff;overflow:hidden}.panel-h{padding:7px 9px;background:#edf5fb;color:var(--navy);font-weight:800;font-size:12px;border-bottom:1px solid #cad7e3;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.panel-b{padding:8px}.demand-add{display:grid;grid-template-columns:2fr .65fr auto;gap:6px;margin-bottom:7px}.demand-add button{border:0;border-radius:6px;background:var(--blue);color:#fff;font-weight:700;padding:0 12px}
+.mini-actions{display:flex;gap:4px}.mini-actions button{padding:4px 6px;border-radius:5px;border:1px solid #aac0d3;background:#fff;color:var(--blue);font-size:9px;font-weight:700}
+.dtable{border:1px solid #d1dce6;border-radius:6px;overflow:hidden}.drow{display:grid;grid-template-columns:2fr .55fr .72fr .82fr;gap:5px;align-items:center;padding:5px 7px;border-bottom:1px solid #e5edf4;font-size:10px}.drow:last-child{border-bottom:0}.drow.head{background:#f1f6fa;font-weight:800;color:#486176}.drow input{height:28px;border:1px solid #b8c7d4;border-radius:5px;padding:3px 5px}.drow .total{text-align:right;font-weight:800;color:var(--navy)}.empty{padding:12px;text-align:center;color:var(--muted);font-size:10px}
+.total-strip{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;font-size:11px}.total-strip b{color:var(--blue);font-size:13px}
+.right-stack{display:grid;grid-template-columns:1fr;gap:10px}.geometry-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:5px}.tank-wrap{border:1px solid #d6e0e9;border-radius:7px;background:#f9fcff;padding:4px}.tank-svg{width:100%;height:180px}.tank-outline{fill:#fbfdff;stroke:#344e67;stroke-width:3}.water-line{stroke:#1688d2;stroke-width:4;stroke-dasharray:8 6}.base-line{stroke:#8096aa;stroke-width:2}.dim-line{stroke:#0d63b8;stroke-width:2}.svg-label{font-size:16px;font-weight:700;fill:#133a62;text-anchor:middle}.svg-value{font-size:12px;font-weight:700;fill:#0d63b8;text-anchor:middle}.svg-inner{font-size:14px;font-weight:700;fill:#1e2f40;text-anchor:middle}.rotate-90{transform-box:fill-box;transform-origin:center;transform:rotate(-90deg)}
+.results{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.result{border:1px solid #cedae5;border-radius:7px;padding:7px;background:#fbfdff;min-height:57px}.result span{display:block;color:#64778a;font-size:9px;line-height:1.1}.result b{font-size:17px;color:#102b44}.result em{display:block;font-size:9px;font-style:normal;color:#64778a}.badge{padding:4px 7px;border-radius:999px;background:#e5f6ed;color:var(--ok);font-size:9px;font-weight:800}
+.status{font-size:10px;color:var(--muted);margin-top:5px}.warn{color:#8a5b00}
+.data-tools{display:flex;gap:6px;justify-content:flex-end;margin-top:7px}.data-tools button,.data-tools label{border:1px solid #aebfce;background:#fff;color:var(--blue);font-weight:700;border-radius:6px;padding:6px 8px;font-size:10px;cursor:pointer}
+.print-sheet{display:none}
+@media(max-width:820px){.topbar{align-items:flex-start}.brand-logo{width:54px;height:54px}.brand-copy h1{font-size:16px}.actions{max-width:250px}.app-sheet{margin-top:6px}.sheet-head{grid-template-columns:1fr 1fr}.inputs-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.work-grid{grid-template-columns:1fr 1fr}.results{grid-template-columns:repeat(3,1fr)}.tank-svg{height:155px}.field input,.field select{height:32px;font-size:11px}}
+@media(max-width:560px){.topbar{padding:8px}.brand-logo{width:48px;height:48px}.brand-copy small{display:none}.actions button{padding:6px 8px;font-size:10px}.sheet-head{grid-template-columns:1fr}.ref-row{grid-template-columns:1fr 1fr}.inputs-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.work-grid{grid-template-columns:1fr}.results{grid-template-columns:repeat(3,1fr)}.demand-add{grid-template-columns:1fr 70px auto}}
+body.report-mode{background:#fff}.report-mode .app-shell{display:none!important}.report-mode .print-sheet{display:block!important}
+.print-sheet{position:relative;width:1120px;height:760px;margin:0 auto;background:#fff;color:#172a3b;padding:18px 20px;overflow:hidden;font-family:Arial,Segoe UI,sans-serif}
+.pr-wm{position:absolute;width:430px;height:430px;object-fit:contain;left:345px;top:165px;opacity:.055;z-index:0}.pr-content{position:relative;z-index:2}.pr-head{display:grid;grid-template-columns:86px 1fr 1fr;gap:12px;align-items:center;border-bottom:3px solid #075baf;padding-bottom:8px}.pr-logo{width:82px;height:82px;object-fit:cover;border-radius:12px}.pr-title h1{margin:0;color:#083968;font-size:27px}.pr-title b{display:block;color:#075baf;font-size:16px;margin-top:3px}.pr-title small{color:#6b7b89}.pr-meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:10px}.pr-meta div{border-bottom:1px solid #c4d0da;padding:2px}.pr-main{display:grid;grid-template-columns:1.08fr .92fr;gap:10px;margin-top:9px}.pr-box{border:1px solid #9fb4c8;border-radius:7px;padding:7px;background:#fff9}.pr-box h3{margin:0 0 5px;color:#075baf;font-size:12px;border-bottom:1px solid #d1dce5;padding-bottom:4px}.pr-kv{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;font-size:9px}.pr-kv div{border:1px solid #d4dee7;border-radius:4px;padding:4px}.pr-kv span{display:block;color:#64778a;font-size:8px}.pr-kv b{font-size:10px}.pr-demand{margin-top:6px}.pr-demand-row{display:grid;grid-template-columns:1.8fr .45fr .65fr .7fr;gap:3px;font-size:8.5px;border-bottom:1px solid #e1e8ef;padding:3px}.pr-demand-row.head{font-weight:800;background:#eff5fa}.pr-demand-row b:last-child{text-align:right}.pr-right{display:grid;grid-template-rows:auto auto;gap:8px}.pr-tank-svg{width:100%;height:235px}.pr-results{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.pr-res{border:1px solid #c9d5df;border-radius:5px;padding:5px;background:#fff}.pr-res span{display:block;color:#66798a;font-size:8px}.pr-res b{font-size:13px;color:#12324e}.pr-res em{display:block;font-size:8px;font-style:normal;color:#66798a}.pr-footer{position:absolute;left:20px;right:20px;bottom:9px;border-top:1px solid #c7d3dd;padding-top:4px;display:flex;justify-content:space-between;color:#617586;font-size:8px}
+@page{size:A4 landscape;margin:5mm}@media print{html,body{margin:0!important;background:#fff!important}.app-shell{display:none!important}.print-sheet{display:block!important;width:1120px;height:760px;transform-origin:top left;page-break-after:avoid!important}.pr-wm{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head>
 <body>
-  <img class="print-watermark" src="file:///android_res/drawable/app_watermark.jpg" alt="" aria-hidden="true">
+<div class="app-shell">
+<header class="topbar">
+  <img src="app_logo.jpg" class="brand-logo" alt="Water Tank Sizer logo">
+  <div class="brand-copy"><h1>Water Tank Sizer</h1><strong>Kareem abo Hussien</strong><small>Water Supply Tank Sizing Engineering Tool</small></div>
+  <div class="actions">
+    <button id="saveBtn">Save</button><button id="printBtn" class="primary">Print</button><button id="savePdfBtn" class="primary">Save PDF</button><button id="resetBtn" class="danger">Reset</button>
+  </div>
+</header>
 
-  <header class="appbar">
-    <div class="brand">
-      <div class="logo"><img class="app-logo" src="file:///android_res/drawable/app_icon.jpg" alt="Water Tank Sizer logo"></div>
-      <div>
-        <h1>Water Supply Tank Sizing</h1>
-        <p>Workbook Style • Print/PDF Ready • V4</p>
-      </div>
+<main class="app-sheet">
+  <div class="sheet-head">
+    <div class="sheet-title"><h2>Water Supply Tank Sizing Sheet</h2><p>Single-sheet layout based on the original workbook logic.</p></div>
+    <div class="summary"><div class="kpi"><span>Daily Demand</span><b id="heroDaily">0</b><em id="heroDailyUnit"></em></div><div class="kpi"><span>Tank Volume</span><b id="heroM3">0.0</b><em>m³</em></div></div>
+  </div>
+
+  <section class="section">
+    <div class="ref-row">
+      <div class="field wide2"><label>Design Reference</label><select id="standard"></select><small id="standardSubtitle"></small></div>
+      <div class="field"><label>Demand Type</label><select id="demandType"><option>Maximum</option><option>Minimum</option><option>Average</option></select></div>
+      <div class="field"><label>Storage Days</label><input id="storageDays" type="number" step=".1" min="0"></div>
     </div>
-    <div class="header-actions">
-      <button id="saveBtn" class="ghost">Save</button>
-      <button id="printBtn" class="ghost">Print</button>\n      <button id="savePdfBtn" class="ghost">Save PDF</button>
-      <button id="resetBtn" class="danger-ghost">Reset</button>
+  </section>
+
+  <section class="section">
+    <div class="section-title"><h3>Project + Design Inputs</h3><small>Compact single-sheet entry</small></div>
+    <div class="inputs-grid">
+      <div class="field"><label>Project Name</label><input id="projectName" placeholder="Project"></div>
+      <div class="field"><label>Project No.</label><input id="projectNo" placeholder="No."></div>
+      <div class="field"><label>Building Name</label><input id="buildingName" placeholder="Building"></div>
+      <div class="field"><label>Building No.</label><input id="buildingNo" placeholder="No."></div>
+      <div class="field"><label>Tank Tag</label><input id="tankTag" placeholder="WT-01"></div>
+      <div class="field"><label>Location</label><input id="tankLocation" placeholder="Roof / Ground"></div>
+      <div class="field"><label>Axes</label><input id="axes" placeholder="A-B / 1-2"></div>
+      <div class="field"><label>Revision</label><input id="revision" placeholder="00"></div>
+      <div class="field"><label>Additional Demand <span id="additionalUnit"></span></label><input id="additionalDemand" type="number" step=".1" min="0"></div>
+      <div class="field"><label>Safety Factor</label><select id="safetyFactor"></select></div>
+      <div class="field"><label>Tank Access</label><select id="access"><option>Tank Side</option><option>Tank Top</option></select></div>
+      <div class="field"><label>Filling Time (hr)</label><input id="fillHours" type="number" step=".1" min=".01"></div>
+      <div class="field"><label>Pipe Material</label><select id="material"><option>PPR - PN16</option><option>PPR - PN20</option><option>PPR - PN25</option><option>Copper</option></select></div>
+      <div class="field"><label>Velocity (m/s)</label><input id="velocity" type="number" step=".1" min=".1"></div>
+      <div class="field"><label>Suction Pit (m)</label><input id="suctionPit" type="number" step=".05" min="0"></div>
     </div>
-  </header>
+  </section>
 
-  <main class="layout">
-    <section class="sheet-card top-strip">
-      <div class="sheet-title">
-        <h2>Water Supply Tank Sizing Sheet</h2>
-        <p>Closer to the original Excel workflow with project data, tank drawing, and printable layout.</p>
-      </div>
-      <div class="sheet-kpis">
-        <div class="sheet-kpi"><span>Daily Demand</span><strong id="heroDaily">0</strong><em id="heroDailyUnit"></em></div>
-        <div class="sheet-kpi"><span>Tank Volume</span><strong id="heroM3">0.0</strong><em>m³</em></div>
-      </div>
-    </section>
-
-    <section class="sheet-card">
-      <div class="sheet-header-row">
-        <div class="field grow">
-          <label for="standard">Design reference</label>
-          <select id="standard"></select>
-          <small id="standardSubtitle"></small>
+  <section class="section">
+    <div class="work-grid">
+      <div class="panel">
+        <div class="panel-h"><span>Water Demand</span><div class="mini-actions"><button id="usedBtn">Used Only</button><button id="allBtn">Show All</button></div></div>
+        <div class="panel-b">
+          <div class="demand-add"><select id="demandPicker"></select><input id="quickQty" type="number" min="0" step="1" placeholder="Qty"><button id="addDemandBtn">Add</button></div>
+          <div class="dtable"><div class="drow head"><span>Building Type</span><span>Qty</span><span>Rate</span><span>Total</span></div><div id="demandRows"></div></div>
+          <div class="total-strip"><span>Total Daily Demand</span><b id="dailyTotal">0</b></div>
         </div>
       </div>
-    </section>
 
-    <section class="sheet-card workbook-section">
-      <div class="workbook-head"><h3>Project Information</h3></div>
-      <div class="excel-grid project-grid-excel">
-        <label><span>Project Name</span><input id="projectName" type="text" placeholder="Project name"></label>
-        <label><span>Project No.</span><input id="projectNo" type="text" placeholder="Project number"></label>
-        <label><span>Building Name</span><input id="buildingName" type="text" placeholder="Building name"></label>
-        <label><span>Building No.</span><input id="buildingNo" type="text" placeholder="Building number"></label>
-        <label><span>Tank Tag</span><input id="tankTag" type="text" placeholder="WT-01"></label>
-        <label><span>Tank Location</span><input id="tankLocation" type="text" placeholder="Roof / Ground / Basement"></label>
-        <label><span>Axes</span><input id="axes" type="text" placeholder="A-B / 1-2"></label>
-        <label><span>Revision</span><input id="revision" type="text" placeholder="00"></label>
-      </div>
-    </section>
-
-    <section class="sheet-card workbook-section">
-      <div class="workbook-head"><h3>Design Inputs</h3></div>
-      <div class="excel-grid inputs-grid-excel">
-        <label><span>Demand Type</span><select id="demandType"><option>Maximum</option><option>Minimum</option><option>Average</option></select></label>
-        <label><span>Storage Days</span><input id="storageDays" type="number" step="0.1" min="0"></label>
-        <label><span>Additional Demand <em id="additionalUnit"></em></span><input id="additionalDemand" type="number" step="0.1" min="0"></label>
-        <label><span>Safety Factor</span><select id="safetyFactor"></select></label>
-        <label><span>Tank Access</span><select id="access"><option>Tank Side</option><option>Tank Top</option></select></label>
-        <label><span>Filling Time (hr)</span><input id="fillHours" type="number" step="0.1" min="0.01"></label>
-        <label><span>Filling Pipe Material</span><select id="material"><option>PPR - PN16</option><option>PPR - PN20</option><option>PPR - PN25</option><option>Copper</option></select></label>
-        <label><span>Filling Velocity (m/s)</span><input id="velocity" type="number" step="0.1" min="0.1"></label>
-        <label><span>Suction Pit Depth (m)</span><input id="suctionPit" type="number" step="0.05" min="0"></label>
-      </div>
-    </section>
-
-    <section class="sheet-card workbook-section demand-section">
-      <div class="workbook-head responsive-head">
-        <div>
-          <h3>Water Demand Table</h3>
-          <p>Enter quantities for the required building types only.</p>
-        </div>
-        <div class="demand-tools">
-          <div class="view-toggle" role="group" aria-label="Demand rows visibility">
-            <button id="hideUnusedBtn" type="button" class="toggle-btn">Hide Unused</button>
-            <button id="showAllBtn" type="button" class="toggle-btn active">Show All</button>
+      <div class="right-stack">
+        <div class="panel">
+          <div class="panel-h"><span>Tank Geometry & Drawing</span></div>
+          <div class="panel-b">
+            <div class="geometry-fields">
+              <div class="field"><label>Shape</label><select id="shape"><option>Rectangular</option><option>Circular</option></select></div>
+              <div class="field" id="dim1Label"><label>Length (m)</label><input id="dim1" type="number" step=".1" min=".01"></div>
+              <div class="field" id="dim2Label"><label>Width (m)</label><input id="dim2" type="number" step=".1" min=".01"></div>
+            </div>
+            <div class="tank-wrap">
+              <svg class="tank-svg" viewBox="0 0 520 300" xmlns="http://www.w3.org/2000/svg">
+                <defs><marker id="a1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#0d63b8"/></marker></defs>
+                <rect id="appOutline" x="100" y="70" width="250" height="130" rx="6" class="tank-outline"/><line id="appWater" x1="100" y1="140" x2="350" y2="140" class="water-line"/><line x1="100" y1="215" x2="350" y2="215" class="base-line"/>
+                <line x1="80" y1="70" x2="80" y2="200" class="dim-line" marker-start="url(#a1)" marker-end="url(#a1)"/><line x1="100" y1="235" x2="350" y2="235" class="dim-line" marker-start="url(#a1)" marker-end="url(#a1)"/><line x1="380" y1="70" x2="380" y2="235" class="dim-line" marker-start="url(#a1)" marker-end="url(#a1)"/>
+                <text id="appShape" x="225" y="58" class="svg-label">Rectangular Tank</text><text id="appDim1" x="225" y="255" class="svg-value"></text><text id="appDim2" x="392" y="150" class="svg-value rotate-90"></text><text id="appEff" x="58" y="140" class="svg-value rotate-90"></text><text id="appDepth" x="418" y="150" class="svg-value rotate-90"></text><text id="appVol" x="225" y="120" class="svg-inner"></text><text id="appArea" x="225" y="165" class="svg-inner"></text>
+              </svg>
+            </div>
           </div>
-          <input id="search" class="search" type="search" placeholder="Search building type…">
-        </div>
-      </div>
-      <div class="demand-header excel-header">
-        <span>Building Type</span><span>Description</span><span>Qty</span><span>Rate</span><span>Total</span>
-      </div>
-      <div id="demandRows" class="demand-rows"></div>
-      <div class="total-line"><span>Total Daily Demand</span><strong id="dailyTotal">0</strong></div>
-    </section>
-
-    <section class="sheet-card workbook-section tank-section">
-      <div class="workbook-head"><h3>Tank Geometry & Drawing</h3></div>
-      <div class="tank-layout">
-        <div class="excel-grid tank-inputs-grid">
-          <label><span>Tank Section Shape</span><select id="shape"><option>Rectangular</option><option>Circular</option></select></label>
-          <label id="dim1Label"><span>Length (m)</span><input id="dim1" type="number" step="0.1" min="0.01" value="2"></label>
-          <label id="dim2Label"><span>Width (m)</span><input id="dim2" type="number" step="0.1" min="0.01" value="3"></label>
         </div>
 
-        <div class="tank-drawing-wrap">
-          <svg id="tankDrawing" class="tank-svg" viewBox="0 0 520 300" xmlns="http://www.w3.org/2000/svg" aria-label="Tank drawing">
-            <defs>
-              <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-                <path d="M0,0 L8,4 L0,8 Z" fill="#1b5fae" />
-              </marker>
-            </defs>
-            <rect x="100" y="70" width="250" height="130" rx="6" class="tank-outline" />
-            <line x1="100" y1="140" x2="350" y2="140" class="water-line" />
-            <line x1="100" y1="215" x2="350" y2="215" class="base-line" />
-            <line x1="80" y1="70" x2="80" y2="200" class="dim-line" marker-start="url(#arrow)" marker-end="url(#arrow)" />
-            <line x1="100" y1="235" x2="350" y2="235" class="dim-line" marker-start="url(#arrow)" marker-end="url(#arrow)" />
-            <line x1="380" y1="70" x2="380" y2="235" class="dim-line" marker-start="url(#arrow)" marker-end="url(#arrow)" />
-            <text id="svgShape" x="225" y="58" class="svg-label">Rectangular Tank</text>
-            <text id="svgDim1" x="225" y="255" class="svg-value">L = 5.00 m</text>
-            <text id="svgDim2" x="392" y="150" class="svg-value rotate-90">W = 4.00 m</text>
-            <text id="svgEffDepth" x="58" y="140" class="svg-value rotate-90">Eff. Depth = 0.00 m</text>
-            <text id="svgDepth" x="418" y="150" class="svg-value rotate-90">Total Depth = 0.00 m</text>
-            <text id="svgVolume" x="225" y="120" class="svg-inner">Vol = 0.0 m³</text>
-            <text id="svgArea" x="225" y="165" class="svg-inner">Area = 0.00 m²</text>
+        <div class="panel">
+          <div class="panel-h"><span>Calculated Results</span><span id="statusBadge" class="badge">Ready</span></div>
+          <div class="panel-b">
+            <div class="results">
+              <div class="result"><span>Tank Volume</span><b id="rGal">0</b><em>gal</em></div><div class="result"><span>Tank Volume</span><b id="rM3">0</b><em>m³</em></div><div class="result"><span>Tank Area</span><b id="rArea">0</b><em>m²</em></div><div class="result"><span>Effective Depth</span><b id="rEffective">0</b><em>m</em></div>
+              <div class="result"><span>Total Depth</span><b id="rDepth">0</b><em>m</em></div><div class="result"><span>Drain</span><b id="rDrain">0</b><em>in</em></div><div class="result"><span>Filling Flow</span><b id="rFlow">0</b><em>gpm</em></div><div class="result"><span>Overflow</span><b id="rOverflow">0</b><em>in</em></div>
+              <div class="result"><span>Filling Pipe</span><b id="rPipeIn">—</b><em>inch</em></div><div class="result"><span>Filling Pipe</span><b id="rPipeMm">—</b><em>mm</em></div><div class="result"><span>Required Ø</span><b id="rRequiredDi">0</b><em>mm</em></div><div class="result"><span>Float Allowance</span><b>0.50</b><em>m</em></div>
+            </div>
+            <div id="warnings" class="status"></div>
+            <div class="data-tools"><button id="exportBtn">Export JSON</button><label>Import JSON<input id="importFile" type="file" accept=".json,application/json" hidden></label></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+
+<section id="printSheet" class="print-sheet">
+  <img src="app_watermark.jpg" class="pr-wm" aria-hidden="true">
+  <div class="pr-content">
+    <div class="pr-head">
+      <img src="app_logo.jpg" class="pr-logo">
+      <div class="pr-title"><h1>Water Supply Tank Sizing</h1><b>Kareem abo Hussien</b><small id="prStandard"></small></div>
+      <div class="pr-meta"><div><b>Project:</b> <span id="prProject"></span></div><div><b>Project No:</b> <span id="prProjectNo"></span></div><div><b>Building:</b> <span id="prBuilding"></span></div><div><b>Building No:</b> <span id="prBuildingNo"></span></div><div><b>Tank Tag:</b> <span id="prTag"></span></div><div><b>Location:</b> <span id="prLocation"></span></div><div><b>Axes:</b> <span id="prAxes"></span></div><div><b>Rev:</b> <span id="prRev"></span></div></div>
+    </div>
+    <div class="pr-main">
+      <div>
+        <div class="pr-box"><h3>Design Inputs</h3><div id="prInputs" class="pr-kv"></div></div>
+        <div class="pr-box pr-demand"><h3>Water Demand - Used Items Only</h3><div class="pr-demand-row head"><span>Building Type</span><span>Qty</span><span>Rate</span><span>Total</span></div><div id="prDemandRows"></div><div class="total-strip"><span>Total Daily Demand</span><b id="prDaily"></b></div></div>
+      </div>
+      <div class="pr-right">
+        <div class="pr-box"><h3>Tank Geometry & Drawing</h3>
+          <svg class="pr-tank-svg" viewBox="0 0 520 300" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="a2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#0d63b8"/></marker></defs>
+            <rect id="prOutline" x="100" y="70" width="250" height="130" rx="6" class="tank-outline"/><line id="prWater" x1="100" y1="140" x2="350" y2="140" class="water-line"/><line x1="100" y1="215" x2="350" y2="215" class="base-line"/>
+            <line x1="80" y1="70" x2="80" y2="200" class="dim-line" marker-start="url(#a2)" marker-end="url(#a2)"/><line x1="100" y1="235" x2="350" y2="235" class="dim-line" marker-start="url(#a2)" marker-end="url(#a2)"/><line x1="380" y1="70" x2="380" y2="235" class="dim-line" marker-start="url(#a2)" marker-end="url(#a2)"/>
+            <text id="prShape" x="225" y="58" class="svg-label"></text><text id="prDim1" x="225" y="255" class="svg-value"></text><text id="prDim2" x="392" y="150" class="svg-value rotate-90"></text><text id="prEff" x="58" y="140" class="svg-value rotate-90"></text><text id="prDepth" x="418" y="150" class="svg-value rotate-90"></text><text id="prVol" x="225" y="120" class="svg-inner"></text><text id="prArea" x="225" y="165" class="svg-inner"></text>
           </svg>
         </div>
+        <div class="pr-box"><h3>Calculated Results</h3><div id="prResults" class="pr-results"></div></div>
       </div>
-    </section>
-
-    <section class="sheet-card workbook-section">
-      <div class="workbook-head"><h3>Calculated Results</h3><span id="statusBadge" class="badge">Ready</span></div>
-      <div class="result-grid excel-results">
-        <article><span>Tank Volume</span><strong id="rGal">0</strong><em>gal</em></article>
-        <article><span>Tank Volume</span><strong id="rM3">0.0</strong><em>m³</em></article>
-        <article><span>Tank Area</span><strong id="rArea">0.00</strong><em>m²</em></article>
-        <article><span>Effective Depth</span><strong id="rEffective">0.00</strong><em>m</em></article>
-        <article><span>Total Tank Depth</span><strong id="rDepth">0.00</strong><em>m</em></article>
-        <article><span>Minimum Drain</span><strong id="rDrain">0</strong><em>in</em></article>
-        <article><span>Filling Flow</span><strong id="rFlow">0.00</strong><em>gpm</em></article>
-        <article><span>Minimum Overflow</span><strong id="rOverflow">0</strong><em>in</em></article>
-        <article><span>Filling Pipe</span><strong id="rPipeIn">—</strong><em>inch</em></article>
-        <article><span>Filling Pipe</span><strong id="rPipeMm">—</strong><em>mm</em></article>
-        <article><span>Required Internal Ø</span><strong id="rRequiredDi">0.00</strong><em>mm</em></article>
-        <article><span>Float Valve Allowance</span><strong>0.50</strong><em>m</em></article>
-      </div>
-      <div id="warnings" class="warnings" hidden></div>
-    </section>
-
-    <section class="sheet-card workbook-section tools-card">
-      <div class="workbook-head"><h3>Project Data</h3></div>
-      <div class="button-row">
-        <button id="exportBtn">Export Project JSON</button>
-        <label class="button-like">Import Project JSON<input id="importFile" type="file" accept=".json,application/json" hidden></label>
-      </div>
-      <p class="muted">Your data stays on this device unless you export it yourself.</p>
-    </section>
-  </main>
-
-  <footer>Water Supply Tank Sizing • Workbook-based calculation engine • V4</footer>
-  <script>
-window.WTS_DATA = {"standards":{"practical":{"name":"Practical Plumbing Design Guide","subtitle":"James C. Church","demandUnit":"gal/day","inputUnit":"gal","selectableDemand":false,"defaults":{"storageDays":7,"additionalDemand":0,"safetyFactor":0.1,"demandType":"Maximum","access":"Tank Side","fillHours":2,"material":"PPR - PN20","velocity":2,"suctionPit":0.4},"rows":[{"id":"practical-3","buildingType":"Apartment (2 - occupancy)","description":"Per Apartment","max":150,"min":75,"avg":null,"fixed":150},{"id":"practical-4","buildingType":"Residence (4 - occupancy)","description":"Per Residence","max":250,"min":125,"avg":null,"fixed":250},{"id":"practical-5","buildingType":"Dormitories","description":"Per Residence Hall","max":65,"min":20,"avg":null,"fixed":65},{"id":"practical-6","buildingType":"Office Building (8hr)","description":"Per Person","max":20,"min":3,"avg":null,"fixed":20},{"id":"practical-7","buildingType":"Industrial Plant (8hr)","description":"Per Worker","max":35,"min":15,"avg":null,"fixed":35},{"id":"practical-8","buildingType":"Schools without cafetria & showers","description":"Per Student","max":15,"min":2,"avg":null,"fixed":15},{"id":"practical-9","buildingType":"Schools with cafetria no showers","description":"Per Student","max":20,"min":4,"avg":null,"fixed":20},{"id":"practical-10","buildingType":"Schools with cafetria & showers","description":"Per Student","max":25,"min":10,"avg":null,"fixed":25},{"id":"practical-11","buildingType":"Hospitals","description":"Per Bed","max":300,"min":125,"avg":null,"fixed":300},{"id":"practical-12","buildingType":"Cafetria & Restaurant","description":"Per Meal","max":10,"min":4,"avg":null,"fixed":10},{"id":"practical-13","buildingType":"Assembly","description":"Per Person","max":3,"min":0.5,"avg":null,"fixed":3},{"id":"practical-14","buildingType":"Hotels","description":"Per Room","max":75,"min":50,"avg":null,"fixed":75},{"id":"practical-15","buildingType":"Nursing Homes","description":"Per Bed","max":75,"min":30,"avg":null,"fixed":75},{"id":"practical-16","buildingType":"Airports","description":"Per Daily Passenger","max":5,"min":1,"avg":null,"fixed":5},{"id":"practical-17","buildingType":"Commercial Laundries","description":"Per Pound Of Wash","max":3.5,"min":2,"avg":null,"fixed":3.5}]},"aspe":{"name":"ASPE","subtitle":"American Society of Plumbing Engineers","demandUnit":"gal/day","inputUnit":"gal","selectableDemand":false,"defaults":{"storageDays":1,"additionalDemand":0,"safetyFactor":0.1,"demandType":"Maximum","access":"Tank Side","fillHours":4,"material":"PPR - PN20","velocity":2,"suctionPit":0.4},"rows":[{"id":"aspe-21","buildingType":"Apartment","description":"Per Person","max":60,"min":25,"avg":null,"fixed":60},{"id":"aspe-22","buildingType":"Factories (With Showers - Not including process)","description":"Per Person/Shift","max":35,"min":25,"avg":null,"fixed":35},{"id":"aspe-23","buildingType":"Motels (Not including demand for pools, laundary, restaurant","description":"Per Room","max":100,"min":40,"avg":null,"fixed":100},{"id":"aspe-24","buildingType":"Restaurant","description":"Per Meal","max":8,"min":1.5,"avg":null,"fixed":8},{"id":"aspe-25","buildingType":"Shools","description":"Per Student","max":20,"min":8,"avg":null,"fixed":20},{"id":"aspe-26","buildingType":"Hospital (Not including laundary)","description":"Per Bed","max":225,"min":null,"avg":null,"fixed":225},{"id":"aspe-27","buildingType":"Trailer Parks","description":"Per Space","max":100,"min":null,"avg":null,"fixed":100},{"id":"aspe-28","buildingType":"Rest Homes","description":"Per Bed","max":175,"min":null,"avg":null,"fixed":175},{"id":"aspe-29","buildingType":"Barber Shop","description":"Per Chair","max":75,"min":null,"avg":null,"fixed":75},{"id":"aspe-30","buildingType":"Beauty Shops","description":"Per Person","max":300,"min":null,"avg":null,"fixed":300},{"id":"aspe-31","buildingType":"Bowling Alleys","description":"Per Lane","max":75,"min":null,"avg":null,"fixed":75},{"id":"aspe-32","buildingType":"Farm Animals","description":"Per Dairy Cow","max":35,"min":null,"avg":null,"fixed":35},{"id":"aspe-33","buildingType":"Farm Animals","description":"Per Beef Cow","max":12,"min":null,"avg":null,"fixed":12},{"id":"aspe-34","buildingType":"Farm Animals","description":"Per Hog","max":4,"min":null,"avg":null,"fixed":4},{"id":"aspe-35","buildingType":"Farm Animals","description":"Per Horse","max":12,"min":null,"avg":null,"fixed":12},{"id":"aspe-36","buildingType":"Farm Animals","description":"Per Sheep","max":2,"min":null,"avg":null,"fixed":2},{"id":"aspe-37","buildingType":"Farm Animals","description":"Per 100 Chickens","max":10,"min":null,"avg":null,"fixed":10},{"id":"aspe-38","buildingType":"Farm Animals","description":"Per 100 Turkey","max":18,"min":null,"avg":null,"fixed":18}]},"egypt":{"name":"Egyptian Plumbing Code 301/1","subtitle":"EGY.CODE (301-1)","demandUnit":"L/day","inputUnit":"L","selectableDemand":true,"defaults":{"storageDays":2,"additionalDemand":0,"safetyFactor":0.0,"demandType":"Average","access":"Tank Top","fillHours":4,"material":"PPR - PN16","velocity":2,"suctionPit":0.4},"rows":[{"id":"egypt-42","buildingType":"Apartment","description":"Per Person","max":400,"min":100,"avg":250,"fixed":null},{"id":"egypt-43","buildingType":"Office Building (8hr)","description":"Per Person","max":70,"min":45,"avg":58,"fixed":null},{"id":"egypt-44","buildingType":"Factories (7hr)","description":"Per Person","max":100,"min":20,"avg":60,"fixed":null},{"id":"egypt-45","buildingType":"Hotels (upto 3stars)","description":"Per Room","max":240,"min":100,"avg":170,"fixed":null},{"id":"egypt-46","buildingType":"Hotels (upto 4stars)","description":"Per Room","max":800,"min":600,"avg":700,"fixed":null},{"id":"egypt-47","buildingType":"Hotels (upto 5stars - In cities)","description":"Per Room","max":1100,"min":1000,"avg":1050,"fixed":null},{"id":"egypt-48","buildingType":"Hotels (upto 5stars - In Resorts)","description":"Per Room","max":1500,"min":1400,"avg":1450,"fixed":null},{"id":"egypt-49","buildingType":"Cafetria & Restaurant","description":"Per Meal","max":35,"min":35,"avg":35,"fixed":null},{"id":"egypt-50","buildingType":"Laundry in hotel","description":"Per Ped","max":130,"min":130,"avg":130,"fixed":null},{"id":"egypt-51","buildingType":"Laundry in hospital","description":"Per Ped","max":180,"min":180,"avg":180,"fixed":null},{"id":"egypt-52","buildingType":"Hospitals","description":"Per Ped","max":600,"min":600,"avg":600,"fixed":null},{"id":"egypt-53","buildingType":"Schools without cafetria & showers","description":"Per Student","max":50,"min":50,"avg":50,"fixed":null},{"id":"egypt-54","buildingType":"Schools with cafetria no showers","description":"Per Student","max":75,"min":75,"avg":75,"fixed":null},{"id":"egypt-55","buildingType":"Schools with cafetria & showers","description":"Per Student","max":100,"min":100,"avg":100,"fixed":null},{"id":"egypt-56","buildingType":"Airports","description":"Per Daily Passenger","max":20,"min":20,"avg":20,"fixed":null},{"id":"egypt-57","buildingType":"Meeting Places","description":"Per Person","max":10,"min":10,"avg":10,"fixed":null},{"id":"egypt-58","buildingType":"General Building","description":"Per Person","max":50,"min":50,"avg":50,"fixed":null},{"id":"egypt-59","buildingType":"Camps","description":"Per Person","max":75,"min":75,"avg":75,"fixed":null},{"id":"egypt-60","buildingType":"Swimming Pools/Beaches","description":"Per Person","max":40,"min":40,"avg":40,"fixed":null},{"id":"egypt-61","buildingType":"Masjids","description":"Per Person","max":35,"min":20,"avg":28,"fixed":null},{"id":"egypt-62","buildingType":"Public Water Closets","description":"Per Fixture","max":120,"min":120,"avg":120,"fixed":null},{"id":"egypt-63","buildingType":"Public Urinals","description":"Per Fixture","max":40,"min":40,"avg":40,"fixed":null},{"id":"egypt-64","buildingType":"Public Lavatories","description":"Per Fixture","max":60,"min":60,"avg":60,"fixed":null},{"id":"egypt-65","buildingType":"Public Shower","description":"Per Fixture","max":560,"min":560,"avg":560,"fixed":null},{"id":"egypt-66","buildingType":"Butchery","description":"Per Animal","max":500,"min":300,"avg":400,"fixed":null},{"id":"egypt-67","buildingType":"Garage","description":"Per Car","max":30,"min":30,"avg":30,"fixed":null},{"id":"egypt-68","buildingType":"Commercial Lanudry","description":"Per KG Wash","max":35,"min":35,"avg":35,"fixed":null},{"id":"egypt-69","buildingType":"Farm Animals","description":"Per Dairy Cow","max":140,"min":80,"avg":110,"fixed":null},{"id":"egypt-70","buildingType":"Farm Animals","description":"Per Beef Cow","max":60,"min":60,"avg":60,"fixed":null},{"id":"egypt-71","buildingType":"Farm Animals","description":"Per Sheep, Goat","max":8,"min":8,"avg":8,"fixed":null},{"id":"egypt-72","buildingType":"Farm Animals","description":"Per Horse, Mule","max":50,"min":50,"avg":50,"fixed":null},{"id":"egypt-73","buildingType":"Farm Animals","description":"Per 100 Broiler Chickens","max":50,"min":50,"avg":50,"fixed":null},{"id":"egypt-74","buildingType":"Farm Animals","description":"Per 100 Laying Hens","max":35,"min":35,"avg":35,"fixed":null},{"id":"egypt-75","buildingType":"Farm Animals","description":"Per 100 Turkey","max":80,"min":80,"avg":80,"fixed":null},{"id":"egypt-76","buildingType":"Farm Animals","description":"Per 100 Duck","max":80,"min":80,"avg":80,"fixed":null},{"id":"egypt-77","buildingType":"Farm Animals","description":"Per Camel","max":70,"min":70,"avg":70,"fixed":null}]},"qatar":{"name":"Qatar – Kahramaa","subtitle":"Kahramaa Regulations","demandUnit":"L/day","inputUnit":"L","selectableDemand":true,"defaults":{"storageDays":1,"additionalDemand":0,"safetyFactor":0.1,"demandType":"Maximum","access":"Tank Side","fillHours":4,"material":"PPR - PN16","velocity":2,"suctionPit":0.4},"rows":[{"id":"qatar-81","buildingType":"Residential Building","description":"Per Capita","max":400,"min":250,"avg":325,"fixed":null},{"id":"qatar-82","buildingType":"Qatari Villa","description":"Per Capita","max":800,"min":500,"avg":650,"fixed":null},{"id":"qatar-83","buildingType":"Worker Labor Accomodation","description":"Per Capita","max":150,"min":80,"avg":115,"fixed":null},{"id":"qatar-84","buildingType":"Mixed Use Residential","description":"Per Capita","max":400,"min":250,"avg":325,"fixed":null},{"id":"qatar-85","buildingType":"Mixed Use Commercial","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-86","buildingType":"Commercial Building","description":"Per Capita","max":100,"min":60,"avg":80,"fixed":null},{"id":"qatar-87","buildingType":"Masjid","description":"Per Capita","max":50,"min":10,"avg":30,"fixed":null},{"id":"qatar-88","buildingType":"Restaurant","description":"Per Meal","max":20,"min":10,"avg":15,"fixed":null},{"id":"qatar-89","buildingType":"Hotel","description":"Per Room","max":300,"min":200,"avg":250,"fixed":null},{"id":"qatar-90","buildingType":"Shop","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-91","buildingType":"Office","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-92","buildingType":"School","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-93","buildingType":"University","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-94","buildingType":"Medical","description":"Per Bed","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-95","buildingType":"Public Amenities","description":"Per Capita","max":50,"min":20,"avg":35,"fixed":null},{"id":"qatar-96","buildingType":"Nursery","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-97","buildingType":"Guard House","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-98","buildingType":"Retail","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-99","buildingType":"Theatre","description":"Per Capita","max":50,"min":10,"avg":30,"fixed":null},{"id":"qatar-100","buildingType":"Stadium","description":"Per Capita","max":20,"min":15,"avg":18,"fixed":null},{"id":"qatar-101","buildingType":"Town Centre","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-102","buildingType":"Manufacturing","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null}]},"saudi":{"name":"Saudi Arabia","subtitle":"Water Demand Reference","demandUnit":"L/day","inputUnit":"L","selectableDemand":true,"defaults":{"storageDays":7,"additionalDemand":0,"safetyFactor":0.0,"demandType":"Minimum","access":"Tank Top","fillHours":2,"material":"PPR - PN16","velocity":2,"suctionPit":0.4},"rows":[{"id":"saudi-108","buildingType":"Residential Building","description":"Per Capita","max":250,"min":200,"avg":225,"fixed":null},{"id":"saudi-109","buildingType":"Villa","description":"Per Capita","max":300,"min":250,"avg":275,"fixed":null},{"id":"saudi-110","buildingType":"Worker Labor Accomodation","description":"Per Capita","max":150,"min":80,"avg":115,"fixed":null},{"id":"saudi-111","buildingType":"Mixed Use Residential","description":"Per Capita","max":250,"min":200,"avg":225,"fixed":null},{"id":"saudi-112","buildingType":"Mixed Use Commercial","description":"Per Capita","max":100,"min":60,"avg":80,"fixed":null},{"id":"saudi-113","buildingType":"Commercial Building & Retail","description":"Per Capita","max":100,"min":60,"avg":80,"fixed":null},{"id":"saudi-114","buildingType":"Masjid","description":"Per Capita","max":60,"min":10,"avg":35,"fixed":null},{"id":"saudi-115","buildingType":"Restaurant","description":"Per Meal","max":15,"min":10,"avg":13,"fixed":null},{"id":"saudi-116","buildingType":"Hotel","description":"Per Room","max":500,"min":300,"avg":400,"fixed":null},{"id":"saudi-117","buildingType":"Shop","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-118","buildingType":"Office","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-119","buildingType":"School","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-120","buildingType":"University","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-121","buildingType":"Medical","description":"Per Bed","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-122","buildingType":"Public Amenities","description":"Per Capita","max":60,"min":10,"avg":35,"fixed":null},{"id":"saudi-123","buildingType":"Nursery","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-124","buildingType":"Guard House","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-125","buildingType":"Theatre","description":"Per Capita","max":60,"min":10,"avg":35,"fixed":null},{"id":"saudi-126","buildingType":"Stadium","description":"Per Capita","max":20,"min":15,"avg":18,"fixed":null},{"id":"saudi-127","buildingType":"Town Centre","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-128","buildingType":"Entertainment & Leisure","description":"Per Capita","max":0,"min":0,"avg":60,"fixed":null},{"id":"saudi-129","buildingType":"Manufacturing","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-130","buildingType":"Events Venue","description":"Per Capita","max":60,"min":10,"avg":35,"fixed":null},{"id":"saudi-131","buildingType":"Gym / Swimming Pool","description":"Per Capita","max":0,"min":100,"avg":0,"fixed":null},{"id":"saudi-132","buildingType":"Logistics & Business Zone","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null}]}},"pipes":{"PPR - PN16":[{"dn":20,"di":14.4,"inch":"1/2\""},{"dn":25,"di":18,"inch":"3/4\""},{"dn":32,"di":23.2,"inch":"1\""},{"dn":40,"di":29,"inch":"1 1/4\""},{"dn":50,"di":36.2,"inch":"1 1/2\""},{"dn":63,"di":45.8,"inch":"2\""},{"dn":75,"di":54.4,"inch":"2 1/2\""},{"dn":90,"di":65.4,"inch":"3\""},{"dn":110,"di":79.8,"inch":"4\""},{"dn":160,"di":116.2,"inch":"6\""},{"dn":200,"di":153.6,"inch":"8\""},{"dn":250,"di":195.4,"inch":"10\""}],"PPR - PN20":[{"dn":20,"di":13.2,"inch":"1/2\""},{"dn":25,"di":16.6,"inch":"3/4\""},{"dn":32,"di":21.2,"inch":"1\""},{"dn":40,"di":26.6,"inch":"1 1/4\""},{"dn":50,"di":33.2,"inch":"1 1/2\""},{"dn":63,"di":42,"inch":"2\""},{"dn":75,"di":50,"inch":"2 1/2\""},{"dn":90,"di":60,"inch":"3\""},{"dn":110,"di":73.2,"inch":"4\""},{"dn":160,"di":106.8,"inch":"6\""},{"dn":200,"di":143.4,"inch":"8\""},{"dn":250,"di":183.4,"inch":"10\""}],"PPR - PN25":[{"dn":20,"di":13.2,"inch":"1/2\""},{"dn":25,"di":16.6,"inch":"3/4\""},{"dn":32,"di":21.2,"inch":"1\""},{"dn":40,"di":26.6,"inch":"1 1/4\""},{"dn":50,"di":33.2,"inch":"1 1/2\""},{"dn":63,"di":42,"inch":"2\""},{"dn":75,"di":50,"inch":"2 1/2\""},{"dn":90,"di":60,"inch":"3\""},{"dn":110,"di":73.2,"inch":"4\""},{"dn":160,"di":106.8,"inch":"6\""},{"dn":200,"di":143.4,"inch":"8\""},{"dn":250,"di":183.4,"inch":"10\""}],"Copper":[{"dn":15,"di":13.6,"inch":"1/2\""},{"dn":22,"di":20.2,"inch":"3/4\""},{"dn":28,"di":26.2,"inch":"1\""},{"dn":35,"di":32.6,"inch":"1 1/4\""},{"dn":42,"di":39.6,"inch":"1 1/2\""},{"dn":54,"di":51.6,"inch":"2\""},{"dn":67,"di":64.6,"inch":"2 1/2\""},{"dn":76,"di":73,"inch":"3\""},{"dn":108,"di":105,"inch":"4\""},{"dn":133,"di":130,"inch":"5\""},{"dn":159,"di":155,"inch":"6\""}]}};
-
-</script>
-  <script>
-const DATA = window.WTS_DATA;
-const $ = id => document.getElementById(id);
-const state = {standard:"egypt", quantities:{}, project:{}, geometry:{shape:"Rectangular",dim1:5,dim2:4}, demandView:"all"};
-
-function roundUp(value, decimals=0){
-  const p = 10 ** decimals;
-  return Math.ceil((Number(value)||0)*p - 1e-12)/p;
+    </div>
+    <div class="pr-footer"><span>Water Tank Sizer - Kareem abo Hussien</span><span>Single-page engineering report</span></div>
+  </div>
+</section>
+<script>window.WTS_DATA={"standards":{"practical":{"name":"Practical Plumbing Design Guide","subtitle":"James C. Church","demandUnit":"gal/day","inputUnit":"gal","selectableDemand":false,"defaults":{"storageDays":7,"additionalDemand":0,"safetyFactor":0.1,"demandType":"Maximum","access":"Tank Side","fillHours":2,"material":"PPR - PN20","velocity":2,"suctionPit":0.4},"rows":[{"id":"practical-3","buildingType":"Apartment (2 - occupancy)","description":"Per Apartment","max":150,"min":75,"avg":null,"fixed":150},{"id":"practical-4","buildingType":"Residence (4 - occupancy)","description":"Per Residence","max":250,"min":125,"avg":null,"fixed":250},{"id":"practical-5","buildingType":"Dormitories","description":"Per Residence Hall","max":65,"min":20,"avg":null,"fixed":65},{"id":"practical-6","buildingType":"Office Building (8hr)","description":"Per Person","max":20,"min":3,"avg":null,"fixed":20},{"id":"practical-7","buildingType":"Industrial Plant (8hr)","description":"Per Worker","max":35,"min":15,"avg":null,"fixed":35},{"id":"practical-8","buildingType":"Schools without cafetria & showers","description":"Per Student","max":15,"min":2,"avg":null,"fixed":15},{"id":"practical-9","buildingType":"Schools with cafetria no showers","description":"Per Student","max":20,"min":4,"avg":null,"fixed":20},{"id":"practical-10","buildingType":"Schools with cafetria & showers","description":"Per Student","max":25,"min":10,"avg":null,"fixed":25},{"id":"practical-11","buildingType":"Hospitals","description":"Per Bed","max":300,"min":125,"avg":null,"fixed":300},{"id":"practical-12","buildingType":"Cafetria & Restaurant","description":"Per Meal","max":10,"min":4,"avg":null,"fixed":10},{"id":"practical-13","buildingType":"Assembly","description":"Per Person","max":3,"min":0.5,"avg":null,"fixed":3},{"id":"practical-14","buildingType":"Hotels","description":"Per Room","max":75,"min":50,"avg":null,"fixed":75},{"id":"practical-15","buildingType":"Nursing Homes","description":"Per Bed","max":75,"min":30,"avg":null,"fixed":75},{"id":"practical-16","buildingType":"Airports","description":"Per Daily Passenger","max":5,"min":1,"avg":null,"fixed":5},{"id":"practical-17","buildingType":"Commercial Laundries","description":"Per Pound Of Wash","max":3.5,"min":2,"avg":null,"fixed":3.5}]},"aspe":{"name":"ASPE","subtitle":"American Society of Plumbing Engineers","demandUnit":"gal/day","inputUnit":"gal","selectableDemand":false,"defaults":{"storageDays":1,"additionalDemand":0,"safetyFactor":0.1,"demandType":"Maximum","access":"Tank Side","fillHours":4,"material":"PPR - PN20","velocity":2,"suctionPit":0.4},"rows":[{"id":"aspe-21","buildingType":"Apartment","description":"Per Person","max":60,"min":25,"avg":null,"fixed":60},{"id":"aspe-22","buildingType":"Factories (With Showers - Not including process)","description":"Per Person/Shift","max":35,"min":25,"avg":null,"fixed":35},{"id":"aspe-23","buildingType":"Motels (Not including demand for pools, laundary, restaurant","description":"Per Room","max":100,"min":40,"avg":null,"fixed":100},{"id":"aspe-24","buildingType":"Restaurant","description":"Per Meal","max":8,"min":1.5,"avg":null,"fixed":8},{"id":"aspe-25","buildingType":"Shools","description":"Per Student","max":20,"min":8,"avg":null,"fixed":20},{"id":"aspe-26","buildingType":"Hospital (Not including laundary)","description":"Per Bed","max":225,"min":null,"avg":null,"fixed":225},{"id":"aspe-27","buildingType":"Trailer Parks","description":"Per Space","max":100,"min":null,"avg":null,"fixed":100},{"id":"aspe-28","buildingType":"Rest Homes","description":"Per Bed","max":175,"min":null,"avg":null,"fixed":175},{"id":"aspe-29","buildingType":"Barber Shop","description":"Per Chair","max":75,"min":null,"avg":null,"fixed":75},{"id":"aspe-30","buildingType":"Beauty Shops","description":"Per Person","max":300,"min":null,"avg":null,"fixed":300},{"id":"aspe-31","buildingType":"Bowling Alleys","description":"Per Lane","max":75,"min":null,"avg":null,"fixed":75},{"id":"aspe-32","buildingType":"Farm Animals","description":"Per Dairy Cow","max":35,"min":null,"avg":null,"fixed":35},{"id":"aspe-33","buildingType":"Farm Animals","description":"Per Beef Cow","max":12,"min":null,"avg":null,"fixed":12},{"id":"aspe-34","buildingType":"Farm Animals","description":"Per Hog","max":4,"min":null,"avg":null,"fixed":4},{"id":"aspe-35","buildingType":"Farm Animals","description":"Per Horse","max":12,"min":null,"avg":null,"fixed":12},{"id":"aspe-36","buildingType":"Farm Animals","description":"Per Sheep","max":2,"min":null,"avg":null,"fixed":2},{"id":"aspe-37","buildingType":"Farm Animals","description":"Per 100 Chickens","max":10,"min":null,"avg":null,"fixed":10},{"id":"aspe-38","buildingType":"Farm Animals","description":"Per 100 Turkey","max":18,"min":null,"avg":null,"fixed":18}]},"egypt":{"name":"Egyptian Plumbing Code 301/1","subtitle":"EGY.CODE (301-1)","demandUnit":"L/day","inputUnit":"L","selectableDemand":true,"defaults":{"storageDays":2,"additionalDemand":0,"safetyFactor":0.0,"demandType":"Average","access":"Tank Top","fillHours":4,"material":"PPR - PN16","velocity":2,"suctionPit":0.4},"rows":[{"id":"egypt-42","buildingType":"Apartment","description":"Per Person","max":400,"min":100,"avg":250,"fixed":null},{"id":"egypt-43","buildingType":"Office Building (8hr)","description":"Per Person","max":70,"min":45,"avg":58,"fixed":null},{"id":"egypt-44","buildingType":"Factories (7hr)","description":"Per Person","max":100,"min":20,"avg":60,"fixed":null},{"id":"egypt-45","buildingType":"Hotels (upto 3stars)","description":"Per Room","max":240,"min":100,"avg":170,"fixed":null},{"id":"egypt-46","buildingType":"Hotels (upto 4stars)","description":"Per Room","max":800,"min":600,"avg":700,"fixed":null},{"id":"egypt-47","buildingType":"Hotels (upto 5stars - In cities)","description":"Per Room","max":1100,"min":1000,"avg":1050,"fixed":null},{"id":"egypt-48","buildingType":"Hotels (upto 5stars - In Resorts)","description":"Per Room","max":1500,"min":1400,"avg":1450,"fixed":null},{"id":"egypt-49","buildingType":"Cafetria & Restaurant","description":"Per Meal","max":35,"min":35,"avg":35,"fixed":null},{"id":"egypt-50","buildingType":"Laundry in hotel","description":"Per Ped","max":130,"min":130,"avg":130,"fixed":null},{"id":"egypt-51","buildingType":"Laundry in hospital","description":"Per Ped","max":180,"min":180,"avg":180,"fixed":null},{"id":"egypt-52","buildingType":"Hospitals","description":"Per Ped","max":600,"min":600,"avg":600,"fixed":null},{"id":"egypt-53","buildingType":"Schools without cafetria & showers","description":"Per Student","max":50,"min":50,"avg":50,"fixed":null},{"id":"egypt-54","buildingType":"Schools with cafetria no showers","description":"Per Student","max":75,"min":75,"avg":75,"fixed":null},{"id":"egypt-55","buildingType":"Schools with cafetria & showers","description":"Per Student","max":100,"min":100,"avg":100,"fixed":null},{"id":"egypt-56","buildingType":"Airports","description":"Per Daily Passenger","max":20,"min":20,"avg":20,"fixed":null},{"id":"egypt-57","buildingType":"Meeting Places","description":"Per Person","max":10,"min":10,"avg":10,"fixed":null},{"id":"egypt-58","buildingType":"General Building","description":"Per Person","max":50,"min":50,"avg":50,"fixed":null},{"id":"egypt-59","buildingType":"Camps","description":"Per Person","max":75,"min":75,"avg":75,"fixed":null},{"id":"egypt-60","buildingType":"Swimming Pools/Beaches","description":"Per Person","max":40,"min":40,"avg":40,"fixed":null},{"id":"egypt-61","buildingType":"Masjids","description":"Per Person","max":35,"min":20,"avg":28,"fixed":null},{"id":"egypt-62","buildingType":"Public Water Closets","description":"Per Fixture","max":120,"min":120,"avg":120,"fixed":null},{"id":"egypt-63","buildingType":"Public Urinals","description":"Per Fixture","max":40,"min":40,"avg":40,"fixed":null},{"id":"egypt-64","buildingType":"Public Lavatories","description":"Per Fixture","max":60,"min":60,"avg":60,"fixed":null},{"id":"egypt-65","buildingType":"Public Shower","description":"Per Fixture","max":560,"min":560,"avg":560,"fixed":null},{"id":"egypt-66","buildingType":"Butchery","description":"Per Animal","max":500,"min":300,"avg":400,"fixed":null},{"id":"egypt-67","buildingType":"Garage","description":"Per Car","max":30,"min":30,"avg":30,"fixed":null},{"id":"egypt-68","buildingType":"Commercial Lanudry","description":"Per KG Wash","max":35,"min":35,"avg":35,"fixed":null},{"id":"egypt-69","buildingType":"Farm Animals","description":"Per Dairy Cow","max":140,"min":80,"avg":110,"fixed":null},{"id":"egypt-70","buildingType":"Farm Animals","description":"Per Beef Cow","max":60,"min":60,"avg":60,"fixed":null},{"id":"egypt-71","buildingType":"Farm Animals","description":"Per Sheep, Goat","max":8,"min":8,"avg":8,"fixed":null},{"id":"egypt-72","buildingType":"Farm Animals","description":"Per Horse, Mule","max":50,"min":50,"avg":50,"fixed":null},{"id":"egypt-73","buildingType":"Farm Animals","description":"Per 100 Broiler Chickens","max":50,"min":50,"avg":50,"fixed":null},{"id":"egypt-74","buildingType":"Farm Animals","description":"Per 100 Laying Hens","max":35,"min":35,"avg":35,"fixed":null},{"id":"egypt-75","buildingType":"Farm Animals","description":"Per 100 Turkey","max":80,"min":80,"avg":80,"fixed":null},{"id":"egypt-76","buildingType":"Farm Animals","description":"Per 100 Duck","max":80,"min":80,"avg":80,"fixed":null},{"id":"egypt-77","buildingType":"Farm Animals","description":"Per Camel","max":70,"min":70,"avg":70,"fixed":null}]},"qatar":{"name":"Qatar – Kahramaa","subtitle":"Kahramaa Regulations","demandUnit":"L/day","inputUnit":"L","selectableDemand":true,"defaults":{"storageDays":1,"additionalDemand":0,"safetyFactor":0.1,"demandType":"Maximum","access":"Tank Side","fillHours":4,"material":"PPR - PN16","velocity":2,"suctionPit":0.4},"rows":[{"id":"qatar-81","buildingType":"Residential Building","description":"Per Capita","max":400,"min":250,"avg":325,"fixed":null},{"id":"qatar-82","buildingType":"Qatari Villa","description":"Per Capita","max":800,"min":500,"avg":650,"fixed":null},{"id":"qatar-83","buildingType":"Worker Labor Accomodation","description":"Per Capita","max":150,"min":80,"avg":115,"fixed":null},{"id":"qatar-84","buildingType":"Mixed Use Residential","description":"Per Capita","max":400,"min":250,"avg":325,"fixed":null},{"id":"qatar-85","buildingType":"Mixed Use Commercial","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-86","buildingType":"Commercial Building","description":"Per Capita","max":100,"min":60,"avg":80,"fixed":null},{"id":"qatar-87","buildingType":"Masjid","description":"Per Capita","max":50,"min":10,"avg":30,"fixed":null},{"id":"qatar-88","buildingType":"Restaurant","description":"Per Meal","max":20,"min":10,"avg":15,"fixed":null},{"id":"qatar-89","buildingType":"Hotel","description":"Per Room","max":300,"min":200,"avg":250,"fixed":null},{"id":"qatar-90","buildingType":"Shop","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-91","buildingType":"Office","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-92","buildingType":"School","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-93","buildingType":"University","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-94","buildingType":"Medical","description":"Per Bed","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-95","buildingType":"Public Amenities","description":"Per Capita","max":50,"min":20,"avg":35,"fixed":null},{"id":"qatar-96","buildingType":"Nursery","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-97","buildingType":"Guard House","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-98","buildingType":"Retail","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-99","buildingType":"Theatre","description":"Per Capita","max":50,"min":10,"avg":30,"fixed":null},{"id":"qatar-100","buildingType":"Stadium","description":"Per Capita","max":20,"min":15,"avg":18,"fixed":null},{"id":"qatar-101","buildingType":"Town Centre","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"qatar-102","buildingType":"Manufacturing","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null}]},"saudi":{"name":"Saudi Arabia","subtitle":"Water Demand Reference","demandUnit":"L/day","inputUnit":"L","selectableDemand":true,"defaults":{"storageDays":7,"additionalDemand":0,"safetyFactor":0.0,"demandType":"Minimum","access":"Tank Top","fillHours":2,"material":"PPR - PN16","velocity":2,"suctionPit":0.4},"rows":[{"id":"saudi-108","buildingType":"Residential Building","description":"Per Capita","max":250,"min":200,"avg":225,"fixed":null},{"id":"saudi-109","buildingType":"Villa","description":"Per Capita","max":300,"min":250,"avg":275,"fixed":null},{"id":"saudi-110","buildingType":"Worker Labor Accomodation","description":"Per Capita","max":150,"min":80,"avg":115,"fixed":null},{"id":"saudi-111","buildingType":"Mixed Use Residential","description":"Per Capita","max":250,"min":200,"avg":225,"fixed":null},{"id":"saudi-112","buildingType":"Mixed Use Commercial","description":"Per Capita","max":100,"min":60,"avg":80,"fixed":null},{"id":"saudi-113","buildingType":"Commercial Building & Retail","description":"Per Capita","max":100,"min":60,"avg":80,"fixed":null},{"id":"saudi-114","buildingType":"Masjid","description":"Per Capita","max":60,"min":10,"avg":35,"fixed":null},{"id":"saudi-115","buildingType":"Restaurant","description":"Per Meal","max":15,"min":10,"avg":13,"fixed":null},{"id":"saudi-116","buildingType":"Hotel","description":"Per Room","max":500,"min":300,"avg":400,"fixed":null},{"id":"saudi-117","buildingType":"Shop","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-118","buildingType":"Office","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-119","buildingType":"School","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-120","buildingType":"University","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-121","buildingType":"Medical","description":"Per Bed","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-122","buildingType":"Public Amenities","description":"Per Capita","max":60,"min":10,"avg":35,"fixed":null},{"id":"saudi-123","buildingType":"Nursery","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-124","buildingType":"Guard House","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-125","buildingType":"Theatre","description":"Per Capita","max":60,"min":10,"avg":35,"fixed":null},{"id":"saudi-126","buildingType":"Stadium","description":"Per Capita","max":20,"min":15,"avg":18,"fixed":null},{"id":"saudi-127","buildingType":"Town Centre","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-128","buildingType":"Entertainment & Leisure","description":"Per Capita","max":0,"min":0,"avg":60,"fixed":null},{"id":"saudi-129","buildingType":"Manufacturing","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null},{"id":"saudi-130","buildingType":"Events Venue","description":"Per Capita","max":60,"min":10,"avg":35,"fixed":null},{"id":"saudi-131","buildingType":"Gym / Swimming Pool","description":"Per Capita","max":0,"min":100,"avg":0,"fixed":null},{"id":"saudi-132","buildingType":"Logistics & Business Zone","description":"Per Capita","max":80,"min":60,"avg":70,"fixed":null}]}},"pipes":{"PPR - PN16":[{"dn":20,"di":14.4,"inch":"1/2\""},{"dn":25,"di":18,"inch":"3/4\""},{"dn":32,"di":23.2,"inch":"1\""},{"dn":40,"di":29,"inch":"1 1/4\""},{"dn":50,"di":36.2,"inch":"1 1/2\""},{"dn":63,"di":45.8,"inch":"2\""},{"dn":75,"di":54.4,"inch":"2 1/2\""},{"dn":90,"di":65.4,"inch":"3\""},{"dn":110,"di":79.8,"inch":"4\""},{"dn":160,"di":116.2,"inch":"6\""},{"dn":200,"di":153.6,"inch":"8\""},{"dn":250,"di":195.4,"inch":"10\""}],"PPR - PN20":[{"dn":20,"di":13.2,"inch":"1/2\""},{"dn":25,"di":16.6,"inch":"3/4\""},{"dn":32,"di":21.2,"inch":"1\""},{"dn":40,"di":26.6,"inch":"1 1/4\""},{"dn":50,"di":33.2,"inch":"1 1/2\""},{"dn":63,"di":42,"inch":"2\""},{"dn":75,"di":50,"inch":"2 1/2\""},{"dn":90,"di":60,"inch":"3\""},{"dn":110,"di":73.2,"inch":"4\""},{"dn":160,"di":106.8,"inch":"6\""},{"dn":200,"di":143.4,"inch":"8\""},{"dn":250,"di":183.4,"inch":"10\""}],"PPR - PN25":[{"dn":20,"di":13.2,"inch":"1/2\""},{"dn":25,"di":16.6,"inch":"3/4\""},{"dn":32,"di":21.2,"inch":"1\""},{"dn":40,"di":26.6,"inch":"1 1/4\""},{"dn":50,"di":33.2,"inch":"1 1/2\""},{"dn":63,"di":42,"inch":"2\""},{"dn":75,"di":50,"inch":"2 1/2\""},{"dn":90,"di":60,"inch":"3\""},{"dn":110,"di":73.2,"inch":"4\""},{"dn":160,"di":106.8,"inch":"6\""},{"dn":200,"di":143.4,"inch":"8\""},{"dn":250,"di":183.4,"inch":"10\""}],"Copper":[{"dn":15,"di":13.6,"inch":"1/2\""},{"dn":22,"di":20.2,"inch":"3/4\""},{"dn":28,"di":26.2,"inch":"1\""},{"dn":35,"di":32.6,"inch":"1 1/4\""},{"dn":42,"di":39.6,"inch":"1 1/2\""},{"dn":54,"di":51.6,"inch":"2\""},{"dn":67,"di":64.6,"inch":"2 1/2\""},{"dn":76,"di":73,"inch":"3\""},{"dn":108,"di":105,"inch":"4\""},{"dn":133,"di":130,"inch":"5\""},{"dn":159,"di":155,"inch":"6\""}]}};</script><script>
+const DATA=window.WTS_DATA,$=function(id){return document.getElementById(id)};const state={standard:"egypt",quantities:{},view:"used"};
+function roundUp(v,d){d=d||0;var p=Math.pow(10,d);return Math.ceil((Number(v)||0)*p-1e-12)/p}
+function fmt(n,d){d=d===undefined?2:d;return Number.isFinite(n)?Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d}):"—"}
+function smart(n,d){d=d===undefined?2:d;return Number.isFinite(n)?Number(n).toLocaleString(undefined,{maximumFractionDigits:d}):"—"}
+function std(){return DATA.standards[state.standard]}
+function rate(r,s,t){if(!s.selectableDemand)return Number(r.fixed!=null?r.fixed:r.max||0);if(t==="Maximum")return Number(r.max||0);if(t==="Minimum")return Number(r.min||0);return Number(r.avg||0)}
+function threshold(v,a,o){for(var i=0;i<a.length;i++)if(v<a[i].limit)return a[i].size;return o}
+function pipe(mat,di){var a=DATA.pipes[mat]||DATA.pipes["PPR - PN20"],p=a.find(function(x){return x.di>di+1e-9})||a[a.length-1];return p}
+function project(){var ids=["projectName","projectNo","buildingName","buildingNo","tankTag","tankLocation","axes","revision"],o={};ids.forEach(function(id){o[id]=$(id).value});return o}
+function calc(){
+ var s=std(),t=$("demandType").value,daily=0;s.rows.forEach(function(r){daily+=(Number(state.quantities[r.id])||0)*rate(r,s,t)});
+ var storage=Math.max(0,Number($("storageDays").value)||0),add=Math.max(0,Number($("additionalDemand").value)||0),sf=Number($("safetyFactor").value)||0,base=(daily+add)*storage*(1+sf),gal,m3;
+ if(s.inputUnit==="gal"){gal=roundUp(base,0);m3=roundUp(base*3.785/1000,1)}else{gal=roundUp(base/3.785,0);m3=roundUp(base/1000,1)}
+ var shape=$("shape").value,d1=Math.max(0,Number($("dim1").value)||0),d2=Math.max(0,Number($("dim2").value)||0),area=shape==="Circular"?Math.PI*d1*d1/4:d1*d2,eff=area>0?m3/area:0;
+ var suction=Math.max(0,Number($("suctionPit").value)||0),depth=eff+.5+($("access").value==="Tank Side"?.8:0)+suction,fh=Math.max(.01,Number($("fillHours").value)||.01),flow=gal/(fh*60);
+ var drain=gal>0?threshold(gal,[{limit:3000,size:2},{limit:5000,size:2.5},{limit:7500,size:3}],4):0,overflow=gal>0?threshold(flow,[{limit:50,size:2},{limit:150,size:2.5},{limit:200,size:3},{limit:400,size:4},{limit:1000,size:6}],8):0;
+ var vel=Math.max(.01,Number($("velocity").value)||2),di=Math.sqrt((4*((flow*.0000630902)/vel))/Math.PI)*1000,p=pipe($("material").value,di);
+ $("heroDaily").textContent=smart(daily,1);$("heroDailyUnit").textContent=s.demandUnit;$("heroM3").textContent=fmt(m3,1);$("dailyTotal").textContent=smart(daily,2)+" "+s.demandUnit;
+ [["rGal",smart(gal,0)],["rM3",fmt(m3,1)],["rArea",fmt(area,2)],["rEffective",fmt(eff,2)],["rDepth",fmt(depth,2)],["rDrain",smart(drain,1)],["rFlow",fmt(flow,2)],["rOverflow",smart(overflow,1)],["rPipeIn",gal>0?p.inch:"—"],["rPipeMm",gal>0?String(p.dn):"—"],["rRequiredDi",fmt(di,2)]].forEach(function(x){$(x[0]).textContent=x[1]});
+ var warn=[];if(area<=0&&m3>0)warn.push("Enter valid tank dimensions.");$("warnings").textContent=warn.join(" • ");$("warnings").className="status"+(warn.length?" warn":"");$("statusBadge").textContent=warn.length?"Check inputs":"Calculated";
+ updateTank("app",{shape:shape,d1:d1,d2:d2,area:area,eff:eff,depth:depth,m3:m3});renderRows();
+ return {daily:daily,gal:gal,m3:m3,area:area,eff:eff,depth:depth,drain:drain,flow:flow,overflow:overflow,di:di,p:p,shape:shape,d1:d1,d2:d2}
 }
-function fmt(n,d=2){
-  if(!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
+function updateTank(pre,c){
+ var o=$(pre+"Outline"),w=$(pre+"Water");$(pre+"Shape").textContent=c.shape==="Circular"?"Circular Tank":"Rectangular Tank";$(pre+"Dim1").textContent=c.shape==="Circular"?"Ø = "+fmt(c.d1,2)+" m":"L = "+fmt(c.d1,2)+" m";$(pre+"Dim2").textContent=c.shape==="Circular"?"R = "+fmt(c.d1/2,2)+" m":"W = "+fmt(c.d2,2)+" m";$(pre+"Eff").textContent="Eff. Depth = "+fmt(c.eff,2)+" m";$(pre+"Depth").textContent="Total Depth = "+fmt(c.depth,2)+" m";$(pre+"Vol").textContent="Vol = "+fmt(c.m3,1)+" m³";$(pre+"Area").textContent="Area = "+fmt(c.area,2)+" m²";
+ if(c.shape==="Circular"){o.setAttribute("x",120);o.setAttribute("y",60);o.setAttribute("width",210);o.setAttribute("height",210);o.setAttribute("rx",105);w.setAttribute("x1",120);w.setAttribute("y1",165);w.setAttribute("x2",330);w.setAttribute("y2",165)}else{o.setAttribute("x",100);o.setAttribute("y",70);o.setAttribute("width",250);o.setAttribute("height",130);o.setAttribute("rx",6);w.setAttribute("x1",100);w.setAttribute("y1",140);w.setAttribute("x2",350);w.setAttribute("y2",140)}
 }
-function smart(n,d=2){
-  if(!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined,{maximumFractionDigits:d});
-}
-function getRate(row, std, demandType){
-  if(!std.selectableDemand) return Number(row.fixed ?? row.max ?? 0);
-  if(demandType==="Maximum") return Number(row.max ?? 0);
-  if(demandType==="Minimum") return Number(row.min ?? 0);
-  return Number(row.avg ?? 0);
-}
-function nextThreshold(value, thresholds, over){
-  for(const item of thresholds){ if(value < item.limit) return item.size; }
-  return over;
-}
-function selectPipe(material, requiredDi){
-  const arr = DATA.pipes[material] || DATA.pipes["PPR - PN20"];
-  const minDN = material==="Copper" ? 15 : 20;
-  let picked = arr.find(x => x.di > requiredDi + 1e-9);
-  let warning = "";
-  if(!picked){
-    picked = arr[arr.length-1];
-    warning = `Required internal diameter ${requiredDi.toFixed(1)} mm exceeds the largest ${material} size stored in the workbook table.`;
-  }
-  if(picked.dn < minDN) picked = arr.find(x=>x.dn>=minDN) || picked;
-  return {picked,warning};
-}
-function activeStd(){ return DATA.standards[state.standard]; }
-
-function calculate(){
-  const std=activeStd();
-  const demandType=$("demandType").value;
-  let daily=0;
-  for(const row of std.rows){
-    const q = Number(state.quantities[row.id] || 0);
-    daily += q * getRate(row,std,demandType);
-  }
-  const storage=Math.max(0,Number($("storageDays").value)||0);
-  const additional=Math.max(0,Number($("additionalDemand").value)||0);
-  const sf=Number($("safetyFactor").value)||0;
-  const base=(daily+additional)*storage*(1+sf);
-  let gal,m3;
-  if(std.inputUnit==="gal"){
-    gal=roundUp(base,0);
-    m3=roundUp(base*3.785/1000,1);
-  }else{
-    gal=roundUp(base/3.785,0);
-    m3=roundUp(base/1000,1);
-  }
-
-  const shape=$("shape").value;
-  const d1=Math.max(0,Number($("dim1").value)||0);
-  const d2=Math.max(0,Number($("dim2").value)||0);
-  const area = shape==="Circular" ? Math.PI*d1*d1/4 : d1*d2;
-  const effective = area>0 ? m3/area : 0;
-  const suction=Math.max(0,Number($("suctionPit").value)||0);
-  const accessDepth=$("access").value==="Tank Side" ? 0.8 : 0;
-  const totalDepth=effective+0.5+accessDepth+suction;
-
-  const fillHours=Math.max(0.01,Number($("fillHours").value)||0.01);
-  const flow=gal/(fillHours*60);
-  const drain=gal>0 ? nextThreshold(gal,[{limit:3000,size:2},{limit:5000,size:2.5},{limit:7500,size:3}],4):0;
-  const overflow=gal>0 ? nextThreshold(flow,[{limit:50,size:2},{limit:150,size:2.5},{limit:200,size:3},{limit:400,size:4},{limit:1000,size:6}],8):0;
-  const velocity=Math.max(.01,Number($("velocity").value)||2);
-  const requiredDi = Math.sqrt((4*((flow*0.0000630902)/velocity))/Math.PI)*1000;
-  const {picked,warning}=selectPipe($("material").value,requiredDi);
-
-  $("heroDaily").textContent=smart(daily,1); $("heroDailyUnit").textContent=std.demandUnit;
-  $("heroM3").textContent=fmt(m3,1); $("dailyTotal").textContent=`${smart(daily,2)} ${std.demandUnit}`;
-  $("rGal").textContent=smart(gal,0); $("rM3").textContent=fmt(m3,1); $("rArea").textContent=fmt(area,2);
-  $("rEffective").textContent=fmt(effective,2); $("rDepth").textContent=fmt(totalDepth,2); $("rDrain").textContent=smart(drain,1);
-  $("rFlow").textContent=fmt(flow,2); $("rOverflow").textContent=smart(overflow,1); $("rRequiredDi").textContent=fmt(requiredDi,2);
-  $("rPipeIn").textContent=gal>0 ? picked.inch : "—"; $("rPipeMm").textContent=gal>0 ? String(picked.dn) : "—";
-  const warnings=[];
-  if(area<=0 && m3>0) warnings.push("Enter valid tank dimensions to calculate depth.");
-  if(warning && gal>0) warnings.push(warning);
-  if(fillHours<=0) warnings.push("Filling time must be greater than zero.");
-  $("warnings").hidden=warnings.length===0; $("warnings").innerHTML=warnings.map(x=>`• ${x}`).join("<br>");
-  $("statusBadge").textContent=warnings.length ? "Check inputs" : "Calculated";
-  refreshLineTotals();
-  updateTankDrawing({shape,d1,d2,area,effective,totalDepth,m3});
-  return {daily,gal,m3,area,effective,totalDepth,drain,flow,overflow,requiredDi,pipe:picked,shape,d1,d2};
-}
-function updateTankDrawing(calc){
-  if(!document.getElementById("tankDrawing")) return;
-  const shapeLabel = $("svgShape");
-  const dim1 = $("svgDim1");
-  const dim2 = $("svgDim2");
-  const eff = $("svgEffDepth");
-  const depth = $("svgDepth");
-  const vol = $("svgVolume");
-  const area = $("svgArea");
-  const outline = document.querySelector(".tank-outline");
-  const water = document.querySelector(".water-line");
-  shapeLabel.textContent = calc.shape === "Circular" ? "Circular Tank" : "Rectangular Tank";
-  dim1.textContent = calc.shape === "Circular" ? `Ø = ${fmt(calc.d1,2)} m` : `L = ${fmt(calc.d1,2)} m`;
-  dim2.textContent = calc.shape === "Circular" ? `R = ${fmt(calc.d1/2,2)} m` : `W = ${fmt(calc.d2,2)} m`;
-  eff.textContent = `Eff. Depth = ${fmt(calc.effective,2)} m`;
-  depth.textContent = `Total Depth = ${fmt(calc.totalDepth,2)} m`;
-  vol.textContent = `Vol = ${fmt(calc.m3,1)} m³`;
-  area.textContent = `Area = ${fmt(calc.area,2)} m²`;
-  if(outline && water){
-    if(calc.shape === "Circular"){
-      outline.setAttribute("x", 120); outline.setAttribute("y", 60); outline.setAttribute("width", 210); outline.setAttribute("height", 210); outline.setAttribute("rx", 105);
-      water.setAttribute("x1", 120); water.setAttribute("y1", 165); water.setAttribute("x2", 330); water.setAttribute("y2", 165);
-    }else{
-      outline.setAttribute("x", 100); outline.setAttribute("y", 70); outline.setAttribute("width", 250); outline.setAttribute("height", 130); outline.setAttribute("rx", 6);
-      water.setAttribute("x1", 100); water.setAttribute("y1", 140); water.setAttribute("x2", 350); water.setAttribute("y2", 140);
-    }
-  }
-}
-function refreshLineTotals(){
-  const std=activeStd(), type=$("demandType").value;
-  document.querySelectorAll(".demand-row").forEach(el=>{
-    const row=std.rows.find(r=>r.id===el.dataset.id); if(!row)return;
-    const rate=getRate(row,std,type), q=Number(state.quantities[row.id]||0);
-    el.querySelector(".rate").textContent=`${smart(rate,2)} ${std.demandUnit}`;
-    el.querySelector(".line-total").textContent=smart(q*rate,2);
-  });
-}
-function syncDemandViewButtons(){
-  $("hideUnusedBtn").classList.toggle("active", state.demandView==="used");
-  $("showAllBtn").classList.toggle("active", state.demandView==="all");
-}
+function fillPicker(){var p=$("demandPicker"),s=std();p.innerHTML="";s.rows.forEach(function(r){var o=document.createElement("option");o.value=r.id;o.textContent=r.buildingType+" - "+r.description;p.appendChild(o)})}
 function renderRows(){
-  const std=activeStd(), q=$("search").value.trim().toLowerCase();
-  const box=$("demandRows"); box.innerHTML="";
-  let visible=0;
-  for(const row of std.rows){
-    const qty=Number(state.quantities[row.id]||0);
-    if(state.demandView==="used" && qty<=0) continue;
-    if(q && !(row.buildingType+" "+row.description).toLowerCase().includes(q)) continue;
-    const div=document.createElement("div"); div.className="demand-row"; div.dataset.id=row.id;
-    div.innerHTML=`<div class="name"></div><div class="desc"></div><input class="qty" type="number" min="0" step="1" inputmode="decimal"><div class="rate"></div><div class="line-total"></div>`;
-    div.querySelector(".name").textContent=row.buildingType;
-    div.querySelector(".desc").textContent=row.description;
-    const inp=div.querySelector(".qty"); inp.value=state.quantities[row.id] ?? "";
-    inp.addEventListener("input",()=>{state.quantities[row.id]=Number(inp.value)||0; calculate();});
-    inp.addEventListener("change",()=>{if(state.demandView==="used" && (Number(inp.value)||0)<=0) renderRows();});
-    box.appendChild(div); visible++;
-  }
-  if(!visible){
-    const empty=document.createElement("div"); empty.className="demand-empty";
-    empty.textContent=state.demandView==="used" ? "No used building types to show. Tap Show All to add demand." : "No building types match your search.";
-    box.appendChild(empty);
-  }
-  syncDemandViewButtons();
-  refreshLineTotals();
+ var box=$("demandRows"),s=std(),t=$("demandType").value;box.innerHTML="";var rows=s.rows.filter(function(r){return state.view==="all"||(Number(state.quantities[r.id])||0)>0});
+ if(!rows.length){box.innerHTML='<div class="empty">No demand items yet. Choose a building type above and enter Qty.</div>';return}
+ rows.forEach(function(r){var q=Number(state.quantities[r.id])||0,rr=rate(r,s,t),d=document.createElement("div");d.className="drow";d.dataset.id=r.id;d.innerHTML='<span class="nm"></span><input class="q" type="number" min="0" step="1"><span class="rt"></span><span class="total"></span>';d.querySelector(".nm").textContent=r.buildingType;d.querySelector(".q").value=q||"";d.querySelector(".rt").textContent=smart(rr,2);d.querySelector(".total").textContent=smart(q*rr,2);d.querySelector(".q").addEventListener("change",function(){state.quantities[r.id]=Number(this.value)||0;calc()});box.appendChild(d)})
 }
-function applyStandard(key, resetQuantities=true){
-  state.standard=key; const std=activeStd();
-  if(resetQuantities) state.quantities={};
-  $("standardSubtitle").textContent=std.subtitle;
-  $("additionalUnit").textContent=`(${std.inputUnit})`;
-  $("heroDailyUnit").textContent=std.demandUnit;
-  $("demandType").disabled=!std.selectableDemand;
-  $("demandType").value=std.defaults.demandType;
-  $("storageDays").value=std.defaults.storageDays;
-  $("additionalDemand").value=std.defaults.additionalDemand;
-  $("safetyFactor").value=String(std.defaults.safetyFactor);
-  $("access").value=std.defaults.access; $("fillHours").value=std.defaults.fillHours; $("material").value=std.defaults.material;
-  $("velocity").value=std.defaults.velocity; $("suctionPit").value=std.defaults.suctionPit;
-  const geometryDefaults={practical:[2,3],aspe:[2,3],egypt:[5,4],qatar:[2,3],saudi:[4,4]};
-  $("shape").value="Rectangular"; $("dim1").value=geometryDefaults[key][0]; $("dim2").value=geometryDefaults[key][1];
-  renderRows(); updateGeometryLabels(); calculate();
+function applyStandard(k,reset){state.standard=k;var s=std();if(reset)state.quantities={};$("standardSubtitle").textContent=s.subtitle;$("additionalUnit").textContent="("+s.inputUnit+")";$("demandType").disabled=!s.selectableDemand;$("demandType").value=s.defaults.demandType;$("storageDays").value=s.defaults.storageDays;$("additionalDemand").value=s.defaults.additionalDemand;$("safetyFactor").value=String(s.defaults.safetyFactor);$("access").value=s.defaults.access;$("fillHours").value=s.defaults.fillHours;$("material").value=s.defaults.material;$("velocity").value=s.defaults.velocity;$("suctionPit").value=s.defaults.suctionPit;var g={practical:[2,3],aspe:[2,3],egypt:[5,4],qatar:[2,3],saudi:[4,4]};$("shape").value="Rectangular";$("dim1").value=g[k][0];$("dim2").value=g[k][1];fillPicker();geometryLabels();calc()}
+function geometryLabels(){var c=$("shape").value==="Circular";$("dim1Label").querySelector("label").textContent=c?"Diameter (m)":"Length (m)";$("dim2Label").style.display=c?"none":"flex"}
+function snap(){return{version:5,standard:state.standard,quantities:state.quantities,view:state.view,project:project(),inputs:{demandType:$("demandType").value,storageDays:$("storageDays").value,additionalDemand:$("additionalDemand").value,safetyFactor:$("safetyFactor").value,access:$("access").value,fillHours:$("fillHours").value,material:$("material").value,velocity:$("velocity").value,suctionPit:$("suctionPit").value,shape:$("shape").value,dim1:$("dim1").value,dim2:$("dim2").value}}}
+function load(s){if(!s||!DATA.standards[s.standard])throw Error("Unsupported project file");state.standard=s.standard;state.quantities=s.quantities||{};state.view=s.view||"used";$("standard").value=s.standard;applyStandard(s.standard,false);if(s.project)Object.keys(s.project).forEach(function(id){if($(id))$(id).value=s.project[id]||""});if(s.inputs)Object.keys(s.inputs).forEach(function(id){if($(id))$(id).value=s.inputs[id]});geometryLabels();fillPicker();calc()}
+function buildPrint(){
+ var c=calc(),s=std(),p=project();$("prStandard").textContent=s.name+" • "+s.subtitle;$("prProject").textContent=p.projectName||"—";$("prProjectNo").textContent=p.projectNo||"—";$("prBuilding").textContent=p.buildingName||"—";$("prBuildingNo").textContent=p.buildingNo||"—";$("prTag").textContent=p.tankTag||"—";$("prLocation").textContent=p.tankLocation||"—";$("prAxes").textContent=p.axes||"—";$("prRev").textContent=p.revision||"—";
+ var inputItems=[["Demand Type",$("demandType").value],["Storage Days",$("storageDays").value],["Additional Demand",$("additionalDemand").value+" "+s.inputUnit],["Safety Factor",(Number($("safetyFactor").value)*100)+"%"],["Tank Access",$("access").value],["Filling Time",$("fillHours").value+" hr"],["Pipe Material",$("material").value],["Velocity",$("velocity").value+" m/s"],["Suction Pit",$("suctionPit").value+" m"]];$("prInputs").innerHTML=inputItems.map(function(x){return"<div><span>"+x[0]+"</span><b>"+x[1]+"</b></div>"}).join("");
+ var used=s.rows.filter(function(r){return(Number(state.quantities[r.id])||0)>0}),t=$("demandType").value;$("prDemandRows").innerHTML=used.length?used.map(function(r){var q=Number(state.quantities[r.id])||0,rr=rate(r,s,t);return'<div class="pr-demand-row"><span>'+r.buildingType+'</span><span>'+smart(q,1)+'</span><span>'+smart(rr,2)+'</span><b>'+smart(q*rr,2)+'</b></div>'}).join(""):'<div class="empty">No used demand items.</div>';$("prDaily").textContent=smart(c.daily,2)+" "+s.demandUnit;
+ updateTank("pr",c);var rr=[["Tank Volume",smart(c.gal,0),"gal"],["Tank Volume",fmt(c.m3,1),"m³"],["Tank Area",fmt(c.area,2),"m²"],["Effective Depth",fmt(c.eff,2),"m"],["Total Depth",fmt(c.depth,2),"m"],["Drain",smart(c.drain,1),"in"],["Filling Flow",fmt(c.flow,2),"gpm"],["Overflow",smart(c.overflow,1),"in"],["Filling Pipe",c.gal>0?c.p.inch:"—","inch"],["Filling Pipe",c.gal>0?String(c.p.dn):"—","mm"],["Required Ø",fmt(c.di,2),"mm"],["Float Allowance","0.50","m"]];$("prResults").innerHTML=rr.map(function(x){return'<div class="pr-res"><span>'+x[0]+'</span><b>'+x[1]+'</b><em>'+x[2]+'</em></div>'}).join("")
 }
-function updateGeometryLabels(){
-  const circular=$("shape").value==="Circular";
-  const dim1Span=$("dim1Label").querySelector("span");
-  const dim2Span=$("dim2Label").querySelector("span");
-  if(dim1Span) dim1Span.textContent=circular?"Diameter (m)":"Length (m)";
-  if(dim2Span) dim2Span.textContent=circular?"Radius info hidden in drawing":"Width (m)";
-  $("dim2Label").style.display=circular?"none":"flex";
-}
-function collectProject(){
-  return ["projectName","projectNo","buildingName","buildingNo","tankTag","tankLocation","axes","revision"].reduce((o,id)=>(o[id]=$(id).value,o),{});
-}
-function snapshot(){
-  const calc=calculate();
-  return {
-    version:3, savedAt:new Date().toISOString(), standard:state.standard, quantities:state.quantities, demandView:state.demandView,
-    project:collectProject(),
-    inputs:{
-      demandType:$("demandType").value,storageDays:$("storageDays").value,additionalDemand:$("additionalDemand").value,
-      safetyFactor:$("safetyFactor").value,access:$("access").value,fillHours:$("fillHours").value,material:$("material").value,
-      velocity:$("velocity").value,suctionPit:$("suctionPit").value,shape:$("shape").value,dim1:$("dim1").value,dim2:$("dim2").value
-    },results:calc
-  };
-}
-function loadSnapshot(s){
-  if(!s || !DATA.standards[s.standard]) throw new Error("Unsupported project file.");
-  state.standard=s.standard; state.quantities=s.quantities||{}; state.demandView=s.demandView==="used"?"used":"all";
-  $("standard").value=s.standard; applyStandard(s.standard,false);
-  if(s.project) Object.entries(s.project).forEach(([id,v])=>{if($(id))$(id).value=v??""});
-  if(s.inputs) Object.entries(s.inputs).forEach(([id,v])=>{if($(id))$(id).value=v});
-  updateGeometryLabels(); renderRows(); calculate();
-}
-function prepareReportMode(on){
-  document.body.classList.toggle("pdf-mode", !!on);
-  document.querySelectorAll(".demand-row").forEach(el=>{
-    const qty=Number(state.quantities[el.dataset.id]||0);
-    el.classList.toggle("report-hidden", !!on && qty<=0);
-  });
-}
+function prepareReportMode(on){if(on)buildPrint();document.body.classList.toggle("report-mode",!!on)}
 window.prepareReportMode=prepareReportMode;
-window.addEventListener("beforeprint",()=>prepareReportMode(true));
-window.addEventListener("afterprint",()=>prepareReportMode(false));
 function init(){
-  Object.entries(DATA.standards).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=v.name;$("standard").appendChild(o)});
-  for(let p=0;p<=40;p+=5){const o=document.createElement("option");o.value=String(p/100);o.textContent=p+"%";$("safetyFactor").appendChild(o)}
-  $("standard").value=state.standard; applyStandard(state.standard,true);
-  $("standard").addEventListener("change",e=>applyStandard(e.target.value,true));
-  ["demandType","storageDays","additionalDemand","safetyFactor","access","fillHours","material","velocity","suctionPit","dim1","dim2"].forEach(id=>$(id).addEventListener("input",calculate));
-  $("shape").addEventListener("change",()=>{updateGeometryLabels();calculate()});
-  $("search").addEventListener("input",renderRows);
-  $("hideUnusedBtn").addEventListener("click",()=>{state.demandView="used";renderRows();});
-  $("showAllBtn").addEventListener("click",()=>{state.demandView="all";renderRows();});
-  $("saveBtn").addEventListener("click",()=>{localStorage.setItem("wts-project",JSON.stringify(snapshot()));$("statusBadge").textContent="Saved";});
-  $("printBtn").addEventListener("click",()=>{
-    prepareReportMode(true);
-    try{
-      if(window.Android && typeof window.Android.printPage==="function") setTimeout(()=>window.Android.printPage(),250);
-      else window.print();
-    }catch(e){ prepareReportMode(false); alert("Print error: "+e.message); }
-  });
-  $("savePdfBtn").addEventListener("click",()=>{
-    prepareReportMode(true);
-    try{
-      if(window.Android && typeof window.Android.savePdf==="function") setTimeout(()=>window.Android.savePdf(),250);
-      else { window.print(); }
-    }catch(e){ prepareReportMode(false); alert("PDF error: "+e.message); }
-  });
-  $("resetBtn").addEventListener("click",()=>{if(confirm("Reset current calculation?")){localStorage.removeItem("wts-project");document.querySelectorAll(".project-grid-excel input").forEach(x=>x.value="");applyStandard(state.standard,true);}});
-  $("exportBtn").addEventListener("click",()=>{
-    const content=JSON.stringify(snapshot(),null,2);
-    const fileName=(($("projectName").value||"Water-Tank-Project").replace(/[^\w-]+/g,"_"))+".json";
-    if(window.Android?.saveTextFile){window.Android.saveTextFile(content,fileName);return;}
-    const blob=new Blob([content],{type:"application/json"});const a=document.createElement("a");
-    a.href=URL.createObjectURL(blob);a.download=fileName;a.click();URL.revokeObjectURL(a.href);
-  });
-  $("importFile").addEventListener("change",async e=>{const f=e.target.files[0];if(!f)return;try{loadSnapshot(JSON.parse(await f.text()));localStorage.setItem("wts-project",JSON.stringify(snapshot()));}catch(err){alert(err.message)}e.target.value="";});
-  try{const saved=JSON.parse(localStorage.getItem("wts-project")); if(saved) loadSnapshot(saved);}catch(_){}
-  calculate();
-  if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+ Object.keys(DATA.standards).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=DATA.standards[k].name;$("standard").appendChild(o)});for(var p=0;p<=40;p+=5){var o=document.createElement("option");o.value=String(p/100);o.textContent=p+"%";$("safetyFactor").appendChild(o)}
+ $("standard").value=state.standard;applyStandard(state.standard,true);$("standard").addEventListener("change",function(){applyStandard(this.value,true)});
+ ["demandType","storageDays","additionalDemand","safetyFactor","access","fillHours","material","velocity","suctionPit","dim1","dim2"].forEach(function(id){$(id).addEventListener("input",calc)});$("shape").addEventListener("change",function(){geometryLabels();calc()});
+ $("addDemandBtn").addEventListener("click",function(){var id=$("demandPicker").value,q=Number($("quickQty").value)||0;if(id){state.quantities[id]=q;$("quickQty").value="";state.view="used";calc()}});
+ $("usedBtn").addEventListener("click",function(){state.view="used";renderRows()});$("allBtn").addEventListener("click",function(){state.view="all";renderRows()});
+ $("saveBtn").addEventListener("click",function(){localStorage.setItem("wts-project",JSON.stringify(snap()));$("statusBadge").textContent="Saved"});
+ $("printBtn").addEventListener("click",function(){prepareReportMode(true);setTimeout(function(){if(window.Android&&Android.printPage)Android.printPage();else window.print()},250)});
+ $("savePdfBtn").addEventListener("click",function(){prepareReportMode(true);setTimeout(function(){if(window.Android&&Android.savePdf)Android.savePdf();else window.print()},250)});
+ $("resetBtn").addEventListener("click",function(){if(confirm("Reset current calculation?")){localStorage.removeItem("wts-project");["projectName","projectNo","buildingName","buildingNo","tankTag","tankLocation","axes","revision"].forEach(function(id){$(id).value=""});applyStandard(state.standard,true)}});
+ $("exportBtn").addEventListener("click",function(){var content=JSON.stringify(snap(),null,2),fn=(($("projectName").value||"Water-Tank-Project").replace(/[^\w-]+/g,"_"))+".json";if(window.Android&&Android.saveTextFile){Android.saveTextFile(content,fn);return}var b=new Blob([content],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=fn;a.click();URL.revokeObjectURL(a.href)});
+ $("importFile").addEventListener("change",async function(){var f=this.files[0];if(!f)return;try{load(JSON.parse(await f.text()));localStorage.setItem("wts-project",JSON.stringify(snap()))}catch(e){alert(e.message)}this.value=""});
+ try{var s=JSON.parse(localStorage.getItem("wts-project"));if(s)load(s)}catch(e){}calc()
 }
 init();
-</script>
-</body>
-</html>
+</script></body></html>
