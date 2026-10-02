@@ -145,47 +145,31 @@ public class MainActivity extends Activity {
                 int contentWidth = Math.max(1, picture.getWidth());
                 int contentHeight = Math.max(1, picture.getHeight());
 
-                final int pageWidth = 595;   // A4 points at 72 dpi
-                final int pageHeight = 842;
-                final int margin = 24;
+                final int pageWidth = 842;   // A4 landscape at 72 dpi
+                final int pageHeight = 595;
+                final int margin = 18;
                 final int printableWidth = pageWidth - (margin * 2);
                 final int printableHeight = pageHeight - (margin * 2);
 
-                float scale = (float) printableWidth / (float) contentWidth;
-                int sourcePageHeight = Math.max(1, (int) Math.floor(printableHeight / scale));
-                int pageCount = Math.max(1, (int) Math.ceil((double) contentHeight / sourcePageHeight));
+                float scaleX = (float) printableWidth / (float) contentWidth;
+                float scaleY = (float) printableHeight / (float) contentHeight;
+                float scale = Math.min(scaleX, scaleY);
+                float drawnWidth = contentWidth * scale;
+                float drawnHeight = contentHeight * scale;
+                float left = (pageWidth - drawnWidth) / 2f;
+                float top = (pageHeight - drawnHeight) / 2f;
 
-                Bitmap watermark = BitmapFactory.decodeResource(getResources(), R.drawable.app_watermark);
-                Paint watermarkPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-                watermarkPaint.setAlpha(24);
-
-                for (int i = 0; i < pageCount; i++) {
-                    PdfDocument.PageInfo pageInfo = new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, i + 1).create();
-                    PdfDocument.Page page = document.startPage(pageInfo);
-                    Canvas canvas = page.getCanvas();
-                    canvas.drawColor(Color.WHITE);
-
-                    canvas.save();
-                    canvas.clipRect(margin, margin, margin + printableWidth, margin + printableHeight);
-                    canvas.translate(margin, margin);
-                    canvas.scale(scale, scale);
-                    canvas.translate(0, -i * sourcePageHeight);
-                    picture.draw(canvas);
-                    canvas.restore();
-
-                    // Watermark appears on every PDF page.
-                    if (watermark != null) {
-                        float wmWidth = pageWidth * 0.58f;
-                        float wmHeight = wmWidth * watermark.getHeight() / (float) watermark.getWidth();
-                        float left = (pageWidth - wmWidth) / 2f;
-                        float top = (pageHeight - wmHeight) / 2f;
-                        canvas.drawBitmap(watermark, null,
-                                new RectF(left, top, left + wmWidth, top + wmHeight),
-                                watermarkPaint);
-                    }
-
-                    document.finishPage(page);
-                }
+                PdfDocument.PageInfo pageInfo =
+                        new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create();
+                PdfDocument.Page page = document.startPage(pageInfo);
+                Canvas canvas = page.getCanvas();
+                canvas.drawColor(Color.WHITE);
+                canvas.save();
+                canvas.translate(left, top);
+                canvas.scale(scale, scale);
+                picture.draw(canvas);
+                canvas.restore();
+                document.finishPage(page);
 
                 try (OutputStream out = getContentResolver().openOutputStream(uri)) {
                     if (out == null) throw new IllegalStateException("Cannot open selected PDF location");
@@ -193,14 +177,14 @@ public class MainActivity extends Activity {
                     out.flush();
                 }
 
-                Toast.makeText(this, "PDF saved successfully", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Single-page PDF saved successfully", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
                 Toast.makeText(this, "PDF save failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
             } finally {
                 document.close();
                 restoreReportMode();
             }
-        }, 350);
+        }, 450);
     }
 
     private void restoreReportMode() {
