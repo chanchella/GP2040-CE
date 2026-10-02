@@ -29,6 +29,8 @@
 #include "oag/input/keyboard_state.h"
 #include "oag/input/mouse_state.h"
 #include "oag/mapping/diamond_combo_engine.h"
+#include "oag/mapping/smart_combo_engine.h"
+#include "oag/mapping/smart_combo_legacy.h"
 #include "oag/mapping/keyboard_mouse_gamepad_mapper.h"
 #include "oag/mapping/logical_slot_manager.h"
 #include "oag/mapping/native_km_combo_engine.h"
@@ -168,6 +170,8 @@ public:
         if (!gameLibrary_.initialize(configStore_.config())) {
             return false;
         }
+        // Optional extension: no boot writes and no transport initialization.
+        smartStore_.activate(gameLibrary_.activeGame());
 
         gameContextInactive_ = configStore_.config().proInput.gameContextInactive;
         configMode_ =
@@ -178,6 +182,7 @@ public:
             // Config mode owns CYW43. USB Host remains available for local
             // inputs/calibration, while Bluetooth and gaming output stay off.
             wifiPortal_.attachProInput(proInput_, registry_);
+            wifiPortal_.attachOagSmart(smartStore_, smartCombos_);
             if (!wifiPortal_.start(configStore_, gameLibrary_)) {
                 return false;
             }
@@ -1963,6 +1968,7 @@ private:
         keyboardMouse_.mouseConfig().sensitivityX = keyboardMouse_.mouseConfig().sensitivityY = 1.0f / settings.mouseFullScaleCounts;
         keyboardMouse_.mouseConfig().exponent = settings.curvePermille / 1000.0f;
         currentNativeWheel_ = mouse.wheel; currentNativePan_ = mouse.pan;
+        smartWheelEvent_ = mouse.wheel; ++smartWheelGeneration_;
         if (!configMode_ && keyboardMouseMode_ == KeyboardMouseOutputMode::Native && !oag::firmware::mobileTouchUsbProfileActive())
             nativeKmOutput_.addMouseMotion(currentMouseMotion_.dx, currentMouseMotion_.dy, mouse.wheel, mouse.pan);
         updateMouseAimFromCurrentMotion(time_us_64()); mouseDirty_ = true;
@@ -2122,6 +2128,33 @@ private:
         ) {
             sendComposedOutput();
         }
+    }
+
+    oag::LogicalGamepadState applyOagSmartAndLegacy(
+        const std::array<oag::DiamondComboProgram, oag::kDiamondComboSlots>& programs,
+        const oag::KeyboardState* keyboard, const oag::MouseState* mouse,
+        const oag::LogicalGamepadState& base, std::uint64_t nowUs, bool enabled
+    ) {
+        if (!enabled || !smartStore_.ready() || !smartStore_.activate(gameLibrary_.activeGame())) {
+            if (smartHasInput_) smartCombos_.reset();
+            smartHasInput_ = false; smartWheelEvent_ = 0;
+            return diamondCombos_.apply(programs, keyboard, mouse, base, nowUs, enabled);
+        }
+        if (smartRevision_ != smartStore_.revision()) {
+            smartCombos_.reset(); smartRevision_ = smartStore_.revision();
+            smartLegacyMask_ = oag::oagSmartLegacyMask(smartStore_.active(), programs);
+        }
+        oag::OagSmartInput input {}; input.pad = base;
+        if (keyboard) input.keyboard = *keyboard;
+        if (mouse) input.mouse = *mouse;
+        input.mouse.wheel = smartWheelEvent_; input.mouse.generation = smartWheelGeneration_;
+        smartCombos_.tick(smartStore_.active(), input, nowUs); smartWheelEvent_ = 0;
+        smartHasInput_ = true;
+        const auto& filtered = smartCombos_.filteredInput();
+        auto output = diamondCombos_.apply(programs, keyboard ? &filtered.keyboard : nullptr,
+            mouse ? &filtered.mouse : nullptr, filtered.pad, nowUs, true, smartLegacyMask_);
+        oag::oagSmartCompose(smartCombos_.output(), output);
+        return output;
     }
 
     void sendComposedOutput() {
@@ -2304,7 +2337,7 @@ private:
                 nowUs
             );
             applyPubgTriangleActions(output, nowUs);
-            output = diamondCombos_.apply(
+            output = applyOagSmartAndLegacy(
                 gameLibrary_.active().comboPrograms,
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
@@ -2350,7 +2383,7 @@ private:
             keyboardMouseMode_ == KeyboardMouseOutputMode::Native
         ) {
             const std::uint64_t nowUs = time_us_64();
-            oag::LogicalGamepadState output = diamondCombos_.apply(
+            oag::LogicalGamepadState output = applyOagSmartAndLegacy(
                 gameLibrary_.active().comboPrograms,
                 hasKeyboard ? &keyboard : nullptr,
                 hasMouse ? &mouse : nullptr,
@@ -2396,7 +2429,7 @@ private:
         }
 
         const std::uint64_t nowUs = time_us_64();
-        output = diamondCombos_.apply(
+        output = applyOagSmartAndLegacy(
             gameLibrary_.active().comboPrograms,
             hasKeyboard ? &keyboard : nullptr,
             hasMouse ? &mouse : nullptr,
@@ -2695,13 +2728,20 @@ private:
         consumeOutputProfileChord(keyboard);
         maskOagGameWeaponHotkey(keyboard);
 
+        if (!gameContextInactive_ && smartHasInput_) {
+            keyboard = smartCombos_.filteredInput().keyboard;
+            mouse.buttons = smartCombos_.filteredInput().mouse.buttons;
+        }
         oag::NativeKmComboFrame frame =
             gameContextInactive_ ? oag::NativeKmComboFrame {keyboard, mouse} : nativeKmCombos_.apply(keyboard, mouse);
 
         // Merge the programmable OAG Combo chord generated by the shared
         // post-mapping engine. This keeps physical KM input intact while
         // allowing a combo step to emit multiple keyboard/mouse controls.
-        const auto& generated = diamondCombos_.nativeOutput();
+        oag::OagSmartOutput generated {};
+        generated.keyboard = diamondCombos_.nativeOutput().keyboard;
+        generated.mouse = diamondCombos_.nativeOutput().mouse;
+        if (!gameContextInactive_) oag::oagSmartMerge(smartCombos_.output(), generated);
         frame.keyboard.modifiers |= generated.keyboard.modifiers;
         for (std::uint16_t usage = 1;
              usage < oag::KeyboardState::kUsageCount;
@@ -2728,6 +2768,7 @@ private:
                 0
             );
             diamondCombos_.consumeNativeWheel();
+            smartCombos_.consumeNativeWheel();
         }
 
         currentMouseMotion_ = {}; currentNativeWheel_ = currentNativePan_ = 0;
@@ -2779,7 +2820,7 @@ private:
     }
 
     void serviceDiamondComboTimeline() {
-        if (gameContextInactive_ || !diamondCombos_.active()) {
+        if (gameContextInactive_ || (!diamondCombos_.active() && !smartCombos_.needsTick())) {
             nextDiamondComboServiceUs_ = 0;
             return;
         }
@@ -3076,6 +3117,7 @@ private:
     oag::firmware::UsbPioHost usbHost_;
     oag::firmware::DiamondConfigStore configStore_;
     oag::firmware::DiamondGameLibraryStore gameLibrary_;
+    oag::firmware::OagSmartComboStore smartStore_;
     oag::firmware::DiamondWifiPortal wifiPortal_;
     bool configMode_ = false;
 
@@ -3095,6 +3137,11 @@ private:
     oag::KeyboardMouseGamepadMapper keyboardMouse_;
     oag::NativeKmComboEngine nativeKmCombos_;
     oag::DiamondComboEngine diamondCombos_;
+    oag::OagSmartComboEngine smartCombos_;
+    std::uint32_t smartRevision_ = 0, smartWheelGeneration_ = 0;
+    std::uint16_t smartLegacyMask_ = 0;
+    std::int16_t smartWheelEvent_ = 0;
+    bool smartHasInput_ = false;
     std::uint64_t nextDiamondComboServiceUs_ = 0;
     bool diamondRecoilActive_ = false;
     std::uint64_t nextDiamondRecoilServiceUs_ = 0;

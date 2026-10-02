@@ -1,0 +1,69 @@
+name: OAG Smart Combo Logic V1 (FIX2 source baseline)
+on:
+  push:
+    branches: [chatgpt/oag-smart-combo-logic-v1]
+    paths: ['oag/**', '.github/workflows/oag-smart-combo-logic-v1.yml']
+  workflow_dispatch:
+jobs:
+  host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with: {fetch-depth: 0}
+      - name: Verify FIX2 baseline ancestry
+        run: git merge-base --is-ancestor 2c7434a772b498ee7a8d53b3d45d87defb0c5231 HEAD
+      - run: python3 oag/tools/check_architecture.py
+      - run: node oag/tools/test_combo_editor.js
+      - run: python3 oag/tools/embed_smart_ui.py --check
+      - run: cmake -S oag -B build/oag-host -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build/oag-host --parallel 2
+      - run: ctest --test-dir build/oag-host --output-on-failure
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Test both Wi-Fi builders with real host APIs
+        run: |
+          npm install --prefix build/oag-ui --no-audit --no-fund playwright@1.62.1
+          build/oag-ui/node_modules/.bin/playwright install --with-deps chromium
+          PLAYWRIGHT_MODULE="$GITHUB_WORKSPACE/build/oag-ui/node_modules/playwright" \
+            OAG_PRO_API_TEST="$GITHUB_WORKSPACE/build/oag-host/oag_pro_portal_tests" \
+            node oag/tools/test_pro_ui.mjs
+          PLAYWRIGHT_MODULE="$GITHUB_WORKSPACE/build/oag-ui/node_modules/playwright" \
+            OAG_SMART_API_TEST="$GITHUB_WORKSPACE/build/oag-host/oag_smart_portal_tests" \
+            node oag/tools/test_smart_ui.mjs
+  firmware:
+    needs: host-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with: {fetch-depth: 0, submodules: recursive}
+      - uses: jwlawson/actions-setup-cmake@v2
+        with: {cmake-version: '3.24.x'}
+      - uses: Fortinbra/RaspberryPiPicoBuild@v7
+      - uses: actions/checkout@v4.1.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+          path: pico-sdk-ui5k
+          submodules: recursive
+          fetch-depth: 1
+      - name: Prepare frozen dependencies
+        run: python3 oag/tools/prepare_dependencies.py
+      - name: Build Pico 2 W
+        run: |
+          PICO_SDK_PATH="$GITHUB_WORKSPACE/pico-sdk-ui5k" cmake -S oag/firmware -B build/oag-fw \
+            -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=pico2_w -DPICO_PLATFORM=rp2350-arm-s
+          cmake --build build/oag-fw --parallel 2
+      - name: Verify memory boundaries and package
+        run: |
+          python3 oag/tools/check_smart_firmware.py build/oag-fw/OAG_UI5K_MULTIPROFILE_V1_Pico2W.elf
+          mkdir -p artifacts
+          cp build/oag-fw/OAG_UI5K_MULTIPROFILE_V1_Pico2W.uf2 artifacts/OAG_SMART_COMBO_LOGIC_V1_FIX2_BASE_Pico2W.uf2
+          cp build/oag-fw/OAG_UI5K_MULTIPROFILE_V1_Pico2W.elf artifacts/
+          cp build/oag-fw/OAG_UI5K_MULTIPROFILE_V1_Pico2W.map artifacts/
+          cp oag/docs/OAG_SMART_COMBO_LOGIC_V1.md artifacts/
+          sha256sum artifacts/*.uf2 > artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4.3.1
+        with:
+          name: OAG-SMART-COMBO-LOGIC-V1-FIX2-BASE
+          path: artifacts/*
+          if-no-files-found: error

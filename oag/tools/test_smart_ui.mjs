@@ -1,0 +1,85 @@
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {readFile,mkdir} from 'node:fs/promises';
+import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
+const require=createRequire(import.meta.url);
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const backend=spawn(process.env.OAG_SMART_API_TEST||path.join(root,'../build/oag-host/oag_smart_portal_tests'),['--bridge']);
+let waiting=[];const lines=createInterface({input:backend.stdout});
+lines.on('line',line=>waiting.shift()?.(line));
+backend.stderr.on('data',data=>process.stderr.write(data));
+let apiQueue=Promise.resolve();
+const api=(method,url,body='')=>{let job=apiQueue.then(()=>new Promise((resolve,reject)=>{
+ const timer=setTimeout(()=>reject(Error('OAG API bridge timed out')),10000);
+ waiting.push(line=>{clearTimeout(timer);let [status,type,...bytes]=line.split('\t');resolve({status:Number(status.split(' ')[0]),type,body:bytes.join('\t')})});
+ backend.stdin.write(method+' '+url+' '+body+'\n');
+}));apiQueue=job.catch(()=>{});return job;};
+let largest=0;
+const server=createServer(async(req,res)=>{try{
+ if(req.url==='/api/games'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({names:Array.from({length:20},(_,i)=>'OAG Game '+(i+1))}));return;}
+ if(req.url.startsWith('/api/oag-smart/')){let body='';for await(const chunk of req)body+=chunk;largest=Math.max(largest,Buffer.byteLength(body));let r=await api(req.method,req.url,body);res.writeHead(r.status,{'Content-Type':r.type});res.end(r.body);return;}
+ let name=req.url==='/oag-smart'?'index.html':req.url.replace('/oag-smart/','');if(!/^[\w.-]+$/.test(name)){res.writeHead(404);res.end();return;}
+ let data=await readFile(path.join(root,'tools/smart_ui_assets',name));res.writeHead(200,{'Content-Type':name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':'text/html'});res.end(data);
+ }catch(e){res.writeHead(500);res.end(e.message)}});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+let browser;
+try{
+ browser=await chromium.launch({headless:true,executablePath:process.env.OAG_CHROMIUM||undefined,args:['--no-sandbox','--no-zygote','--single-process','--disable-gpu','--disable-dev-shm-usage']});
+ let page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+ await page.goto('http://127.0.0.1:'+server.address().port+'/oag-smart');
+ await page.waitForFunction(()=>window.OAGS?.headers.length===16&&!document.body.classList.contains('busy'));
+ assert.equal(await page.locator('#game option').count(),20);assert.equal(await page.locator('#slot option').count(),16);
+ assert.equal(await page.locator('.condition select[data-field=trigger] option').count(),12);
+ let palette=await page.locator('.condition .target select option').evaluateAll(es=>es.map(e=>({value:e.value,label:e.textContent})));
+ for(let code=1;code<=34;code++)assert(palette.some(v=>v.value==='0:'+code));for(let code=1;code<=255;code++)assert(palette.some(v=>v.value==='1:'+code));
+ assert(palette.some(v=>v.label==='OAG Right Stick ↗'));assert(palette.some(v=>v.label==='OAG Left Stick ↙'));assert(palette.some(v=>v.value==='2:32768'));assert(palette.some(v=>v.value==='3:2'));
+ await page.locator('#name').fill('OAG R1 double');await page.locator('#enabled').check();
+ await page.locator('.condition select[data-field=trigger]').selectOption('1');
+ await page.locator('.condition input[data-field=windowMs]').fill('500');
+ await page.locator('.action .target select').selectOption('0:3');await page.locator('.action input[data-field=durationMs]').fill('250');
+ await page.getByRole('button',{name:'+ Add Condition · إضافة شرط',exact:true}).click();
+ await page.locator('.condition').nth(1).locator('select[data-field=trigger]').selectOption('5');
+ await page.locator('.condition').nth(1).locator('.target select').selectOption('0:5');
+ await page.getByRole('button',{name:'+ Add Action · إضافة خطوة',exact:true}).click();
+ await page.locator('.action').nth(1).locator('select[data-field=kind]').selectOption('9');
+ await page.locator('.action').nth(1).locator('.target select').selectOption('0:22');
+ await page.locator('.action').nth(1).locator('input[data-field=durationMs]').fill('300');
+ await page.getByRole('button',{name:'+ Add Branch · إضافة فرع',exact:true}).click();
+ await page.locator('.branch').nth(1).locator('.condition select[data-field=trigger]').selectOption('2');
+ await page.locator('#addelse').click();
+ await page.evaluate(()=>OAGS.flush());
+ assert.equal(JSON.parse((await api('GET','/test/flash-count')).body).writes,0);
+ assert(await page.locator('#dirty').textContent().then(s=>s.includes('SAVE')));
+ await page.locator('#save').click();await page.waitForFunction(()=>!OAGS.dirty&&!document.body.classList.contains('busy'));
+ assert.equal(JSON.parse((await api('GET','/test/flash-count')).body).writes,2);
+ await page.locator('#testbranch').selectOption('0');await page.locator('#test').click();
+ await page.waitForFunction(()=>document.getElementById('trace').textContent.includes('simulation'));
+ await page.locator('#stoptest').click();assert.match(await page.locator('#trace').textContent(),/STOPPED/);
+ await page.locator('#duplicate').click();await page.waitForFunction(()=>OAGS.slot===2&&!OAGS.edited&&!document.body.classList.contains('busy'));
+ assert.equal(await page.locator('.branch').count(),3);
+ await page.locator('#save').click();await page.waitForFunction(()=>!OAGS.dirty&&!document.body.classList.contains('busy'));
+ await page.locator('#game').selectOption('2');await page.waitForFunction(()=>OAGS.game===2&&!document.body.classList.contains('busy'));
+ assert.equal(await page.locator('#enabled').isChecked(),false);
+ await page.locator('#game').selectOption('1');await page.waitForFunction(()=>OAGS.game===1&&!document.body.classList.contains('busy'));
+ assert.equal(await page.locator('#name').inputValue(),'OAG R1 double');assert.equal(await page.locator('.branch').count(),3);
+ await page.locator('#slot').selectOption('2');await page.waitForFunction(()=>OAGS.slot===2&&!document.body.classList.contains('busy'));
+ await page.locator('#delete').click();await page.waitForFunction(()=>!OAGS.p.enabled&&!OAGS.edited&&!document.body.classList.contains('busy'));
+ assert.equal(await page.locator('#enabled').isChecked(),false);assert(await page.evaluate(()=>OAGS.dirty));
+ await page.locator('#reload').click();await page.waitForFunction(()=>!OAGS.dirty&&!document.body.classList.contains('busy'));
+ assert.equal(await page.locator('#enabled').isChecked(),true);assert.equal(await page.locator('.branch').count(),3);
+ await page.setViewportSize({width:390,height:844});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await page.locator('.branch').first().scrollIntoViewIfNeeded();
+ let out=process.env.OAG_UI_SCREENSHOTS||path.join(root,'../build/oag-ui');await mkdir(out,{recursive:true});
+ await page.screenshot({path:path.join(out,'oag-smart-mobile.png')});
+ await page.setViewportSize({width:1280,height:900});await page.locator('.condition').first().scrollIntoViewIfNeeded();
+ await page.screenshot({path:path.join(out,'oag-smart-desktop.png')});
+ assert(largest<2300);assert.deepEqual(errors,[]);
+ console.log('OAG_SMART_UI=PASS controls=307 branches=3 flash_only_on_save=true isolation=true largest_post='+largest);
+}finally{if(browser)await browser.close();backend.kill();lines.close();await new Promise(r=>server.close(r));}

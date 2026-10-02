@@ -27,7 +27,8 @@ public:
         const MouseState* mouse,
         LogicalGamepadState base,
         std::uint64_t nowUs,
-        bool gameContextEnabled = true
+        bool gameContextEnabled = true,
+        std::uint16_t suppressedSlots = 0
     );
 
     const DiamondComboNativeFrame& nativeOutput() const {

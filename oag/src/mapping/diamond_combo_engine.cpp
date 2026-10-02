@@ -556,7 +556,8 @@ LogicalGamepadState DiamondComboEngine::apply(
     const MouseState* mouse,
     LogicalGamepadState base,
     std::uint64_t nowUs,
-    bool gameContextEnabled
+    bool gameContextEnabled,
+    std::uint16_t suppressedSlots
 ) {
     // Cancelling a game only removes generated actions. The mapped physical
     // input and its connected state still reach the existing output profile.
@@ -570,6 +571,7 @@ LogicalGamepadState DiamondComboEngine::apply(
     nativeOutput_.mouse.connected = true;
 
     for (std::size_t i = 0; i < programs.size(); ++i) {
+        if (suppressedSlots & (1u << i)) { stop(runtime_[i]); runtime_[i].previousTrigger = false; continue; }
         const auto& program = programs[i];
         auto& runtime = runtime_[i];
 

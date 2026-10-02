@@ -27,6 +27,10 @@ add_library(oag_core STATIC
     src/mapping/keyboard_mouse_gamepad_mapper.cpp
     src/mapping/native_km_combo_engine.cpp
     src/mapping/diamond_combo_engine.cpp
+    src/config/smart_combo_config.cpp
+    src/mapping/smart_combo_controls.cpp
+    src/mapping/smart_combo_engine.cpp
+    src/mapping/smart_combo_legacy.cpp
     src/output/platform/switch/switch_pro_report_encoder.cpp
     src/output/platform/playstation/ps3_report_encoder.cpp
     src/output/platform/playstation/ps3_feedback_decoder.cpp
@@ -181,6 +185,14 @@ if(OAG_BUILD_HOST_TESTS)
     target_link_libraries(oag_diamond_combo_engine_tests PRIVATE oag_core)
     target_compile_features(oag_diamond_combo_engine_tests PRIVATE cxx_std_17)
     add_test(NAME oag_diamond_combo_engine_tests COMMAND oag_diamond_combo_engine_tests)
+    add_executable(oag_smart_combo_tests tests/host/test_smart_combo.cpp)
+    target_link_libraries(oag_smart_combo_tests PRIVATE oag_core)
+    add_test(NAME oag_smart_combo_tests COMMAND oag_smart_combo_tests)
+    add_executable(oag_smart_portal_tests tests/host/test_smart_portal.cpp
+        firmware/src/smart_combo_store.cpp firmware/src/smart_combo_portal.cpp)
+    target_include_directories(oag_smart_portal_tests PRIVATE tests/host/smart_stubs firmware/include firmware/src)
+    target_link_libraries(oag_smart_portal_tests PRIVATE oag_core)
+    add_test(NAME oag_smart_portal_tests COMMAND oag_smart_portal_tests)
 
     add_executable(oag_switch_pro_encoder_tests
         tests/host/test_switch_pro_report_encoder.cpp

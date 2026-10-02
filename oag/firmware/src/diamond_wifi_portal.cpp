@@ -53,6 +53,7 @@ std::array<HttpClientState, kHttpClientSlots> gClients {};
 
 constexpr char kDashboardHtml[] = R"HTML(<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>OAG ABO GEMI</title><link rel=stylesheet href=/app.css><link rel=stylesheet href=/combo.css><link rel=stylesheet href=/pro.css></head><body>
 <header><h1>OAG ABO GEMI</h1><span>Controller Lab • Smart Anti-Drift • Profiles</span></header><main>
+<section class=card dir=rtl><h2>OAG SMART COMBO LOGIC</h2><p>WHEN → THEN → ELSE / STOP · منطق ضغط وفروع وتوقيت لكل لعبة، مع حفظ الكومبوهات الحالية.</p><a href=/oag-smart>فتح منشئ OAG SMART COMBO LOGIC</a></section>
 <section class=card><h2>OAG Games & Weapons</h2><label>OAG Game</label><select id=gs></select><input id=gn maxlength=32 placeholder="Type your OAG game name"><button id=sg>ADD OAG GAME 1</button>
 <label>OAG Weapon for selected game</label><select id=ws></select><input id=wn maxlength=32 placeholder="Type your OAG weapon name"><button id=sw>ADD OAG WEAPON 1</button>
 <h3>OAG WEAPON RECOIL</h3><p class=hint>Move the sliders while testing. No number typing required.</p><div class=two><div><label>Horizontal • Left ↔ Right</label><input id=rh type=range min=-200 max=200 step=1 value=0><div class=rangeval id=rhv>0.00</div><div class=ends><span>-2.00 LEFT</span><span>+2.00 RIGHT</span></div></div><div><label>Vertical • Up ↔ Down</label><input id=rv type=range min=-200 max=200 step=1 value=0><div class=rangeval id=rvv>0.00</div><div class=ends><span>-2.00 UP</span><span>+2.00 DOWN</span></div></div></div>
@@ -184,7 +185,7 @@ err_t httpReceive(void* raw,tcp_pcb* client,pbuf* packet,err_t error){
     pbuf_copy_partial(packet,s->data.data()+s->used,packet->tot_len,0);s->used+=packet->tot_len;s->data[s->used]='\0';tcp_recved(client,packet->tot_len);pbuf_free(packet);
     const char* he=std::strstr(s->data.data(),"\r\n\r\n");if(!he)return ERR_OK;std::size_t hb=static_cast<std::size_t>(he-s->data.data())+4u;
     if(s->used<hb+contentLength(s->data.data()))return ERR_OK;tcp_arg(client,nullptr);
-    if(gPortal)gPortal->handleHttpRequest(client,s->data.data(),s->used);else sendResponse(client,"503 Service Unavailable","text/plain","Portal unavailable");releaseClient(s);return ERR_OK;
+    if(gPortal){if(!gPortal->handleOagSmartRequest(client,s->data.data()))gPortal->handleHttpRequest(client,s->data.data(),s->used);}else sendResponse(client,"503 Service Unavailable","text/plain","Portal unavailable");releaseClient(s);return ERR_OK;
 }
 err_t httpAccept(void*,tcp_pcb* client,err_t error){
     if(error!=ERR_OK||!client)return error;for(auto& s:gClients)if(!s.inUse){s.inUse=true;s.client=client;s.used=0;s.data.fill('\0');tcp_arg(client,&s);tcp_recv(client,httpReceive);return ERR_OK;}
@@ -213,6 +214,16 @@ void DiamondWifiPortal::schedulePlayReboot(std::uint32_t ms){playRebootAtUs_=tim
 void DiamondWifiPortal::task(){if(playRebootPending_&&time_us_64()>=playRebootAtUs_){playRebootPending_=false;requestOutputProfile(OutputProfileId::Pc);}}
 
 #include "pro_input_portal.inc"
+
+bool DiamondWifiPortal::handleOagSmartRequest(void* client,const char* request) {
+    if(!client||!request||!store_)return false;
+    char method[8]{},path[96]{};
+    if(std::sscanf(request,"%7s %95s",method,path)!=2)return false;
+    const char* body=std::strstr(request,"\r\n\r\n");body=body?body+4:"";
+    // Dispatch outside the old handler's large frame. The frozen request,
+    // response and Wi-Fi runtime buffers are unchanged.
+    return smartPortal_.handle(client,method,path,body,time_us_64(),[](void* c,const char* status,const char* type,const char* text){sendResponse(static_cast<tcp_pcb*>(c),status,type,text);});
+}
 
 void DiamondWifiPortal::handleHttpRequest(void* rawClient,const char* request,std::size_t){
     auto* client=static_cast<tcp_pcb*>(rawClient);if(!client||!request||!store_)return;char method[8]{},path[96]{};
