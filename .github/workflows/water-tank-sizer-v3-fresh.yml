@@ -1,8 +1,8 @@
-name: Build Water Tank Sizer V7
+name: Build Water Tank Sizer V8
 
 on:
   push:
-    branches: [ water-tank-sizer-v7 ]
+    branches: [ water-tank-sizer-v8-print-realistic ]
   workflow_dispatch:
 
 jobs:
@@ -31,6 +31,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Water-Tank-Sizer-V7
+          name: Water-Tank-Sizer-V8
           path: water-tank-sizer-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
