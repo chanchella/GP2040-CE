@@ -21,8 +21,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare preinstalled Android SDK
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Clone Android WebView shell
         run: git clone --depth=1 https://github.com/Karzzzzz520/HtmlWrapper.git wrapper
@@ -33,6 +37,8 @@ jobs:
           cat water-tank-sizer-build/html_*.part > wrapper/app/src/main/assets/index.html
           printf '%s\n' '<resources><string name="app_name">Water Tank Sizer</string></resources>' > wrapper/app/src/main/res/values/strings.xml
           sed -i 's/applicationId "com.htmlwrapper"/applicationId "com.watertanksizer.app"/' wrapper/app/build.gradle
+          grep -q "Hide Unused" wrapper/app/src/main/assets/index.html
+          grep -q "Show All" wrapper/app/src/main/assets/index.html
 
       - name: Build APK
         shell: bash
