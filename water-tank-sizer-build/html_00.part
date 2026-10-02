@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b6b73">
+  <meta name="description" content="Water Supply Tank Sizing calculator based on the supplied engineering workbook.">
+  <title>Water Supply Tank Sizing</title>
+      <style>
+:root{
+  --bg:#f3f8f8;--card:#fff;--ink:#153235;--muted:#688083;--line:#dbe8e8;
+  --brand:#0b6b73;--brand2:#118a91;--soft:#e7f5f5;--accent:#c7802f;--danger:#b63a3a;
+  font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;color-scheme:light;
+}
+*{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#eef8f8 0,#f7f9f9 320px);color:var(--ink)}
+button,input,select{font:inherit}
+.appbar{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;gap:16px;align-items:center;padding:14px 28px;background:rgba(255,255,255,.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px}.logo{width:46px;height:46px;border-radius:14px;background:var(--soft);display:grid;place-items:center;font-size:25px}
+h1{font-size:20px;margin:0} .brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap}
+button,.button-like{border:0;border-radius:10px;padding:10px 14px;background:var(--brand);color:#fff;cursor:pointer;font-weight:650}
+.ghost{background:#eef6f6;color:var(--brand)} .danger-ghost{background:#fff1f1;color:var(--danger)}
+.layout{width:min(1180px,calc(100% - 28px));margin:24px auto 40px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid rgba(10,80,85,.10);border-radius:18px;padding:20px;box-shadow:0 8px 30px rgba(24,70,74,.06)}
+.hero-card{display:flex;align-items:end;gap:16px;background:linear-gradient(120deg,#fff,#eef9f9)}
+.field{display:flex;flex-direction:column;gap:7px}.grow{flex:1}.field select{max-width:480px}
+label{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:650;color:#35575a}
+input,select{width:100%;border:1px solid #cfe0e0;border-radius:10px;padding:10px 11px;background:#fff;color:var(--ink);outline:none}
+input:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 0 3px rgba(17,138,145,.10)}
+small,.muted{color:var(--muted);font-weight:400}.metric{min-width:150px;border-left:1px solid var(--line);padding-left:18px}
+.metric span,.metric em{display:block;color:var(--muted);font-size:12px;font-style:normal}.metric strong{display:inline-block;font-size:28px;margin:4px 6px 0 0}.metric.accent strong{color:var(--brand)}
+details summary{cursor:pointer;font-size:16px;font-weight:800;list-style:none} details summary::-webkit-details-marker{display:none}
+details summary:after{content:"▾";float:right;color:var(--muted)}
+.grid{display:grid;gap:12px;margin-top:16px}.project-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.inputs-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.section-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.section-head h2,.tools-card h2{font-size:17px;margin:0}.section-head p{margin:4px 0 0;color:var(--muted);font-size:13px}
+.demand-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.view-toggle{display:flex;gap:6px;padding:4px;background:#eef6f6;border-radius:12px}.toggle-btn{padding:8px 11px;background:transparent;color:var(--brand);font-size:12px}.toggle-btn.active{background:var(--brand);color:#fff;box-shadow:0 2px 8px rgba(11,107,115,.18)}.search{width:min(320px,100%)}
+.demand-header,.demand-row{display:grid;grid-template-columns:2.2fr 1.4fr .7fr .8fr .9fr;gap:10px;align-items:center}
+.demand-header{padding:9px 12px;color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;border-bottom:1px solid var(--line)}
+.demand-row{padding:10px 12px;border-bottom:1px solid #eef3f3}.demand-row:last-child{border-bottom:0}
+.demand-row .name{font-weight:700;font-size:13px}.demand-row .desc,.demand-row .rate,.demand-row .line-total{font-size:12px;color:#587477}.demand-empty{padding:22px 12px;text-align:center;color:var(--muted);font-size:13px;border-bottom:1px solid #eef3f3}
+.qty{padding:8px 9px}.line-total{font-weight:800;color:var(--ink)!important;text-align:right}
+.total-line{display:flex;justify-content:flex-end;gap:18px;padding:14px 12px 0;font-size:14px}.total-line strong{font-size:18px;color:var(--brand)}
+.result-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.result-grid article{border:1px solid var(--line);background:#fbfdfd;border-radius:14px;padding:14px}
+.result-grid span,.result-grid em{display:block;color:var(--muted);font-size:11px;font-style:normal}.result-grid strong{font-size:22px;display:inline-block;margin:5px 5px 1px 0}
+.badge{padding:7px 10px;border-radius:999px;background:#e7f7ee;color:#21704a;font-size:12px;font-weight:800}
+.warnings{margin-top:12px;padding:12px;border-radius:12px;background:#fff7e8;color:#855e16;font-size:13px}
+.button-row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.button-like{display:inline-flex;align-items:center}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 15px 30px}
+@media(max-width:850px){
+  .appbar{padding:11px 14px;align-items:flex-start}.header-actions button{padding:8px 10px;font-size:12px}
+  .layout{width:min(100% - 16px,1180px);margin-top:12px}.hero-card{align-items:stretch;flex-wrap:wrap}.metric{border-left:0;border-top:1px solid var(--line);padding:10px 0 0;flex:1}
+  .project-grid,.inputs-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.result-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .demand-header{display:none}.demand-row{grid-template-columns:1fr 82px 82px;grid-template-areas:"name qty total" "desc rate total";padding:12px 4px}
+  .demand-row .name{grid-area:name}.demand-row .desc{grid-area:desc}.demand-row .qty{grid-area:qty}.demand-row .rate{grid-area:rate}.demand-row .line-total{grid-area:total;align-sel
