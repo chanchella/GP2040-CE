@@ -1,0 +1,113 @@
+{
+  "parent_commit": "753a230b81085b97cb30e8784b13bd47c3b4f10f",
+  "parent_archive_sha256": "8c5e6f7539c98ff279aaafa864481684366ac66b8e87f3036ffeb6451523f498",
+  "baseline_source_files": 9982,
+  "unchanged_baseline_files": 9963,
+  "modified_baseline_files": [
+    {
+      "path": "OAG_VERSION_INFO.json",
+      "parent_sha256": "b9ae0af5ab9e3ee801822cc53687332338533ab60f2afea78adedc7a9fbfeb40",
+      "sha256": "da820665ea78a2412244437043a181af29fe62ec3bb1df6676db799178c0c1a4"
+    },
+    {
+      "path": ".gitignore",
+      "parent_sha256": "5b966bbe3e82dc80be82f16f57a9e2d0b59eec54d678a7c5e6c02faaf3d6d9d6",
+      "sha256": "3c1fe720da44c0d666429475cfc49be6be0f48c704204e71a6dd03bc13855a02"
+    },
+    {
+      "path": "oag/CMakeLists.txt",
+      "parent_sha256": "27a4360a23e5aa73d0cfad7cc1b77abd6e167bb73719f06c19d8b77a4f19f0e1",
+      "sha256": "612e8dfa19bd06df9d6efea40614abbbdec86102548ba6e696b656e40c542506"
+    },
+    {
+      "path": "oag/firmware/CMakeLists.txt",
+      "parent_sha256": "a69550872799b421858f4cd33de84acd076a474352174b73c0c1c0bfd4aaeb4c",
+      "sha256": "bfc25b721da47a9d46e98c648628540b4df07c38ebe62291aa836cfa1350a524"
+    },
+    {
+      "path": "oag/tools/check_touch_games_release.py",
+      "parent_sha256": "e8e37a1cba33792f97b9e9af1d12067eb63e56c0fac0c3817e7d7027eefa19e4",
+      "sha256": "e2533b08377b2c5ee9b66f03fe090308c8b016110c8af898b87055d8c053f11d"
+    },
+    {
+      "path": "oag/tests/host/oag_touch_api_bridge.cpp",
+      "parent_sha256": "a6858e8256ae706d061a88d030180f7b522c13fdb488d41331193114170aceb4",
+      "sha256": "05b4d52b768c43052e4a814bcca24700cad5e6636c0534dffac712e455d63154"
+    },
+    {
+      "path": "oag/tests/host/test_oag_smart_portal.cpp",
+      "parent_sha256": "9961ebb8d5df4d13a42e1b2769e1614f62b13a9353123886dd0b2343b5a84597",
+      "sha256": "458c0262a8a7bb68f9e0a3d2e13f29738ba835427b791bc63b379e8e7f826f3a"
+    },
+    {
+      "path": "oag/firmware/src/oag_touch_portal.inc",
+      "parent_sha256": "7a175d39556ab7d74559dfc4957fd1ee63beb3c44e73e3f7b81fd7bb44e35b49",
+      "sha256": "a028704bddc95c06f4b7caa956ae05931c833d065132145fab68c2baf704902c"
+    },
+    {
+      "path": "oag/firmware/src/oag_smart_assets.h",
+      "parent_sha256": "f2c278278929e286272f4f6331ec20e055d92836b122b7ddf599c778fd2cd173",
+      "sha256": "992760b79dd9ff729ef9354614508fdcf54c6ba3071df817e7a59471365329af"
+    },
+    {
+      "path": "oag/include/oag/output/touch/touch_mapping.h",
+      "parent_sha256": "849c1a295e6a968646f3c5eeb9469d0fb5d9eeb046b6d178a8f69419c731f0d6",
+      "sha256": "8496fba6c3c0a9161e2659bbb95c89200c9ad91d9abbb04ff9109b48204d8e6c"
+    },
+    {
+      "path": "oag/tools/smart_ui/oag-touch-games.js",
+      "parent_sha256": "1f9fb51ec263da7d874469f98584665cdfa2030b6d5a1da294c2d7835a260660",
+      "sha256": "0444b8433ac901035216b8a6ee2ea90cd63314ef51f7bc7ff87af3293a6dbdc6"
+    },
+    {
+      "path": "oag/tools/smart_ui/oag-touch-a.js",
+      "parent_sha256": "ade0dbe3cbe6775de5d0c326494e632a6709e8e31956fa18df95acad8ee17049",
+      "sha256": "9aaf7dbc0c1923598d375f14fb035f56f2bbcae106da314047132e85d40b76ae"
+    },
+    {
+      "path": "oag/tools/smart_ui/oag-touch-events.js",
+      "parent_sha256": "5651412d830701457103e550f1cc917621f11920744eb78324838c232f1dc45b",
+      "sha256": "14914e7cfe0c0195a42dfc397bccc3825257d46c92508b0e657c3b5c01f96847"
+    },
+    {
+      "path": "oag/tools/smart_ui/oag-touch-sync.js",
+      "parent_sha256": "c66bddd89b2a5ac1bc7b955718d6ba3c59bb0e1b051aabe47fb74a0670013f20",
+      "sha256": "5a995c1f8cf199c854edc964c79f7f6e9371ddaefd9a7e18423d5ed92cb732d1"
+    },
+    {
+      "path": "oag/tools/smart_ui/oag-touch-b.js",
+      "parent_sha256": "96d32f87a289c9c6a2f691f5fe06c799410ffa6d763e1c2c7308b9e53797ee72",
+      "sha256": "a180ed5b7ea4c874a942e0bb7a677aff048a0cd4164c69a14f9764125ca5018b"
+    },
+    {
+      "path": "oag/tools/smart_ui/oag-touch.css",
+      "parent_sha256": "f845ccf097ed0739afb6159a79ebee0aa26db76d5efc00d468ad9971883845d6",
+      "sha256": "863b9cf76bf80b627c39dc59182f26f0c817e91b9b84dbef04719d04ab7e22c7"
+    },
+    {
+      "path": "oag/tools/smart_ui/oag-touch.html",
+      "parent_sha256": "04c8043cf873513832f2808dcde1dad41c361971df735b239c48fe5cf975258b",
+      "sha256": "1fcb15391257e0634182cbbaa55fd41f42e41ad46e9f9e499236393fd09bced6"
+    },
+    {
+      "path": "oag/tools/smart_ui/oag-touch-live.js",
+      "parent_sha256": "ccacf0c6c3a04d046487be3f848fc6c6ebd231949a4725929e4074045817dc6b",
+      "sha256": "cee420d72daf3574d064a007823e2a40841a5e461bbc03bf46e2926fcdb023f9"
+    },
+    {
+      "path": "oag/src/output/touch/touch_mapping.cpp",
+      "parent_sha256": "b4d7e04358581b10aa0cc433096417039918e9eeba2fbc6e3069d3f25d908b24",
+      "sha256": "6f918614de7389c7fb030892f882456f48f2dfa18baa5b4c55737b3706091a0d"
+    }
+  ],
+  "missing_baseline_files": [],
+  "frozen_controller_transport_files": 104,
+  "profile_layout": {
+    "rule_bytes": 62,
+    "profile_bytes": 21848,
+    "game_record_bytes": 21964,
+    "record_version_unchanged": true,
+    "flash_offsets_unchanged": true
+  },
+  "physical_hardware_tested": false
+}

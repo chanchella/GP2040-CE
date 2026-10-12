@@ -1,0 +1,13 @@
+{
+  "host_ctest": 72,
+  "android_usb_ble_report_comparisons": 6216,
+  "touch_original_api_checks": 370,
+  "touch_original_dom_checks": 403,
+  "touch_original_chromium_checks": 404,
+  "touch_flex_api_checks": 105,
+  "touch_flex_dom_checks": 166,
+  "touch_flex_chromium_checks": 167,
+  "native_browser_layout_tested": true,
+  "physical_hardware_tested": false,
+  "frozen_controller_transport_files": 104
+}

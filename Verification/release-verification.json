@@ -1,0 +1,45 @@
+{
+  "firmware": "OAG_MOBILE_TOUCH_GAMES_V2_TOUCH_FLEX_V1_Pico2W",
+  "board": "pico2_w",
+  "uf2_valid": true,
+  "uf2_sha256": "54aea4c6694a88e27789fa3e4503ee2c6fea965deed14a69a75d45732d1f51b3",
+  "binary_sha256": "7f6acb92a6ac1d3bdb5f37d131a654e4543a13dbbe7d2ef0bc7503202681c32f",
+  "uf2_bytes": 1741824,
+  "binary_bytes": 870640,
+  "uf2_families": {
+    "0xe48bff57": 1,
+    "0xe48bff59": 3401
+  },
+  "flash_binary_end": "0x100d48f0",
+  "firmware_storage_limit": "0x10100000",
+  "ram_headroom_bytes": 22852,
+  "touch_stack_max_bytes": 144,
+  "touch_games": 20,
+  "legacy_mapping_game": 1,
+  "float_io_retained": true,
+  "touch_assets_bytes": {
+    "oag-touch-c.js": 910,
+    "oag-touch-games.js": 3635,
+    "oag-touch-a.js": 4250,
+    "oag-touch-repeat.js": 2532,
+    "oag-touch-events.js": 2861,
+    "oag-touch-repeat-live.js": 766,
+    "oag-touch-sync.js": 4504,
+    "oag-touch-b.js": 4814,
+    "oag-touch.css": 3945,
+    "oag-touch-repeat-ui.js": 2938,
+    "oag-touch.html": 5072,
+    "oag-touch-inputs.js": 1940,
+    "oag-touch-play.js": 1016,
+    "oag-touch-live.js": 1271
+  },
+  "ble_native_schema_revision": 4,
+  "ble_touch_schema_revision": 3,
+  "km_modes": [
+    "native",
+    "controller_only",
+    "mixed"
+  ],
+  "physical_hardware_tested": false,
+  "native_browser_layout_tested": true
+}
