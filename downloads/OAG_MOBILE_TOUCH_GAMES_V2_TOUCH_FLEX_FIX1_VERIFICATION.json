@@ -1,0 +1,33 @@
+{
+  "host_ctest": 86,
+  "touch_games_api_checks": 370,
+  "touch_flex_api_checks": 105,
+  "touch_games_dom_checks": 403,
+  "touch_flex_dom_checks": 166,
+  "touch_games_chromium_checks": 404,
+  "touch_flex_chromium_checks": 167,
+  "android_native_usb_ble_comparisons": 6216,
+  "fixed_regressions_reproduced_before": 11,
+  "hardware_transports_simulated": true,
+  "physical_hardware_tested": false,
+  "touch_delivery_cases": [
+    "startup",
+    "short",
+    "burst",
+    "wheel",
+    "unready",
+    "overflow",
+    "neutral",
+    "all_twenty",
+    "profile_switch"
+  ],
+  "production_main_runtime_routes": [
+    "usb",
+    "ble",
+    "mirror"
+  ],
+  "touch_profile_resume_targets": [
+    7,
+    8
+  ]
+}
