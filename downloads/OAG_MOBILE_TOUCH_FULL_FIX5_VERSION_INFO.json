@@ -1,0 +1,18 @@
+{
+  "version": "OAG-MOBILE-TOUCH-FULL-FIX5",
+  "board": "Raspberry Pi Pico 2 W",
+  "base_public_commit": "c484b0b2388eb6e535540d4ee62d0ef06791660a",
+  "source_snapshot_commit": "655b72c5945957b04bca915361cee5425a47e3e0",
+  "reference_archive": "OAG_BT_Touch_SPEED2_Full.zip",
+  "reference_zip_sha256": "890434276d7d3b60c92e3a58069a1dfd7f344b9adaa923cbd36ae00f93493600",
+  "source_files": 10012,
+  "source_tar_sha256": "6616a7ea0e0e0575e70e3650d70b0b6c1dd0a92b0200f55fa6e2a7bb91f9b3ec",
+  "firmware_uf2_sha256": "8f7aed48b64911e69680e8a10c215a11cb12bed690cf164e63bb0ffada887a1b",
+  "firmware_bin_sha256": "141bb432b4a188f73faf2063144c7888a81a5f2a0d389e62179c42a9e3135560",
+  "physical_hardware_tested": false,
+  "rollback_firmwares": {
+    "OAG_MOBILE_TOUCH_FULL_FIX4_Pico2W.uf2": "dfe9c17b7aa8646febd4798b7982886b3eefc311f6ea51e969af4e0b2e3e6d50",
+    "OAG_BT_Touch_SPEED2_Pico2W.uf2": "8e23d56dd6e910da464b51681af2179aa514d1e2b5bce1a214e8c3cae6b8913c",
+    "OAG_BT_Touch_ANDROID_COMPAT1_Pico2W.uf2": "46840d832d592227ffa7e919b2e8c24a77173473c9a22dfc832396f60a14d621"
+  }
+}

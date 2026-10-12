@@ -1,0 +1,58 @@
+{
+  "firmware": "OAG_MOBILE_TOUCH_FULL_FIX5_Pico2W",
+  "board": "pico2_w",
+  "uf2_valid": true,
+  "uf2_sha256": "8f7aed48b64911e69680e8a10c215a11cb12bed690cf164e63bb0ffada887a1b",
+  "binary_sha256": "141bb432b4a188f73faf2063144c7888a81a5f2a0d389e62179c42a9e3135560",
+  "uf2_bytes": 1761792,
+  "binary_bytes": 880488,
+  "uf2_families": {
+    "0xe48bff57": 1,
+    "0xe48bff59": 3440
+  },
+  "flash_binary_end": "0x100d6f68",
+  "firmware_storage_limit": "0x10100000",
+  "ram_headroom_bytes": 19844,
+  "touch_stack_max_bytes": 144,
+  "touch_games": 20,
+  "legacy_mapping_game": 1,
+  "float_io_retained": true,
+  "touch_assets_bytes": {
+    "oag-touch.html": 5148,
+    "oag-touch-live.js": 1271,
+    "oag-touch.css": 3945,
+    "oag-touch-repeat.js": 2397,
+    "oag-touch-a.js": 4555,
+    "oag-touch-sync.js": 4571,
+    "oag-touch-c.js": 910,
+    "oag-touch-inputs.js": 3954,
+    "oag-touch-play.js": 1080,
+    "oag-touch-repeat-ui.js": 2907,
+    "oag-touch-events.js": 2874,
+    "oag-touch-games.js": 4278,
+    "oag-touch-repeat-live.js": 766,
+    "oag-touch-b.js": 4549
+  },
+  "ble_native_schema_revision": 4,
+  "ble_touch_schema_revision": 5,
+  "km_modes": [
+    "native",
+    "controller_only",
+    "mixed"
+  ],
+  "physical_hardware_tested": false,
+  "native_browser_layout_tested": true,
+  "host_tests_passed": 97,
+  "browser_games_checks": 411,
+  "browser_flex_checks": 175,
+  "known_regressions_reproduced_against_FIX4": [
+    "ATT error 0x0F when reading Touch map before encryption",
+    "published mapper reads disabled Flash pages on steady events"
+  ],
+  "speed2_gatt_database_byte_identical": true,
+  "speed2_gatt_database_found_in_linked_binary": true,
+  "native_frozen_files_identical": 22,
+  "no_default_touch_mouse": true,
+  "profile_storage_schema": 3,
+  "note": "Software checks do not prove operation on the user's Android or identify its physical failure conclusively."
+}
