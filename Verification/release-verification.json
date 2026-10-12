@@ -1,0 +1,55 @@
+{
+  "firmware": "OAG_MOBILE_TOUCH_GAMES_V2_HOME_WIFI_V1_Pico2W",
+  "board": "pico2_w",
+  "uf2_valid": true,
+  "uf2_sha256": "4f7e795432e651277c2f3640d0c300f49eadad2aa9c7f7e499dc97647c23be71",
+  "binary_sha256": "fb4fe21ff3a30d05329793213909a20dd0a44101d960d672269e101c7416ebef",
+  "uf2_bytes": 1775104,
+  "binary_bytes": 887232,
+  "uf2_families": {
+    "0xe48bff57": 1,
+    "0xe48bff59": 3466
+  },
+  "flash_binary_end": "0x100d89c0",
+  "firmware_storage_limit": "0x100fe000",
+  "ram_headroom_bytes": 21380,
+  "touch_stack_max_bytes": 128,
+  "touch_games": 20,
+  "legacy_mapping_game": 1,
+  "float_io_retained": true,
+  "touch_assets_bytes": {
+    "oag-touch-c.js": 910,
+    "oag-touch-a.js": 4851,
+    "oag-touch-events.js": 2838,
+    "oag-touch-live.js": 1248,
+    "oag-touch.css": 3594,
+    "oag-touch-b.js": 4531,
+    "oag-touch.html": 4854,
+    "oag-touch-games.js": 2981,
+    "oag-touch-sync.js": 4419
+  },
+  "ble_native_schema_revision": 4,
+  "ble_touch_schema_revision": 3,
+  "km_modes": [
+    "native",
+    "controller_only",
+    "mixed"
+  ],
+  "physical_hardware_tested": false,
+  "native_browser_layout_tested": true,
+  "home_wifi": true,
+  "live_settings": true,
+  "home_network_banks": [
+    "0xfe000",
+    "0xff000"
+  ],
+  "home_network_ab_crc": true,
+  "frozen_transport_files": 74,
+  "home_credentials_in_image": false,
+  "ordinary_saves_reboot": false,
+  "network_callbacks_modify_gameplay": false,
+  "layout_verification": [
+    "home-network-browser-test.log",
+    "home-wifi-touch-browser.log"
+  ]
+}

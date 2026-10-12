@@ -1,0 +1,11 @@
+{
+  "host_ctest": 74,
+  "touch_api_checks": 370,
+  "touch_dom_checks": 403,
+  "touch_chromium_checks": 404,
+  "home_network_api_dom_checks": 38,
+  "home_network_chromium_checks": 10,
+  "physical_hardware_tested": false,
+  "native_browser_layout_tested": true,
+  "frozen_transport_files": 74
+}
