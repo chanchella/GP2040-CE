@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+private-data/
+secrets/
+*.pem
+*.key
+*PRIVATE*
+*BACKUP*
+subscribers.json*
+*.exe
+*.uf2
+*.zip
+*.db
+*.sqlite*
