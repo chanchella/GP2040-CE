@@ -1,0 +1,41 @@
+name: oag-owner-d4
+services:
+  owner:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      OAG_OWNER_REMOTE: "1"
+      OAG_OWNER_DATA_DIR: /data
+      OAG_OWNER_PUBLIC_ORIGIN: https://${OAG_DOMAIN:?Set OAG_DOMAIN in .env}
+    expose:
+      - "8765"
+    volumes:
+      - owner_data:/data
+    networks:
+      - private
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - private
+    depends_on:
+      - owner
+networks:
+  private: {}
+volumes:
+  owner_data: {}
+  caddy_data: {}
+  caddy_config: {}
