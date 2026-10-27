@@ -1,0 +1,38 @@
+name: OAG build tools
+
+on:
+  push:
+    branches: [codex/oag-build-tools-20261027]
+    paths: [.github/workflows/oag-build-tools.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download public compiler and build packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          mkdir -p "$RUNNER_TEMP/oag-build-tools/debs"
+          cd "$RUNNER_TEMP/oag-build-tools/debs"
+          apt-get download cmake cmake-data ninja-build \
+            binutils-mingw-w64-x86-64 mingw-w64-common mingw-w64-x86-64-dev \
+            gcc-mingw-w64-base gcc-mingw-w64-x86-64-posix-runtime \
+            gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix \
+            libuv1t64 libjsoncpp25 librhash0 libgmp10 libmpfr6 libmpc3 libisl23 libzstd1
+          sha256sum ./*.deb > SHA256SUMS
+          cd "$RUNNER_TEMP/oag-build-tools"
+          tar -czf build-tools.tar.gz debs
+      - name: Retain the compiler package archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: oag-linux-cross-build-tools
+          path: ${{ runner.temp }}/oag-build-tools/build-tools.tar.gz
+          if-no-files-found: error
+          retention-days: 3
